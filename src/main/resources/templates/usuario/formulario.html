@@ -1,0 +1,71 @@
+<div class="modal-header">
+    <h4 class="modal-title" th:text="${edit}? 'Modificar Usuario' : 'Registrar Usuario'"></h4>
+    <a type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></a>
+</div>
+<form id="formularioUsuario" method="post"
+      th:object="${usuario}"
+      th:action="${edit}? @{/administracion/usuario/modificar-usuario} : @{/administracion/usuario/registrar-usuario}"
+      novalidate>
+
+  <input type="hidden" th:if="${edit != null}" th:field="*{id}">
+
+  <div class="modal-body">
+    <div class="row">
+      <div class="col-12 col-md-6">
+        <label class="form-label">Nombre de Usuario</label>
+        <input type="text" th:field="*{username}" class="form-control"
+               placeholder="Introduzca un nombre de usuario" required />
+        <div class="valid-feedback">Correcto!</div>
+        <div class="invalid-feedback">Por favor introduzca un nombre.</div>
+      </div>
+
+      <div class="col-12 col-md-6">
+        <label class="form-label">Contraseña</label>
+        <input type="password" th:field="*{password}" class="form-control"
+               placeholder="Introduzca una contraseña" required />
+        <div class="valid-feedback">Correcto!</div>
+        <div class="invalid-feedback">Por favor introduzca una contraseña.</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-12 col-md-6">
+        <label class="form-label">Persona</label>
+        <select id="select2Basic" class="select2 form-select form-select-lg" th:field="*{persona}" required>
+          <option value="" disabled selected>— Seleccione —</option>
+          <option th:each="p : ${listaPersonas}"
+                  th:value="${p.id}"
+                  th:text="${p.nombre + ' - ' + p.ci}">
+          </option>
+        </select>
+        <div class="invalid-feedback">Debe seleccionar a una persona.</div>
+      </div>
+
+      <div class="col-12 col-md-6">
+        <label class="form-label">Rol</label>
+        <div class="select2-primary">
+          <select id="select2Primary" class="select2 form-select" th:field="*{rol}" required>
+            <option value="" disabled selected>— Seleccione —</option>
+            <option th:each="r : ${listaRoles}" th:value="${r.id}" th:text="${r.nombre}"></option>
+          </select>
+          <div class="invalid-feedback">Debe seleccionar un rol.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-footer">
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+    <input type="submit" class="btn btn-success" th:value="${edit}? 'Guardar Cambios' : 'Guardar Registro'">
+  </div>
+
+  <!-- Si usas CSRF en Spring Security -->
+  <input type="hidden" th:if="${_csrf != null}"
+         th:name="${_csrf.parameterName}"
+         th:value="${_csrf.token}">
+</form>
+
+
+<script>
+    manejarEnvioFormulario('#formularioUsuario');
+</script>

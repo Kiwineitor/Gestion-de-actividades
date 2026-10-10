@@ -1,0 +1,77 @@
+# =============================================================================
+# UniFex en Docker: base de datos + aplicacion.
+#
+#   docker compose up -d --build      levanta todo (la primera vez tarda: compila)
+#   docker compose logs -f app        ver el arranque de Java
+#   docker compose down               apaga (los datos QUEDAN en los volumenes)
+#   docker compose down -v            apaga y BORRA la base y los archivos subidos
+#
+# Abrir: http://localhost:7676/app/   (SPA)      http://localhost:7676/   (sitio viejo)
+#
+# Los valores por defecto sirven para PROBAR en una maquina local. Para cualquier otra
+# cosa, copiar .env.example a .env y cambiar las contrasenas y secretos. Ver DOCKER.md.
+# =============================================================================
+name: unifex
+
+services:
+  db:
+    build:
+      context: .
+      dockerfile: docker/db/Dockerfile
+    image: unifex-db:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-unifex}
+      POSTGRES_USER: ${DB_USER:-unifex}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-unifex_dev_2026}
+      CARGAR_DATOS_PRUEBA: ${CARGAR_DATOS_PRUEBA:-true}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    # Publicado solo en 127.0.0.1, para entrar con pgAdmin/DBeaver desde esta maquina.
+    # 5433 para no chocar con un PostgreSQL instalado localmente en 5432.
+    ports:
+      - "127.0.0.1:${DB_PUERTO_LOCAL:-5433}:5432"
+    healthcheck:
+      # Por TCP a proposito: durante la inicializacion el servidor temporal solo escucha por
+      # socket, asi que esto no da "sano" hasta que esquema y datos terminaron de cargarse.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: unifex-app:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # application.properties (perfil por defecto) apunta a localhost: se reemplaza aqui.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${DB_NAME:-unifex}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-unifex}
+      DB_PASSWORD: ${DB_PASSWORD:-unifex_dev_2026}
+      # Obligatorias: sin ellas la aplicacion no arranca (fail-fast, ver DEPLOY.md).
+      API_KEY: ${API_KEY:-clave-api-solo-para-pruebas-locales}
+      JWT_SECRET: ${JWT_SECRET:-secreto-jwt-solo-para-pruebas-locales-0123456789}
+      # Usuarios fundadores: Java los crea en el PRIMER arranque si no existen.
+      ADMIN1_PASSWORD: ${ADMIN1_PASSWORD:-Admin1Fexpo2026}
+      ADMIN2_PASSWORD: ${ADMIN2_PASSWORD:-Admin2Fexpo2026}
+      UNIFEX_PUBLICO_BASE_URL: ${UNIFEX_PUBLICO_BASE_URL:-http://localhost:7676}
+      NOTA_VERIFICACION_URL: ${NOTA_VERIFICACION_URL:-}
+      WHATSAPP_ENABLED: "false"
+    volumes:
+      - uploads:/var/lib/unifex
+      - logs:/var/log/unifex
+      # Plantillas .jrxml de JasperReports, si se tienen (no estan en el repo):
+      # - ./reportes:/opt/unifex/reportes:ro
+    ports:
+      - "${APP_PUERTO:-7676}:7676"
+
+volumes:
+  db-data:
+  uploads:
+  logs:

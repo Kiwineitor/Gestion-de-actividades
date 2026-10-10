@@ -1,0 +1,25 @@
+import { createApp } from 'vue';
+import { createPinia } from 'pinia';
+import App from './App.vue';
+import router from './router';
+import { EN_APK } from './config.js';
+import { observarTeclado } from './ui/teclado.js';
+import { instalarRegistroErrores } from './ui/registroErrores.js';
+import './style.css';
+
+/*
+ * Marca el documento cuando corre dentro del APK.
+ *
+ * Sirve para una sola cosa, pero importante: poner un SUELO a los margenes seguros. Si el
+ * WebView no reporta los insets —pasa segun version y fabricante—, `env()` devuelve 0 y la
+ * cabecera queda debajo de los iconos de bateria y señal, sin poder tocarse. En el navegador
+ * ese suelo sobraria (no hay barra de estado), de ahi que se marque solo el APK.
+ */
+if (EN_APK) document.documentElement.classList.add('apk');
+
+// Publica el alto del teclado en `--kb`, para que el contenido pueda apartarse de el.
+observarTeclado();
+
+const app = createApp(App);
+instalarRegistroErrores(app, router);
+app.use(createPinia()).use(router).mount('#app');

@@ -1,0 +1,138 @@
+<!-- Menu -->
+<aside th:fragment="sidebar" id="layout-menu" class="layout-menu menu-vertical menu bg-menu-theme" th:if="${session.nombre_rol == 'ADMINISTRADOR' or session.nombre_rol == 'SUPER USUARIO' or session.nombre_rol == 'CONTROL' or session.nombre_rol == 'ASESORIA'}">
+    <style>
+        .app-brand-logo {
+  height: auto !important;   /* evita altura fija */
+  width: auto !important;    /* evita recortes */
+  overflow: visible !important; /* deja que la imagen sobresalga */
+  display: flex;
+  align-items: center;       /* centra verticalmente */
+}
+
+    </style>
+    
+    <div class="app-brand demo">
+        <a href="/admin" class="app-brand-link">
+            <span class="app-brand-logo demo">
+            <img th:src="@{/assets/img/logo/logoUap.png}" alt="UAP" style="height:45px; width:auto; display:block;">
+
+            </span>
+            <span class="app-brand-text demo menu-text fw-bold">UAP</span>
+        </a>
+    </div>
+
+
+    <ul class="menu-inner py-1">
+        <!-- VISTA ADMINISTRADOR Y SUPER USUARIO -->
+         <li class="menu-header small text-uppercase" th:if="${session.nombre_rol == 'CONTROL'}">
+            <span class="menu-header-text">No hay funciones</span>
+            <span class="menu-header-text">para el rol que tienes</span>
+        </li>
+        <li class="menu-header small text-uppercase" th:if="${session.nombre_rol == 'ADMINISTRADOR'}">
+            <span class="menu-header-text">ADMINISTARCIÓN</span>
+        </li>
+        <li class="menu-item" id="opcion_admin" th:if="${session.nombre_rol == 'ADMINISTRADOR'}">
+            <a href="#" class="menu-link menu-toggle">
+                <i class="menu-icon tf-icons ti ti-users"></i>
+                <div>Administrar personal</div>
+            </a>
+            <ul class="menu-sub">
+                <li class="menu-item" id="opcion_persona">
+                    <a class="menu-link">
+                        <div>Persona</div>
+                    </a>
+                </li>
+            </ul>
+            <ul class="menu-sub">
+                <li class="menu-item" id="opcion_usuario">
+                    <a class="menu-link">
+                        <div>usuario</div>
+                    </a>
+                </li>
+            </ul>
+            
+        </li>
+        <!-- COMPLEMENTOS -->
+        <li class="menu-header small text-uppercase" th:if="${session.nombre_rol == 'ADMINISTRADOR' or session.nombre_rol == 'SUPER USUARIO' or session.nombre_rol == 'ASESORIA'}">
+            <span class="menu-header-text">GESTION</span>
+        </li>
+        <li class="menu-item" id="opcion_admin" th:if="${session.nombre_rol == 'ADMINISTRADOR' or session.nombre_rol == 'SUPER USUARIO'}">
+            <a href="#" class="menu-link menu-toggle">
+                <i class="menu-icon tf-icons ti ti-users"></i>
+                <div>Control</div>
+            </a>
+            <ul class="menu-sub">
+                <li class="menu-item" id="opcion_responsables">
+                    <a class="menu-link">
+                        <div>Responsables</div>
+                    </a>
+                </li>   
+            </ul>
+            <ul class="menu-sub">
+                <li class="menu-item" id="opcion_promotor">
+                    <a class="menu-link">
+                        <div>Promotores</div>
+                    </a>
+                </li>   
+            </ul>
+            <ul class="menu-sub">
+                <li class="menu-item" id="opcion_gaseta">
+                    <a class="menu-link">
+                        <div>Control Gasetas</div>
+                    </a>
+                </li>
+            </ul>
+            <ul class="menu-sub">
+                <li class="menu-item" id="opcion_inscripciones">
+                    <a class="menu-link">
+                        <div>Control Inscripciones</div>
+                    </a>
+                </li>
+            </ul>
+            <ul class="menu-sub">
+                <li class="menu-item" id="opcion_sr">
+                    <a class="menu-link">
+                        <div>Seguimiento registro</div>
+                    </a>
+                </li>
+            </ul>
+            <ul class="menu-sub">
+                <li class="menu-item" id="opcion_credencial">
+                    <a class="menu-link">
+                        <div>Credencial</div>
+                    </a>
+                </li>
+            </ul>
+        </li>
+
+        <li class="menu-item" id="opcion_admin" th:if="${session.nombre_rol == 'ADMINISTRADOR' or session.nombre_rol == 'SUPER USUARIO' or session.nombre_rol == 'ASESORIA'}">
+            <a href="#" class="menu-link menu-toggle">
+                <i class="menu-icon tf-icons ti ti-users"></i>
+                <div>Control</div>
+            </a>
+            <ul class="menu-sub">
+                <li class="menu-item" id="opcion_inscripciones" th:if="${session.nombre_rol == 'ADMINISTRADOR' or session.nombre_rol == 'ASESORIA'}">
+                    <a class="menu-link">
+                        <div>Control Inscripciones</div>
+                    </a>
+                </li>
+            </ul>
+            
+        </li>
+
+        <li class="menu-item" id="opcion_admin" th:if="${session.nombre_rol == 'ADMINISTRADOR' or session.nombre_rol == 'SUPER USUARIO'}">
+            <a href="#" class="menu-link menu-toggle">
+                <i class="menu-icon tf-icons ti ti-users"></i>
+                <div>RESPONSABLES</div>
+            </a>
+            <ul class="menu-sub">
+                <li class="menu-item" id="opcion_responsables_incritos">
+                    <a class="menu-link">
+                        <div>INSCRITOS</div>
+                    </a>
+                </li>   
+            </ul>
+        </li>
+    </ul>
+</aside>
+<!-- / Menu -->

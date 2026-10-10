@@ -1,0 +1,1639 @@
+<script setup>
+import { ref, reactive, computed, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
+import PanZoom from '../components/PanZoom.vue';
+import { apiFetch } from '../api';
+import { useAuthStore } from '../stores/auth';
+import { usePuestosStore } from '../stores/puestos';
+import { usePlanoStore } from '../stores/plano';
+import { anchoParaLeer, anchoParaTocar, estiloPin, numeracionCompacta, numerosVisibles, ordenLectura } from '../mapa';
+import * as pdfjsLib from 'pdfjs-dist';
+import RotuloPlano from '../components/RotuloPlano.vue';
+import { usePlanoTextosStore } from '../stores/planoTextos.js';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+
+/*
+ * Diseñador del plano. De 531 casetas solo unas pocas estan colocadas, asi que la herramienta
+ * se optimiza para el trabajo por lotes: colocar una linea de N, seleccionar por caja, mover
+ * y escalar el grupo entero. Colocarlas de una en una seria inviable.
+ *
+ * Los cambios de geometria se acumulan en memoria (con deshacer/rehacer) y se guardan de golpe.
+ * Las altas y bajas de casetas, en cambio, viajan al servidor al instante: son irreversibles
+ * desde aqui y no tiene sentido acumularlas.
+ */
+
+const FORMAS = [
+  { id: 'cuadrado', icono: '■' },
+  { id: 'circulo', icono: '●' },
+  { id: 'triangulo', icono: '▲' },
+];
+const ESCALA_MIN = 0.2;
+const ESCALA_MAX = 6;
+const CLIC_MAXIMO = 0.008; // arrastre por debajo de esto = un toque, no una linea
+
+// Casetas y tiempo real compartidos con el Mapa y el Tablero (ver stores/puestos.js).
+// El editor NO tenia WebSocket: al centralizarlo lo gana, y ahora ve en vivo lo que
+// venden los demas mientras se rediseña el plano.
+const auth = useAuthStore();
+const router = useRouter();
+const tienda = usePuestosStore();
+const planoTienda = usePlanoStore();
+const puestos = computed(() => tienda.puestos);
+const catSel = ref(null);
+const modo = ref('mapa'); // mapa | colocar | seleccionar | texto
+
+/*
+ * ---- rotulos libres del plano ----
+ *
+ * "ENTRADA", "TARIMA", "ZONA A". Antes habia que quemarlos en la imagen del plano, asi que
+ * cambiar una palabra obligaba a rehacerla en otro programa y volver a subirla — con el riesgo
+ * de mover el encuadre y descolocar las 400 casetas, porque sus coordenadas son fracciones de
+ * ESA imagen.
+ *
+ * Van por su propio canal en vivo: al guardar, el mapa de todos los vendedores lo ve sin
+ * recargar. Se guardan de uno en uno (no con el lote de posiciones) porque son pocos y se tocan
+ * de a uno; meterlos en el guardado por lotes obligaria a distinguir dos tipos de "sucio".
+ */
+const textosTienda = usePlanoTextosStore();
+const textoSelId = ref(null);
+const textoSel = computed(() => textosTienda.textos.find((t) => t.id === textoSelId.value) || null);
+let arrastreTexto = null;   // { id, x0, y0, base, movido }
+const seleccion = ref(new Set());
+const dirty = ref(new Set());
+/** Devuelto por el store al registrar el guardia de cambios sin guardar; se llama al desmontar. */
+let quitarGuardia = null;
+const mensaje = ref('');
+// Ocupado: una operacion de servidor por vez (guardar, crear, eliminar…).
+const ocupado = ref(false);
+/** `plano` es la IMAGEN: da el rectangulo de referencia para normalizar coordenadas.
+ *  `lienzo` es el contenedor: es quien captura el puntero, porque la imagen lleva
+ *  pointer-events:none y no puede recibir la captura. */
+const plano = ref(null);
+const lienzo = ref(null);
+const porLinea = ref(8);
+// Rejilla opcional: al activarla, la colocación, el arrastre, las flechas y el pegado
+// se alinean a pasos de 2% del plano (PASO_REJILLA).
+const rejilla = ref(false);
+const PASO_REJILLA = 0.02;
+const aRejilla = (v) => (rejilla.value ? Math.round(v / PASO_REJILLA) * PASO_REJILLA : v);
+/** Casetas copiadas (geometría + categoría); pegar las duplica como casetas nuevas. */
+const portapapeles = ref([]);
+const vecesPegado = ref(0);
+const nueva = reactive({
+  abierto: false, nombre: '', cantidad: 10, color: '#2563eb', forma: 'cuadrado',
+  // Precio de venta de cada caseta y su medida. Sin precio, la venta se registraria en 0.
+  precioBase: 0, tamano: '3x3',
+});
+
+// ---- historial de deshacer/rehacer ----
+const historial = ref([]);
+const indice = ref(-1);
+const puedeDeshacer = computed(() => indice.value >= 0);
+const puedeRehacer = computed(() => indice.value < historial.value.length - 1);
+
+const buscar = (id) => puestos.value.find((p) => p.id === id);
+const geom = (p) => ({
+  id: p.id, mapaX: p.mapaX, mapaY: p.mapaY,
+  mapaEscala: p.mapaEscala ?? 1, mapaRotacion: p.mapaRotacion ?? 0,
+});
+
+function marcarSucio(id) {
+  const s = new Set(dirty.value);
+  s.add(id);
+  dirty.value = s;
+}
+
+function aplicarGeom(g) {
+  const p = buscar(g.id);
+  if (!p) return;
+  p.mapaX = g.mapaX;
+  p.mapaY = g.mapaY;
+  p.mapaEscala = g.mapaEscala;
+  p.mapaRotacion = g.mapaRotacion;
+  marcarSucio(g.id);
+}
+
+/** Registra un paso reversible. `antes` se captura ANTES de mutar. */
+function registrar(antes) {
+  const despues = antes.map((g) => geom(buscar(g.id))).filter(Boolean);
+  historial.value = historial.value.slice(0, indice.value + 1);
+  historial.value.push({ antes, despues });
+  indice.value = historial.value.length - 1;
+}
+
+/** Envuelve una mutacion sobre `ids` de modo que quede en el historial. */
+function conHistoria(ids, mutar) {
+  const antes = ids.map((id) => geom(buscar(id))).filter(Boolean);
+  if (!antes.length) return;
+  mutar();
+  registrar(antes);
+}
+
+function deshacer() {
+  if (!puedeDeshacer.value) return;
+  historial.value[indice.value].antes.forEach(aplicarGeom);
+  indice.value--;
+  mensaje.value = 'Deshecho';
+}
+function rehacer() {
+  if (!puedeRehacer.value) return;
+  indice.value++;
+  historial.value[indice.value].despues.forEach(aplicarGeom);
+  mensaje.value = 'Rehecho';
+}
+
+// ---- categorias ----
+const categorias = computed(() => {
+  const m = new Map();
+  for (const p of puestos.value) {
+    if (!m.has(p.categoriaId))
+      m.set(p.categoriaId, {
+        id: p.categoriaId, nombre: p.categoria, color: p.color, forma: p.forma,
+        tamanoMapa: p.tamanoMapa, precio: p.precio, total: 0, puestas: 0,
+      });
+    const c = m.get(p.categoriaId);
+    c.total++;
+    if (p.mapaX != null) c.puestas++;
+  }
+  return [...m.values()].sort((a, b) => b.total - a.total);
+});
+const activa = computed(() => categorias.value.find((c) => c.id === catSel.value));
+const porColocar = computed(() =>
+  puestos.value
+    .filter((p) => p.categoriaId === catSel.value && p.mapaX == null)
+    .sort((a, b) => (parseInt(a.codigo) || 0) - (parseInt(b.codigo) || 0)),
+);
+const colocadas = computed(() => puestos.value.filter((p) => p.mapaX != null));
+// Mismo criterio que el visor: el tope de zoom y el umbral del rótulo salen del tamaño real
+// de las casetas, para que colocar una caseta de 0.005 no obligue a apuntar a un punto.
+const topeZoom = computed(() => anchoParaTocar(colocadas.value));
+const umbralNumeros = computed(() => anchoParaLeer(colocadas.value));
+const seleccionadas = computed(() => [...seleccion.value].map(buscar).filter(Boolean));
+
+// ---- coordenadas ----
+/** Convierte un evento de puntero a coordenada normalizada 0..1 del plano.
+ *  getBoundingClientRect ya devuelve el rect transformado, asi que funciona bajo zoom. */
+function norm(e) {
+  const r = plano.value.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+}
+
+// ---- interaccion con el plano ----
+// caja y linea NO son reactivos: sus estilos se pintan directo al DOM (pintarCaja/pintarGuia)
+// y solo el encendido/apagado del overlay es reactivo. Asi un arrastre no re-renderiza el
+// plano entero (500+ casetas) por cada pixel.
+const caja = { activo: false, x0: 0, y0: 0, x1: 0, y1: 0 };
+const linea = { activo: false, x0: 0, y0: 0, x1: 0, y1: 0 };
+const cajaActiva = ref(false);
+const lineaActiva = ref(false);
+const cajaEl = ref(null);
+const guiaEl = ref(null);
+let arrastre = null; // { antes, x0, y0, movido, actual } al mover una seleccion
+
+/** Nodos DOM de los pines: permiten moverlos en vivo sin pasar por Vue. */
+const pinEls = new Map();
+
+function pintarGuia() {
+  const el = guiaEl.value;
+  if (!el) return;
+  el.style.left = `${linea.x0 * 100}%`;
+  el.style.top = `${linea.y0 * 100}%`;
+  el.style.width = `${Math.hypot(linea.x1 - linea.x0, linea.y1 - linea.y0) * 100}%`;
+  el.style.transform = `rotate(${Math.atan2(linea.y1 - linea.y0, linea.x1 - linea.x0)}rad)`;
+}
+
+function pintarCaja() {
+  const el = cajaEl.value;
+  if (!el) return;
+  el.style.left = `${Math.min(caja.x0, caja.x1) * 100}%`;
+  el.style.top = `${Math.min(caja.y0, caja.y1) * 100}%`;
+  el.style.width = `${Math.abs(caja.x1 - caja.x0) * 100}%`;
+  el.style.height = `${Math.abs(caja.y1 - caja.y0) * 100}%`;
+}
+
+function onDown(e) {
+  if (modo.value === 'mapa') return;
+  lienzo.value.setPointerCapture(e.pointerId);
+  const p = norm(e);
+
+  if (modo.value === 'texto') {
+    // Tocar el fondo crea un rotulo AHI y lo deja seleccionado, listo para escribirle encima.
+    // Pedir el texto antes de colocarlo obligaria a un dialogo y a adivinar donde va a caer.
+    crearTexto(p);
+    return;
+  }
+
+  if (modo.value === 'colocar') {
+    if (catSel.value == null) { mensaje.value = 'Elige o crea una categoría.'; return; }
+    linea.activo = true; lineaActiva.value = true;
+    linea.x0 = linea.x1 = p.x;
+    linea.y0 = linea.y1 = p.y;
+    pintarGuia();
+    return;
+  }
+  // seleccionar: arrastrar sobre el fondo dibuja una caja
+  caja.activo = true; cajaActiva.value = true;
+  caja.x0 = caja.x1 = p.x;
+  caja.y0 = caja.y1 = p.y;
+  pintarCaja();
+}
+
+// ---------------------------------------------------------------- rotulos del plano
+
+/**
+ * Guarda un cambio del rotulo. El servidor lo difunde y todos los planos abiertos lo aplican,
+ * incluido este: por eso no hace falta recargar la lista despues.
+ */
+async function guardarTexto(id, cambios) {
+  try {
+    const r = await apiFetch(`/api/app/plano-textos/${id}`, {
+      method: 'PATCH', body: JSON.stringify(cambios),
+    });
+    if (!r.ok) { mensaje.value = 'No se pudo guardar el texto.'; return; }
+    textosTienda.aplicar(await r.json());
+  } catch (e) {
+    mensaje.value = e.message;
+  }
+}
+
+async function crearTexto(punto) {
+  try {
+    const r = await apiFetch('/api/app/plano-textos', {
+      method: 'POST',
+      body: JSON.stringify({ contenido: 'TEXTO', mapaX: punto.x, mapaY: punto.y }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { mensaje.value = d.mensaje || 'No se pudo crear el texto.'; return; }
+    textosTienda.aplicar(d);
+    textoSelId.value = d.id;
+    mensaje.value = 'Escribe el texto en el panel de la izquierda.';
+  } catch (e) {
+    mensaje.value = e.message;
+  }
+}
+
+function onTextoDown(e, t) {
+  if (modo.value !== 'texto') return;
+  e.stopPropagation();
+  lienzo.value.setPointerCapture(e.pointerId);
+  textoSelId.value = t.id;
+  const p = norm(e);
+  arrastreTexto = { id: t.id, x0: p.x, y0: p.y,
+                    base: { x: t.mapaX ?? 0.5, y: t.mapaY ?? 0.5 }, movido: false };
+}
+
+async function borrarTexto() {
+  const t = textoSel.value;
+  if (!t) return;
+  if (!confirm(`¿Quitar el texto "${t.contenido}" del plano?`)) return;
+  try {
+    const r = await apiFetch(`/api/app/plano-textos/${t.id}`, { method: 'DELETE' });
+    if (!r.ok) { mensaje.value = 'No se pudo quitar el texto.'; return; }
+    // No se espera al aviso del canal: quien borra tiene que verlo desaparecer ya.
+    textosTienda.aplicar({ id: t.id, activo: false });
+    textoSelId.value = null;
+  } catch (e) {
+    mensaje.value = e.message;
+  }
+}
+
+/** El tamaño y el grosor se manejan en numeros legibles y se guardan como fracciones. */
+const aMilesimas = (v) => Math.round((Number(v) || 0) * 1000);
+
+function onPinDown(e, p) {
+  if (modo.value !== 'seleccionar') return;
+  e.stopPropagation();
+  lienzo.value.setPointerCapture(e.pointerId);
+
+  if (e.shiftKey || e.ctrlKey) alternar(p.id);
+  else if (!seleccion.value.has(p.id)) seleccion.value = new Set([p.id]);
+
+  const q = norm(e);
+  arrastre = { antes: seleccionadas.value.map(geom), x0: q.x, y0: q.y, movido: false, actual: { dx: 0, dy: 0 } };
+}
+
+function onMove(e) {
+  if (arrastreTexto) {
+    const q = norm(e);
+    const dx = q.x - arrastreTexto.x0;
+    const dy = q.y - arrastreTexto.y0;
+    if (Math.abs(dx) + Math.abs(dy) > 0.0005) arrastreTexto.movido = true;
+    // Escritura optimista: se mueve en la lista local y el servidor se entera al soltar. Un
+    // PATCH por pixel serian cientos de peticiones por arrastre.
+    const t = textosTienda.textos.find((x) => x.id === arrastreTexto.id);
+    if (t) {
+      t.mapaX = Math.min(1, Math.max(0, arrastreTexto.base.x + dx));
+      t.mapaY = Math.min(1, Math.max(0, arrastreTexto.base.y + dy));
+    }
+    return;
+  }
+  if (linea.activo) { const p = norm(e); linea.x1 = p.x; linea.y1 = p.y; pintarGuia(); return; }
+  if (caja.activo) { const p = norm(e); caja.x1 = p.x; caja.y1 = p.y; pintarCaja(); return; }
+  if (arrastre) {
+    const q = norm(e);
+    const dx = q.x - arrastre.x0;
+    const dy = q.y - arrastre.y0;
+    if (Math.abs(dx) + Math.abs(dy) > 0.0005) arrastre.movido = true;
+    arrastre.actual = { dx, dy };
+    // Movimiento en vivo SIN pasar por Vue: se escribe el estilo directo al DOM de cada pin.
+    // El estado reactivo se confirma de una sola vez al soltar (onUp).
+    for (const g of arrastre.antes) {
+      const el = pinEls.get(g.id);
+      if (!el) continue;
+      el.style.left = `${Math.min(1, Math.max(0, aRejilla(g.mapaX + dx))) * 100}%`;
+      el.style.top = `${Math.min(1, Math.max(0, aRejilla(g.mapaY + dy))) * 100}%`;
+    }
+  }
+}
+
+function onUp() {
+  if (arrastreTexto) {
+    const { id, movido } = arrastreTexto;
+    arrastreTexto = null;
+    if (movido) {
+      const t = textosTienda.textos.find((x) => x.id === id);
+      if (t) guardarTexto(id, { mapaX: t.mapaX, mapaY: t.mapaY });
+    }
+    return;
+  }
+  if (arrastre) {
+    // Un arrastre entero es UN paso del historial, no uno por pixel. Al soltar se confirma
+    // el estado reactivo (un solo re-render, y el DOM ya tiene los valores, asi que el
+    // parche de Vue no vuelve a escribir) y se marca el lote completo como sucio.
+    if (arrastre.movido) {
+      const { dx, dy } = arrastre.actual;
+      const sucios = new Set(dirty.value);
+      for (const g of arrastre.antes) {
+        const p = buscar(g.id);
+        if (!p) continue;
+        p.mapaX = Math.min(1, Math.max(0, aRejilla(g.mapaX + dx)));
+        p.mapaY = Math.min(1, Math.max(0, aRejilla(g.mapaY + dy)));
+        sucios.add(g.id);
+      }
+      dirty.value = sucios;
+      registrar(arrastre.antes);
+    }
+    arrastre = null;
+    return;
+  }
+  if (caja.activo) {
+    caja.activo = false; cajaActiva.value = false;
+    const x1 = Math.min(caja.x0, caja.x1), x2 = Math.max(caja.x0, caja.x1);
+    const y1 = Math.min(caja.y0, caja.y1), y2 = Math.max(caja.y0, caja.y1);
+    if (Math.abs(x2 - x1) < 0.002 && Math.abs(y2 - y1) < 0.002) { seleccion.value = new Set(); return; }
+    const dentro = colocadas.value.filter((p) => p.mapaX >= x1 && p.mapaX <= x2 && p.mapaY >= y1 && p.mapaY <= y2);
+    seleccion.value = new Set(dentro.map((p) => p.id));
+    mensaje.value = `${dentro.length} caseta(s) seleccionadas`;
+    return;
+  }
+  if (!linea.activo) return;
+  linea.activo = false; lineaActiva.value = false;
+  colocar();
+}
+
+/** Toque = coloca una caseta; arrastre = reparte N a lo largo de la linea. */
+function colocar() {
+  const disp = porColocar.value;
+  if (!disp.length) { mensaje.value = 'No quedan casetas por colocar en esta categoría.'; return; }
+  const dist = Math.hypot(linea.x1 - linea.x0, linea.y1 - linea.y0);
+
+  if (dist < CLIC_MAXIMO) {
+    conHistoria([disp[0].id], () => {
+      const p = disp[0];
+      p.mapaX = aRejilla(linea.x1); p.mapaY = aRejilla(linea.y1);
+      marcarSucio(p.id);
+    });
+    mensaje.value = `Colocada ${activa.value?.nombre} ${disp[0].codigo}`;
+    return;
+  }
+  const n = Math.min(porLinea.value, disp.length);
+  const ids = disp.slice(0, n).map((p) => p.id);
+  conHistoria(ids, () => {
+    for (let i = 0; i < n; i++) {
+      const t = n === 1 ? 0 : i / (n - 1);
+      const p = disp[i];
+      p.mapaX = aRejilla(linea.x0 + (linea.x1 - linea.x0) * t);
+      p.mapaY = aRejilla(linea.y0 + (linea.y1 - linea.y0) * t);
+      marcarSucio(p.id);
+    }
+  });
+  mensaje.value = `Colocadas ${n} de ${activa.value?.nombre}`;
+}
+
+function alternar(id) {
+  const s = new Set(seleccion.value);
+  s.has(id) ? s.delete(id) : s.add(id);
+  seleccion.value = s;
+}
+
+// ---- herramientas sobre la seleccion ----
+function escalar(factor) {
+  const ids = [...seleccion.value];
+  if (!ids.length) { mensaje.value = 'Selecciona casetas primero.'; return; }
+  conHistoria(ids, () => {
+    for (const p of seleccionadas.value) {
+      p.mapaEscala = Math.min(ESCALA_MAX, Math.max(ESCALA_MIN, (p.mapaEscala ?? 1) * factor));
+      marcarSucio(p.id);
+    }
+  });
+  mensaje.value = `${ids.length} caseta(s) ${factor > 1 ? 'agrandadas' : 'achicadas'}`;
+}
+
+/**
+ * Tamaño de la selección con un deslizador, en vez de a saltos de 15% con los botones.
+ *
+ * El arrastre pinta en vivo pero deja UN solo paso de deshacer: se guarda la geometría al
+ * agarrar el control y se registra al soltarlo. Si cada movimiento del dedo entrara al
+ * historial, un arrastre dejaría cincuenta pasos y "deshacer" sería inservible.
+ */
+const escalaSeleccion = computed(() => seleccionadas.value[0]?.mapaEscala ?? 1);
+let antesEscala = null;
+
+function iniciarEscala() {
+  antesEscala = [...seleccion.value].map((id) => geom(buscar(id))).filter(Boolean);
+}
+function fijarEscala(valor) {
+  const v = Math.min(ESCALA_MAX, Math.max(ESCALA_MIN, Number(valor)));
+  for (const p of seleccionadas.value) {
+    p.mapaEscala = v;
+    marcarSucio(p.id);
+  }
+}
+function terminarEscala() {
+  if (antesEscala?.length) registrar(antesEscala);
+  antesEscala = null;
+}
+/*
+ * ---- giro de la seleccion ----
+ *
+ * Todas las casetas se dibujaban con la misma orientacion, asi que un pasillo en diagonal o
+ * una fila contra una pared inclinada no se podian representar. El giro es por caseta y va
+ * en grados enteros 0..359, horarios, como los aplica el CSS.
+ *
+ * Mismo reparto que el tamaño: los botones giran un PASO relativo (util para enderezar un
+ * bloque entero sin perder sus diferencias) y el deslizador fija un valor ABSOLUTO igual para
+ * toda la seleccion (util para alinear una fila contra una pared).
+ */
+const GIRO_PASO = 15;
+const giroSeleccion = computed(() => seleccionadas.value[0]?.mapaRotacion ?? 0);
+let antesGiro = null;
+
+/** 0..359 siempre: girar -15 desde 0 tiene que dar 345, no -15. */
+const normalizarGiro = (g) => ((Math.round(Number(g) || 0) % 360) + 360) % 360;
+
+function girar(delta) {
+  const ids = [...seleccion.value];
+  if (!ids.length) { mensaje.value = 'Selecciona casetas primero.'; return; }
+  conHistoria(ids, () => {
+    for (const p of seleccionadas.value) {
+      p.mapaRotacion = normalizarGiro((p.mapaRotacion ?? 0) + delta);
+      marcarSucio(p.id);
+    }
+  });
+  mensaje.value = `${ids.length} caseta(s) giradas ${delta > 0 ? '+' : ''}${delta}°`;
+}
+
+// Igual que el tamaño: el arrastre pinta en vivo pero deja UN solo paso de deshacer.
+function iniciarGiro() {
+  antesGiro = [...seleccion.value].map((id) => geom(buscar(id))).filter(Boolean);
+}
+function fijarGiro(valor) {
+  const v = normalizarGiro(valor);
+  for (const p of seleccionadas.value) {
+    p.mapaRotacion = v;
+    marcarSucio(p.id);
+  }
+}
+function terminarGiro() {
+  if (antesGiro?.length) registrar(antesGiro);
+  antesGiro = null;
+}
+
+function enderezar() {
+  const ids = [...seleccion.value];
+  if (!ids.length) return;
+  conHistoria(ids, () => {
+    for (const p of seleccionadas.value) {
+      p.mapaRotacion = 0;
+      marcarSucio(p.id);
+    }
+  });
+  mensaje.value = `${ids.length} caseta(s) enderezadas`;
+}
+
+function restablecerEscala() {
+  const ids = [...seleccion.value];
+  if (!ids.length) return;
+  conHistoria(ids, () => {
+    for (const p of seleccionadas.value) {
+      p.mapaEscala = 1;
+      marcarSucio(p.id);
+    }
+  });
+  mensaje.value = `${ids.length} caseta(s) al tamaño de su categoría`;
+}
+
+/**
+ * Vista previa local del tamaño de TODA la categoría mientras se arrastra. El PATCH al
+ * servidor va al soltar (`editarActiva`): mandarlo en cada paso del deslizador serían
+ * decenas de peticiones, y `editarActiva` bloquea la barra con `ocupado` en cada una.
+ */
+function previsualizarTamano(valor) {
+  if (!activa.value) return;
+  for (const p of puestos.value) if (p.categoriaId === activa.value.id) p.tamanoMapa = valor;
+}
+
+function desplazar(dx, dy) {
+  const ids = [...seleccion.value];
+  if (!ids.length) return;
+  conHistoria(ids, () => {
+    for (const p of seleccionadas.value) {
+      p.mapaX = Math.min(1, Math.max(0, aRejilla(p.mapaX + dx)));
+      p.mapaY = Math.min(1, Math.max(0, aRejilla(p.mapaY + dy)));
+      marcarSucio(p.id);
+    }
+  });
+}
+
+/** Quita del plano sin borrar: la caseta vuelve a la lista de "por colocar". */
+function quitarDelMapa() {
+  const ids = [...seleccion.value];
+  if (!ids.length) { mensaje.value = 'Selecciona casetas primero.'; return; }
+  conHistoria(ids, () => {
+    for (const p of seleccionadas.value) {
+      p.mapaX = null; p.mapaY = null;
+      marcarSucio(p.id);
+    }
+  });
+  seleccion.value = new Set();
+  mensaje.value = `${ids.length} caseta(s) quitadas del plano (siguen existiendo)`;
+}
+
+/** Baja logica en el servidor. Irreversible desde aqui, y el backend la rechaza si tiene ventas. */
+async function eliminarCasetas() {
+  if (ocupado.value) return;
+  const objetivo = seleccionadas.value;
+  if (!objetivo.length) { mensaje.value = 'Selecciona casetas primero.'; return; }
+  const rotulo = objetivo.map((p) => `${p.categoria} ${p.codigo}`).join(', ');
+  if (!confirm(`¿Eliminar ${objetivo.length} caseta(s)?\n\n${rotulo}\n\nNo se puede deshacer. Las que tengan ventas serán rechazadas.`)) return;
+
+  // Se apuntan antes de borrar: después de `cargar()` las casetas eliminadas ya no están
+  // en la lista y no se sabría qué categorías quedaron con un hueco.
+  const categoriasTocadas = [...new Set(objetivo.map((p) => p.categoriaId))];
+
+  ocupado.value = true;
+  try {
+    let ok = 0;
+    const rechazadas = [];
+    for (const p of objetivo) {
+      const r = await apiFetch(`/api/app/puestos/${p.id}`, { method: 'DELETE' });
+      if (r.ok) ok++;
+      else rechazadas.push(`${p.categoria} ${p.codigo}`);
+    }
+    seleccion.value = new Set();
+    await cargar();
+
+    const partes = [`Eliminadas ${ok} caseta(s)`];
+    if (rechazadas.length) partes.push(`rechazadas (vendidas o reservadas): ${rechazadas.join(', ')}`);
+    // Borrar la 7 de 10 dejaba la numeración en 1..6, 8..10. Se cierra el hueco.
+    if (ok) partes.push(...await compactarNumeracion(categoriasTocadas));
+    mensaje.value = partes.join(' · ');
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+/**
+ * Etiqueta del botón según lo que se hará con la selección actual. Antes decía siempre
+ * "Bloquear", así que tras bloquear una caseta el botón seguía ofreciendo bloquearla —
+ * parecía que no había pasado nada, aunque el pin ya estuviera plomo.
+ */
+const accionBloqueo = computed(() => {
+  const sel = seleccionadas.value.filter((p) => p.estado === 'L' || p.estado === 'X');
+  const bloqueadas = sel.filter((p) => p.estado === 'X').length;
+  if (sel.length && bloqueadas === sel.length) {
+    return { txt: '🔓 Desbloquear', titulo: 'Devuelve la caseta a la venta' };
+  }
+  if (bloqueadas) {
+    return { txt: '🔒 Bloquear/Desbloquear', titulo: 'La selección mezcla libres y bloqueadas: cada una cambia al estado contrario' };
+  }
+  return { txt: '🔒 Bloquear', titulo: 'Saca la caseta de la venta (reparación)' };
+});
+
+/** Bloquea las libres (X por reparación) y desbloquea las bloqueadas. Reversible. */
+async function alternarBloqueo() {
+  if (ocupado.value) return;
+  const objetivo = seleccionadas.value.filter((p) => p.estado === 'L' || p.estado === 'X');
+  if (!objetivo.length) { mensaje.value = 'Selecciona casetas libres o bloqueadas.'; return; }
+
+  ocupado.value = true;
+  try {
+    let ok = 0;
+    const rechazadas = [];
+    for (const p of objetivo) {
+      const accion = p.estado === 'L' ? 'bloquear' : 'desbloquear';
+      const r = await apiFetch(`/api/app/puestos/${p.id}/${accion}`, { method: 'POST' });
+      if (r.ok) ok++;
+      else rechazadas.push(`${p.categoria} ${p.codigo}`);
+    }
+    await cargar();
+    mensaje.value = rechazadas.length
+      ? `Bloqueadas/desbloqueadas ${ok}. Rechazadas: ${rechazadas.join(', ')}`
+      : `Bloqueadas/desbloqueadas ${ok} caseta(s)`;
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+/** Copia la geometría (y categoría) de las seleccionadas; no toca el servidor. */
+function copiarSeleccion() {
+  const sel = seleccionadas.value.filter((p) => p.mapaX != null);
+  if (!sel.length) { mensaje.value = 'Selecciona casetas colocadas primero.'; return; }
+  portapapeles.value = sel.map((p) => ({
+    categoriaId: p.categoriaId, tamano: p.tamano || '3x3',
+    mapaX: p.mapaX, mapaY: p.mapaY, mapaEscala: p.mapaEscala ?? 1,
+    mapaRotacion: p.mapaRotacion ?? 0,
+  }));
+  vecesPegado.value = 0;
+  mensaje.value = `${portapapeles.value.length} caseta(s) copiadas. Pega con Ctrl+V.`;
+}
+
+/**
+ * Duplica lo copiado como casetas NUEVAS (alta inmediata en el servidor, igual que
+ * "agregar caseta") y las coloca desplazadas. Cada pegado corre 3% más respecto al
+ * anterior, para no superponerse; con rejilla activa el desplazamiento se alinea.
+ */
+async function pegar() {
+  if (ocupado.value) return;
+  if (!portapapeles.value.length) { mensaje.value = 'Primero copia casetas (Ctrl+C).'; return; }
+  ocupado.value = true;
+  vecesPegado.value++;
+  try {
+    const despl = aRejilla(0.03) * vecesPegado.value;
+    const usadosPorCat = new Map();
+    const posiciones = [];
+    for (const c of portapapeles.value) {
+      let usados = usadosPorCat.get(c.categoriaId);
+      if (!usados) {
+        usados = new Set(puestos.value.filter((p) => p.categoriaId === c.categoriaId).map((p) => parseInt(p.codigo) || 0));
+        usadosPorCat.set(c.categoriaId, usados);
+      }
+      let codigo = 1;
+      while (usados.has(codigo)) codigo++;
+      usados.add(codigo);
+      const r = await apiFetch('/api/app/puestos', {
+        method: 'POST',
+        body: JSON.stringify({ categoriaId: c.categoriaId, codigo: String(codigo), tamano: c.tamano }),
+      });
+      const d = await r.json();
+      if (!d.ok) continue;
+      posiciones.push({
+        id: d.id,
+        x: Math.min(1, Math.max(0, aRejilla(c.mapaX) + despl)),
+        y: Math.min(1, Math.max(0, aRejilla(c.mapaY) + despl)),
+        escala: c.mapaEscala,
+        rotacion: c.mapaRotacion ?? 0,
+      });
+    }
+    if (!posiciones.length) { mensaje.value = 'No se pudo pegar: el servidor rechazó las altas.'; return; }
+    await apiFetch('/api/app/puestos/posiciones', { method: 'POST', body: JSON.stringify(posiciones) });
+    await cargar();
+    seleccion.value = new Set(posiciones.map((p) => p.id));
+    mensaje.value = `Pegadas ${posiciones.length} caseta(s).`;
+  } catch (e) {
+    mensaje.value = e.message;
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+/** Añade una caseta suelta a la categoría activa; queda sin colocar. */
+async function agregarCaseta() {
+  if (ocupado.value) return;
+  if (!activa.value) { mensaje.value = 'Elige una categoría.'; return; }
+  ocupado.value = true;
+  try {
+    const usados = puestos.value.filter((p) => p.categoriaId === catSel.value).map((p) => parseInt(p.codigo) || 0);
+    const codigo = String(Math.max(0, ...usados) + 1);
+    const r = await apiFetch('/api/app/puestos', {
+      method: 'POST',
+      body: JSON.stringify({ categoriaId: catSel.value, codigo, tamano: '3x3' }),
+    });
+    const d = await r.json();
+    if (!d.ok) { mensaje.value = d.mensaje || 'No se pudo crear'; return; }
+    await cargar();
+    modo.value = 'colocar';
+    mensaje.value = `Caseta ${activa.value.nombre} ${codigo} creada. Tócala en el plano para colocarla.`;
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+/** Renombra la categoría activa. */
+async function renombrar(nombre) {
+  const limpio = (nombre || '').trim();
+  if (!activa.value || !limpio || limpio === activa.value.nombre) return;
+  await editarActiva('nombre', limpio);
+  mensaje.value = `Renombrada a "${limpio}"`;
+}
+
+/**
+ * Lleva la categoría a la cantidad indicada. El backend crea o anula según haga falta,
+ * pero nunca sacrifica una caseta vendida o reservada: si al reducir quedan de esas, lo avisa.
+ */
+async function aplicarCantidad(valor) {
+  if (ocupado.value) return;
+  if (!activa.value) return;
+  const n = parseInt(valor, 10);
+  if (isNaN(n) || n < 0) { mensaje.value = 'Cantidad inválida.'; return; }
+  if (n === activa.value.total) return;
+  const categoriaId = activa.value.id;
+  ocupado.value = true;
+  try {
+    const r = await apiFetch(`/api/app/categorias/${categoriaId}/cantidad`, {
+      method: 'PATCH', body: JSON.stringify({ cantidad: n }),
+    });
+    const d = await r.json();
+    if (!d.ok) { mensaje.value = d.mensaje || 'No se pudo ajustar la cantidad.'; return; }
+    await cargar();
+    const partes = [];
+    if (d.creadas) partes.push(`${d.creadas} creada(s)`);
+    if (d.anuladas) partes.push(`${d.anuladas} eliminada(s)`);
+    if (d.noQuitadas) partes.push(`${d.noQuitadas} no se pudieron quitar (vendidas o reservadas)`);
+    // Bajar la cantidad salta las vendidas, así que puede dejar huecos igual que un borrado.
+    if (d.anuladas) partes.push(...await compactarNumeracion([categoriaId]));
+    mensaje.value = partes.length ? partes.join(', ') : 'Sin cambios';
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+/** Elimina la categoría entera. El servidor la rechaza si alguna caseta tiene ventas. */
+async function eliminarCategoria() {
+  if (ocupado.value) return;
+  if (!activa.value) return;
+  const c = activa.value;
+  if (!confirm(`¿Eliminar la categoría "${c.nombre}" y sus ${c.total} caseta(s)?\n\nNo se puede deshacer. Si alguna tiene ventas o reservas, se rechazará por completo.`)) return;
+  ocupado.value = true;
+  try {
+    const r = await apiFetch(`/api/app/categorias/${c.id}`, { method: 'DELETE' });
+    const d = await r.json();
+    if (!d.ok) { mensaje.value = d.mensaje || 'No se pudo eliminar.'; return; }
+    catSel.value = null;
+    await cargar();
+    mensaje.value = `Categoría "${c.nombre}" eliminada (${d.eliminadas} caseta(s))`;
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+/*
+ * ---- numeración ----
+ *
+ * El número de la caseta (`codigo`) es como se la nombra: el vendedor le dice al cliente
+ * "la 14" y el cliente la busca en el plano. Al crearlas se numeran por orden de creación,
+ * que no tiene nada que ver con dónde acaban puestas, así que un pasillo puede quedar
+ * 7-3-19-5. Esto renumera lo seleccionado siguiendo el recorrido físico.
+ *
+ * Va al servidor de una sola vez, como lote: renumerar es una permutación (la 3 pasa a ser
+ * la 5 y la 5 a ser la 3) y mandarlo caseta por caseta pasaría por estados con números
+ * repetidos. El backend valida el conjunto entero y, si choca, no escribe nada.
+ */
+const inicioNumeracion = ref(1);
+const ordenNumeracion = ref('filas'); // filas | columnas
+
+/** Lo que se numeraría ahora mismo, en el orden en que se va a numerar. */
+const aNumerar = computed(() =>
+  ordenLectura(seleccionadas.value, planoTienda.aspecto, ordenNumeracion.value === 'columnas'));
+
+async function numerarSeleccion() {
+  if (ocupado.value) return;
+  const orden = aNumerar.value;
+  if (!orden.length) { mensaje.value = 'Selecciona casetas colocadas primero.'; return; }
+  const inicio = parseInt(inicioNumeracion.value, 10);
+  if (!Number.isFinite(inicio) || inicio < 0) { mensaje.value = 'Número inicial inválido.'; return; }
+
+  ocupado.value = true;
+  try {
+    const cambios = orden.map((p, i) => ({ id: p.id, codigo: String(inicio + i) }));
+    const r = await apiFetch('/api/app/puestos/codigos', {
+      method: 'PATCH', body: JSON.stringify(cambios),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!d.ok) { mensaje.value = d.mensaje || 'No se pudo renumerar.'; return; }
+    // Sin recargar: los números nuevos llegan por el broadcast, como cualquier otro cambio.
+    mensaje.value = `Numeradas ${orden.length} caseta(s): ${inicio}–${inicio + orden.length - 1}`;
+  } catch (e) {
+    mensaje.value = e.message;
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+/**
+ * Cierra los huecos de numeración de unas categorías: si se elimina la caseta 7 de 10, las
+ * que venían detrás bajan un número y la categoría vuelve a ser 1..N corrida.
+ *
+ * Conserva el orden numérico que ya tenían, así que **solo viaja lo que cambia** — y eso es
+ * lo que la hace usable con la feria en marcha: una caseta vendida que esté por delante del
+ * hueco no entra en el lote y no lo bloquea. Si la vendida está detrás, el backend rechaza esa
+ * categoría entera (renumerarla reescribiría su recibo) y aquí solo se avisa: la eliminación
+ * ya se hizo y no se deshace por esto.
+ */
+async function compactarNumeracion(categoriaIds) {
+  const partes = [];
+  for (const catId of new Set(categoriaIds)) {
+    const cambios = numeracionCompacta(puestos.value, catId);
+    if (!cambios.length) continue;
+
+    const nombre = puestos.value.find((p) => p.categoriaId === catId)?.categoria ?? 'la categoría';
+    try {
+      const r = await apiFetch('/api/app/puestos/codigos', {
+        method: 'PATCH', body: JSON.stringify(cambios),
+      });
+      const d = await r.json().catch(() => ({}));
+      partes.push(d.ok
+        ? `${nombre} renumerada (${d.cambiados})`
+        : `${nombre} sin renumerar: ${d.mensaje || 'rechazado'}`);
+    } catch (e) {
+      partes.push(`${nombre} sin renumerar: ${e.message}`);
+    }
+  }
+  return partes;
+}
+
+/** Cierra los huecos de la categoría activa a petición, sin tener que borrar nada. */
+async function compactarActiva() {
+  if (ocupado.value || !activa.value) return;
+  ocupado.value = true;
+  try {
+    const partes = await compactarNumeracion([activa.value.id]);
+    mensaje.value = partes.length ? partes.join(' · ') : 'La numeración ya está corrida (1..N)';
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+// ---- guardado ----
+async function guardar() {
+  if (ocupado.value) return;
+  const pos = [...dirty.value].map((id) => {
+    const p = buscar(id);
+    return { id, x: p.mapaX, y: p.mapaY, escala: p.mapaEscala ?? 1, rotacion: p.mapaRotacion ?? 0 };
+  });
+  ocupado.value = true;
+  try {
+    const r = await apiFetch('/api/app/puestos/posiciones', { method: 'POST', body: JSON.stringify(pos) });
+    const d = await r.json();
+    mensaje.value = `Guardadas ${d.guardadas} casetas ✔`;
+    dirty.value = new Set();
+    historial.value = [];
+    indice.value = -1;
+  } catch (e) {
+    mensaje.value = e.message;
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+// ---- apariencia de la categoria (afecta a todas sus casetas) ----
+async function editarActiva(campo, valor) {
+  if (ocupado.value) return;
+  if (!activa.value) return;
+  ocupado.value = true;
+  try {
+    const r = await apiFetch(`/api/app/categorias/${activa.value.id}`, {
+      method: 'PATCH', body: JSON.stringify({ [campo]: valor }),
+    });
+    if (!r.ok) { mensaje.value = 'No se pudo actualizar la categoría'; return; }
+    for (const p of puestos.value) if (p.categoriaId === activa.value.id) p[campo] = valor;
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+/**
+ * Cambia el precio de la categoria. Va aparte de `editarActiva` porque el campo no se
+ * llama igual a los dos lados: en la categoria es `precioBase` y en cada caseta llega
+ * como `precio`. Cambiarlo NO altera las ventas ya hechas: el costo se congela en la
+ * inscripcion al vender.
+ */
+// ---- fotos y referencia de las casetas seleccionadas ----
+const entradaFoto = ref(null);
+const entradaPlano = ref(null);
+
+/**
+ * Convierte la primera pagina de un PDF a una imagen de alta calidad (canvas -> blob).
+ * Usa pdf.js para renderizar a 2x escala para buen soporte de zoom.
+ */
+async function pdfAImagen(archivo) {
+  const arrayBuffer = await archivo.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pagina = await pdf.getPage(1);
+
+  const viewport = pagina.getViewport({ scale: 2.0 });
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+
+  await pagina.render({ canvasContext: context, viewport }).promise;
+
+  return new Blob([await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 0.9))], { type: 'image/png' });
+}
+
+/**
+ * Reemplaza la imagen del plano de la edicion activa.
+ * Acepta PDF: se renderiza la primera pagina a 2x y se sube como PNG.
+ *
+ * Se avisa ANTES de subir porque el efecto no se puede deshacer con un botón: las casetas
+ * guardan su sitio como fracciones 0..1 de la imagen, asi que un plano con OTRO encuadre
+ * deja todo lo colocado fuera de lugar. Mismo encuadre en mas resolucion no las mueve.
+ */
+async function subirPlano(evento) {
+  const archivo = evento.target.files?.[0];
+  evento.target.value = '';
+  if (!archivo) return;
+
+  const colocadas = puestos.value.filter((p) => p.mapaX != null).length;
+  const aviso = colocadas
+    ? `Hay ${colocadas} caseta(s) colocadas. Si el plano nuevo tiene otro encuadre quedarán descolocadas y habrá que recolocarlas. ¿Continuar?`
+    : '¿Reemplazar el plano de la feria?';
+  if (!confirm(aviso)) return;
+
+  ocupado.value = true;
+  try {
+    let archivoSubir = archivo;
+    if (archivo.type === 'application/pdf') {
+      mensaje.value = 'Renderizando PDF…';
+      archivoSubir = new File([await pdfAImagen(archivo)], 'plano.png', { type: 'image/png' });
+    }
+
+    const datos = new FormData();
+    datos.append('archivo', archivoSubir);
+    const r = await apiFetch('/api/app/plano', { method: 'POST', body: datos });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.ok) {
+      planoTienda.aplicar(d.plano);
+      mensaje.value = d.mensaje || 'Plano actualizado';
+    } else {
+      mensaje.value = d.mensaje || 'No se pudo actualizar el plano';
+    }
+  } catch (e) {
+    mensaje.value = e.message;
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+/**
+ * Sube UNA foto y la asocia a TODAS las casetas seleccionadas.
+ *
+ * El lote no es un extra: una feria tiene filas de casetas identicas, y subir la misma
+ * imagen de una en una para 40 casetas no lo hace nadie. El archivo se guarda una sola vez
+ * en el servidor; las casetas comparten la ruta.
+ */
+async function subirFoto(evento) {
+  const archivo = evento.target.files?.[0];
+  evento.target.value = '';
+  if (!archivo) return;
+  const ids = [...seleccion.value];
+  if (!ids.length) { mensaje.value = 'Selecciona casetas primero.'; return; }
+
+  ocupado.value = true;
+  try {
+    const datos = new FormData();
+    datos.append('archivo', archivo);
+    for (const id of ids) datos.append('puestos', id);
+    const r = await apiFetch('/api/app/puestos/fotos', { method: 'POST', body: datos });
+    const d = await r.json().catch(() => ({}));
+    mensaje.value = d.mensaje || (r.ok ? 'Foto agregada' : 'No se pudo subir la foto');
+  } catch (e) {
+    mensaje.value = e.message;
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+/** Guarda la referencia de ubicación en todas las casetas seleccionadas. */
+async function guardarReferencia(texto) {
+  const ids = [...seleccion.value];
+  if (!ids.length) return;
+  ocupado.value = true;
+  try {
+    for (const id of ids) {
+      await apiFetch(`/api/app/puestos/${id}/referencia`, {
+        method: 'PATCH', body: JSON.stringify({ referencia: texto }),
+      });
+      const p = buscar(id);
+      if (p) p.referencia = texto;
+    }
+    mensaje.value = `Ubicación guardada en ${ids.length} caseta(s)`;
+  } catch (e) {
+    mensaje.value = e.message;
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+async function cambiarPrecio(valor) {
+  if (ocupado.value || !activa.value) return;
+  const precio = Number(valor);
+  if (!Number.isFinite(precio) || precio < 0) { mensaje.value = 'Precio inválido.'; return; }
+  ocupado.value = true;
+  try {
+    const r = await apiFetch(`/api/app/categorias/${activa.value.id}`, {
+      method: 'PATCH', body: JSON.stringify({ precioBase: precio }),
+    });
+    if (!r.ok) { mensaje.value = 'No se pudo cambiar el precio'; return; }
+    for (const p of puestos.value) if (p.categoriaId === activa.value.id) p.precio = precio;
+    mensaje.value = `Precio de "${activa.value.nombre}": ${precio} Bs`;
+  } catch (e) {
+    mensaje.value = e.message;
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+async function crearCategoria() {
+  if (ocupado.value) return;
+  if (!nueva.nombre.trim()) { mensaje.value = 'Ponle un nombre a la categoría.'; return; }
+  ocupado.value = true;
+  try {
+    const r = await apiFetch('/api/app/categorias', {
+      method: 'POST',
+      body: JSON.stringify({
+        nombre: nueva.nombre, cantidad: nueva.cantidad, color: nueva.color, forma: nueva.forma,
+        precioBase: nueva.precioBase, tamano: nueva.tamano,
+      }),
+    });
+    const d = await r.json();
+    if (!d.ok) { mensaje.value = d.mensaje || 'Error'; return; }
+    await cargar();
+    catSel.value = d.id;
+    modo.value = 'colocar';
+    nueva.abierto = false;
+    mensaje.value = `Categoría "${nueva.nombre}" creada (${nueva.cantidad} casetas a ${nueva.precioBase} Bs). Modo Colocar activo.`;
+    nueva.nombre = '';
+  } catch (e) {
+    mensaje.value = e.message;
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+// ---- teclado ----
+function onTecla(e) {
+  if (e.target.tagName === 'INPUT') return;
+  const paso = e.shiftKey ? 0.005 : 0.001;
+  if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? rehacer() : deshacer(); }
+  else if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); rehacer(); }
+  else if (e.ctrlKey && e.key.toLowerCase() === 'c') { e.preventDefault(); copiarSeleccion(); }
+  else if (e.ctrlKey && e.key.toLowerCase() === 'v') { e.preventDefault(); pegar(); }
+  else if (e.key === 'Escape') seleccion.value = new Set();
+  // Girar con una tecla: colocar un pasillo en diagonal son decenas de giros seguidos y
+  // bajar al deslizador cada vez rompe el ritmo. Sin Ctrl, que Ctrl+R recarga la pagina.
+  else if (!e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'r') {
+    e.preventDefault();
+    girar(e.shiftKey ? -GIRO_PASO : GIRO_PASO);
+  }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); desplazar(-paso, 0); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); desplazar(paso, 0); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); desplazar(0, -paso); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); desplazar(0, paso); }
+}
+
+async function cargar() {
+  await tienda.recargar();
+  if (catSel.value == null && categorias.value.length) catSel.value = categorias.value[0].id;
+}
+
+/** El WebSocket rechazo el token: sin tiempo real el plano miente, asi que salimos. */
+function sesionCaducada() {
+  auth.logout();
+  router.push('/login');
+}
+
+onMounted(async () => {
+  // Un broadcast trae la geometria que hay en el servidor. Si el usuario ya movio esa
+  // caseta y aun no ha guardado, aceptar el mensaje entero le desharia el arrastre; el
+  // guardia hace que se acepte el estado de venta pero se conserve la posicion local.
+  quitarGuardia = tienda.protegerLocales((id) => dirty.value.has(id));
+  planoTienda.asegurar();
+  // Los rotulos del plano, con su canal en vivo: dos administradores editando a la vez ven
+  // los cambios del otro sin recargar.
+  textosTienda.asegurar();
+  await tienda.asegurar(sesionCaducada);
+  if (catSel.value == null && categorias.value.length) catSel.value = categorias.value[0].id;
+});
+// El editor vive en KeepAlive (AppLayout): el teclado solo debe escuchar mientras
+// la vista esta visible, no mientras esta en cache y el usuario esta en otro modulo.
+onActivated(() => window.addEventListener('keydown', onTecla));
+onDeactivated(() => window.removeEventListener('keydown', onTecla));
+onUnmounted(() => {
+  window.removeEventListener('keydown', onTecla);
+  if (quitarGuardia) quitarGuardia();
+});
+</script>
+
+<template>
+  <div class="toolbar">
+      <div class="grupo">
+        <button :class="{ on: modo === 'mapa' }" @click="modo = 'mapa'" title="Navegar el plano">🖐 Mapa</button>
+        <button :class="{ on: modo === 'colocar' }" @click="modo = 'colocar'" title="Tocar coloca; arrastrar coloca una línea">➕ Colocar</button>
+        <button :class="{ on: modo === 'seleccionar' }" @click="modo = 'seleccionar'" title="Arrastrar selecciona; arrastrar un pin lo mueve">⬚ Seleccionar</button>
+        <button :class="{ on: modo === 'texto' }" @click="modo = 'texto'"
+                title="Tocar el plano coloca un texto; arrastrarlo lo mueve">🔤 Texto</button>
+      </div>
+
+      <!-- Panel del rotulo. Solo en modo texto: en los otros modos ocuparia sitio para algo
+           que no se puede tocar. -->
+      <div v-if="modo === 'texto'" class="grupo grupo-texto">
+        <template v-if="textoSel">
+          <label class="campo">
+            <span>Texto</span>
+            <input class="control" :value="textoSel.contenido" maxlength="200"
+                   @input="guardarTexto(textoSel.id, { contenido: $event.target.value })" />
+          </label>
+          <label class="campo">
+            <span>Tamaño · {{ aMilesimas(textoSel.tamano) }}‰</span>
+            <input type="range" min="5" max="120" :value="aMilesimas(textoSel.tamano)"
+                   @input="guardarTexto(textoSel.id, { tamano: Number($event.target.value) / 1000 })" />
+          </label>
+          <div class="dos-colores">
+            <label class="campo">
+              <span>Color</span>
+              <input type="color" class="control control-color" :value="textoSel.color"
+                     @input="guardarTexto(textoSel.id, { color: $event.target.value })" />
+            </label>
+            <label class="campo">
+              <span>Borde</span>
+              <input type="color" class="control control-color" :value="textoSel.colorBorde"
+                     @input="guardarTexto(textoSel.id, { colorBorde: $event.target.value })" />
+            </label>
+          </div>
+          <label class="campo">
+            <span>Grosor del borde · {{ aMilesimas(textoSel.grosorBorde) }}‰</span>
+            <!-- El grosor es fraccion del TAMAÑO de la letra, no del plano: asi el contorno
+                 crece con ella en vez de quedarse fino al agrandar el texto. -->
+            <input type="range" min="0" max="400" :value="aMilesimas(textoSel.grosorBorde)"
+                   @input="guardarTexto(textoSel.id, { grosorBorde: Number($event.target.value) / 1000 })" />
+          </label>
+          <label class="campo">
+            <span>Giro · {{ Math.round(textoSel.rotacion || 0) }}°</span>
+            <input type="range" min="-180" max="180" :value="textoSel.rotacion || 0"
+                   @input="guardarTexto(textoSel.id, { rotacion: Number($event.target.value) })" />
+          </label>
+          <button class="btn-peligro" @click="borrarTexto">🗑 Quitar texto</button>
+        </template>
+        <p v-else class="ayuda-texto">
+          Toca el plano para poner un texto. Luego tócalo para seleccionarlo y arrástralo
+          para moverlo.
+        </p>
+      </div>
+
+      <label v-if="modo === 'colocar'" class="campo">
+        Por línea <input type="number" min="1" max="60" v-model.number="porLinea" />
+      </label>
+      <label class="campo" title="Alinea la colocación, el arrastre y el pegado a pasos de 2%">
+        <input type="checkbox" v-model="rejilla" /> ⧉ Rejilla
+      </label>
+      <label class="campo" title="Rotula cada caseta con su número. Hay que acercarse para leerlo: al ver la feria entera no cabe.">
+        <input type="checkbox" v-model="numerosVisibles" /> 🔢 Números
+      </label>
+
+      <div v-if="modo === 'seleccionar'" class="grupo">
+        <span class="cuenta">{{ seleccion.size }} sel.</span>
+        <button :disabled="ocupado || !seleccion.size" @click="copiarSeleccion" title="Copiar geometría (Ctrl+C)">📄 Copiar</button>
+        <button :disabled="ocupado || !portapapeles.length" @click="pegar" title="Duplicar como casetas nuevas (Ctrl+V)">📋 Pegar</button>
+        <button :disabled="ocupado || !seleccion.size" @click="escalar(1 / 1.15)" title="Achicar un paso">🔍−</button>
+        <label class="campo escala" title="Tamaño de las casetas seleccionadas">
+          <input type="range" :min="ESCALA_MIN" :max="ESCALA_MAX" step="0.05"
+                 :value="escalaSeleccion" :disabled="ocupado || !seleccion.size"
+                 @pointerdown="iniciarEscala"
+                 @input="fijarEscala($event.target.value)"
+                 @change="terminarEscala" />
+          <span class="val">{{ Math.round(escalaSeleccion * 100) }}%</span>
+        </label>
+        <button :disabled="ocupado || !seleccion.size" @click="escalar(1.15)" title="Agrandar un paso">🔍+</button>
+        <button :disabled="ocupado || !seleccion.size" @click="restablecerEscala" title="Volver al tamaño de su categoría">↺</button>
+      </div>
+
+      <!-- Giro. Separado del tamaño para que no se confundan dos deslizadores seguidos. -->
+      <div v-if="modo === 'seleccionar'" class="grupo">
+        <button :disabled="ocupado || !seleccion.size" @click="girar(-GIRO_PASO)"
+                :title="`Girar ${GIRO_PASO}° a la izquierda`">⟲</button>
+        <label class="campo deslizador" title="Mismo ángulo para toda la selección">
+          Giro
+          <input type="range" min="0" max="355" step="5"
+                 :value="giroSeleccion" :disabled="ocupado || !seleccion.size"
+                 @pointerdown="iniciarGiro"
+                 @input="fijarGiro($event.target.value)"
+                 @change="terminarGiro" />
+          <span class="val">{{ giroSeleccion }}°</span>
+        </label>
+        <button :disabled="ocupado || !seleccion.size" @click="girar(GIRO_PASO)"
+                :title="`Girar ${GIRO_PASO}° a la derecha (tecla R; con Shift, al revés)`">⟳</button>
+        <button :disabled="ocupado || !seleccion.size" @click="girar(90)" title="Un cuarto de vuelta">90°</button>
+        <button :disabled="ocupado || !seleccion.size" @click="enderezar" title="Dejarlas derechas">⊾ Enderezar</button>
+        <button :disabled="ocupado || !seleccion.size" @click="quitarDelMapa" title="Quitar del plano, sin borrar">⏏ Quitar</button>
+        <button :disabled="ocupado || !seleccion.size" @click="alternarBloqueo" :title="accionBloqueo.titulo">{{ accionBloqueo.txt }}</button>
+        <button :disabled="ocupado || !seleccion.size" class="peligro" @click="eliminarCasetas" title="Baja definitiva">🗑 Eliminar</button>
+      </div>
+
+      <!-- Numerar: el número es como se nombra la caseta ("la 14"), así que tiene que
+           seguir el recorrido del pasillo y no el orden en que se fueron creando. Se aplica
+           a la selección entera, porque una fila se numera de una vez o no se numera. -->
+      <div v-if="modo === 'seleccionar'" class="grupo">
+        <label class="campo" title="Número que recibirá la primera caseta del recorrido">
+          Nº desde <input type="number" min="0" v-model.number="inicioNumeracion" />
+        </label>
+        <select v-model="ordenNumeracion" class="orden" title="Cómo se recorre la selección">
+          <option value="filas">↔ Por filas</option>
+          <option value="columnas">↕ Por columnas</option>
+        </select>
+        <button :disabled="ocupado || !aNumerar.length" @click="numerarSeleccion"
+                :title="aNumerar.length ? `Numera ${aNumerar.length} caseta(s), de ${inicioNumeracion} a ${inicioNumeracion + aNumerar.length - 1}` : 'Selecciona casetas colocadas'">
+          🔢 Numerar<span v-if="aNumerar.length"> ({{ aNumerar.length }})</span>
+        </button>
+      </div>
+
+      <!-- Documentar la caseta: lo que el vendedor le enseñará al cliente desde el mapa.
+           Ambas acciones se aplican a TODA la selección: en una feria hay filas enteras de
+           casetas iguales y hacerlo de una en una no lo haría nadie. -->
+      <div class="grupo">
+        <input ref="entradaFoto" type="file" accept="image/*" class="oculto" @change="subirFoto" />
+        <button :disabled="ocupado || !seleccion.size" @click="entradaFoto?.click()"
+                title="Sube una foto y la asigna a todas las casetas seleccionadas">📷 Foto</button>
+        <input class="referencia" type="text" placeholder="Ubicación (ej. frente a puerta 3)"
+               :disabled="ocupado || !seleccion.size"
+               @change="guardarReferencia($event.target.value)"
+               @keyup.enter="$event.target.blur()"
+               title="Se guarda en todas las casetas seleccionadas" />
+      </div>
+
+<!-- Reemplazar el plano de la feria. No hace falta recompilar el APK: la imagen la
+            sirve el servidor y las apps la recogen al abrir el mapa. -->
+      <div class="grupo">
+        <input ref="entradaPlano" type="file" accept="image/png,image/jpeg,application/pdf" class="oculto" @change="subirPlano" />
+        <button :disabled="ocupado" @click="entradaPlano?.click()"
+                title="Sube una imagen o PDF del plano para esta edición (PNG, JPG o PDF)">🗺 Cambiar plano</button>
+        <span class="cuenta" :title="planoTienda.plano.propio ? 'Plano subido para esta edición' : 'Plano de respaldo que viene en la app'">
+          {{ planoTienda.plano.ancho }}×{{ planoTienda.plano.alto }}{{ planoTienda.plano.propio ? ` · v${planoTienda.plano.version}` : ' · respaldo' }}
+        </span>
+      </div>
+
+      <div class="grupo">
+        <button :disabled="!puedeDeshacer" @click="deshacer" title="Deshacer (Ctrl+Z)">↶</button>
+        <button :disabled="!puedeRehacer" @click="rehacer" title="Rehacer (Ctrl+Shift+Z)">↷</button>
+      </div>
+
+      <div v-if="activa" class="grupo apariencia">
+        <span class="et">{{ activa.nombre }}</span>
+        <input type="color" :value="activa.color || '#2563eb'" title="Color"
+               @change="editarActiva('color', $event.target.value)" />
+        <button v-for="f in FORMAS" :key="f.id" class="forma"
+                :class="{ on: (activa.forma || 'cuadrado') === f.id }"
+                @click="editarActiva('forma', f.id)">{{ f.icono }}</button>
+        <label class="campo escala" title="Tamaño base de toda la categoría">
+          Tamaño
+          <input type="range" min="0.004" max="0.05" step="0.001"
+                 :value="activa.tamanoMapa ?? 0.012"
+                 @input="previsualizarTamano(Number($event.target.value))"
+                 @change="editarActiva('tamanoMapa', Number($event.target.value))" />
+          <span class="val">{{ ((activa.tamanoMapa ?? 0.012) * 100).toFixed(1) }}%</span>
+        </label>
+      </div>
+
+      <button class="guardar" :disabled="ocupado || dirty.size === 0" @click="guardar">
+        {{ ocupado ? 'Guardando…' : `Guardar (${dirty.size})` }}
+      </button>
+    </div>
+
+    <p v-if="mensaje" class="msg">{{ mensaje }}</p>
+
+    <div class="cuerpo">
+      <aside>
+        <button class="nueva-btn" @click="nueva.abierto = !nueva.abierto">＋ Nueva categoría</button>
+        <div v-if="nueva.abierto" class="form">
+          <input v-model="nueva.nombre" placeholder="Nombre" />
+          <label>Cantidad <input type="number" min="1" v-model.number="nueva.cantidad" /></label>
+          <label title="Precio de venta de cada caseta de esta categoría">
+            Precio (Bs) <input type="number" min="0" step="1" v-model.number="nueva.precioBase" />
+          </label>
+          <label title="Medida que se le enseña al cliente, p. ej. 3x3">
+            Medida <input v-model="nueva.tamano" placeholder="3x3" />
+          </label>
+          <label>Color <input type="color" v-model="nueva.color" /></label>
+          <div class="formas">
+            <button v-for="f in FORMAS" :key="f.id" :class="{ on: nueva.forma === f.id }" @click="nueva.forma = f.id">{{ f.icono }}</button>
+          </div>
+          <button class="crear" :disabled="ocupado" @click="crearCategoria">
+            {{ ocupado ? 'Creando…' : 'Crear' }}
+          </button>
+        </div>
+
+        <div v-if="activa" class="gestion" :key="activa.id">
+          <label class="campo-col">
+            Nombre
+            <input :value="activa.nombre" @change="renombrar($event.target.value)"
+                   @keyup.enter="$event.target.blur()" />
+          </label>
+          <label class="campo-col">
+            Precio por caseta (Bs)
+            <input type="number" min="0" step="1" :value="activa.precio"
+                   @change="cambiarPrecio($event.target.value)"
+                   @keyup.enter="$event.target.blur()" />
+          </label>
+          <p v-if="!(activa.precio > 0)" class="aviso-precio">
+            Sin precio: estas casetas se venderían en 0 Bs.
+          </p>
+          <label class="campo-col">
+            Cantidad de casetas
+            <input type="number" min="0" :value="activa.total"
+                   @change="aplicarCantidad($event.target.value)"
+                   @keyup.enter="$event.target.blur()" />
+          </label>
+          <p class="hint">{{ activa.puestas }} colocadas de {{ activa.total }}. Subir crea; bajar quita las libres.</p>
+          <div class="acciones">
+            <button class="sec" :disabled="ocupado" @click="agregarCaseta">＋ Una caseta</button>
+            <button class="sec" :disabled="ocupado" @click="compactarActiva"
+                    title="Cierra los huecos de numeración: deja la categoría en 1..N corrido">⇩ Compactar Nº</button>
+            <button class="peligro" :disabled="ocupado" @click="eliminarCategoria">🗑 Eliminar categoría</button>
+          </div>
+        </div>
+
+        <ul>
+          <li v-for="c in categorias" :key="c.id">
+            <button :class="{ sel: catSel === c.id }" @click="catSel = c.id">
+              <span class="sw" :style="{ background: c.color || '#94a3b8' }"></span>
+              <span class="nom">{{ c.nombre }}</span>
+              <span class="num">{{ c.puestas }}/{{ c.total }}</span>
+            </button>
+          </li>
+        </ul>
+      </aside>
+
+<PanZoom :key="planoTienda.src" :selectMode="modo !== 'mapa'"
+                :focus="{ x: 0.44, y: 0.34, scale: 2.4 }" :aspect="planoTienda.aspecto"
+                :umbral-detalle="umbralNumeros" :max-ancho="topeZoom">
+        <div class="plano" ref="lienzo" :class="[`modo-${modo}`, { 'con-numeros': numerosVisibles }]"
+             :style="{ aspectRatio: planoTienda.aspecto ? 1 / planoTienda.aspecto : 'auto' }"
+             @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp">
+          <!-- width/height intrinsecos: reservan la proporcion antes de descargar, para que
+               las casetas no se desplazan mientras carga. Vienen del plano de la edicion
+               (V13), que se puede reemplazar sin recompilar el APK.
+               aspect-ratio en el contenedor garantiza que el alto reserve el espacio exacto
+               antes de que cargue la imagen, evitando saltos de layout en el APK. -->
+          <img
+            ref="plano"
+            :src="planoTienda.src"
+            :key="planoTienda.src"
+            alt="Plano de la feria"
+            :width="planoTienda.plano.ancho"
+            :height="planoTienda.plano.alto"
+            decoding="async"
+            draggable="false"
+          />
+
+          <div v-for="p in colocadas" :key="p.id"
+               :ref="(el) => (el ? pinEls.set(p.id, el) : pinEls.delete(p.id))"
+               class="pin" :class="[`forma-${p.forma || 'cuadrado'}`, `est-${p.estado}`, { sel: seleccion.has(p.id) }]"
+               :style="{ ...estiloPin(p), background: p.color || '#94a3b8' }"
+               :title="`${p.categoria} ${p.codigo}`"
+               @pointerdown="onPinDown($event, p)"><span class="num-caseta">{{ p.codigo }}</span></div>
+
+          <!-- Los rotulos. En modo texto reciben el toque para poder seleccionarlos y
+               arrastrarlos; en los demas modos NO, o taparian las casetas de debajo. -->
+          <RotuloPlano v-for="t in textosTienda.textos" :key="t.id" :texto="t"
+                       :seleccionado="modo === 'texto' && textoSelId === t.id"
+                       :class="{ tocable: modo === 'texto' }"
+                       @pointerdown="onTextoDown($event, t)" />
+
+          <div v-if="lineaActiva" ref="guia" class="guia"></div>
+
+          <div v-if="cajaActiva" ref="caja" class="caja"></div>
+        </div>
+      </PanZoom>
+    </div>
+</template>
+
+<style scoped>
+/* En modo texto el rotulo SI recibe toques; el componente los desactiva por defecto para no
+   robarle el toque a la caseta que tenga debajo. */
+.plano :deep(.rotulo.tocable) { pointer-events: auto; cursor: move; }
+.grupo-texto { display: flex; flex-direction: column; gap: 0.5rem; min-width: 220px; }
+.grupo-texto .campo { display: flex; flex-direction: column; gap: 0.2rem; }
+.dos-colores { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.control-color { height: 34px; padding: 2px; }
+.ayuda-texto { margin: 0; font-size: 0.85rem; line-height: 1.4; opacity: 0.8; max-width: 220px; }
+
+.toolbar {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  padding: 0.6rem 1rem; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.grupo { display: flex; align-items: center; gap: 0.3rem; }
+.toolbar button {
+  border: 1px solid var(--border); background: #fff; border-radius: 8px;
+  padding: 0.4rem 0.6rem; font-size: 0.88rem;
+}
+.toolbar button:disabled { opacity: 0.4; cursor: default; }
+
+/* Deslizadores de tamaño: barra ancha y agarradera grande. Con el control por defecto
+   (~14px) hay que apuntar, y es de lo que más se toquetea al armar el plano. */
+.escala { display: flex; align-items: center; gap: 0.45rem; }
+.escala input[type='range'] { width: 130px; height: 24px; accent-color: var(--acento); cursor: pointer; }
+.escala input[type='range']:disabled { cursor: default; opacity: 0.4; }
+.escala .val {
+  min-width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums;
+  font-size: 0.8rem; font-weight: 700; color: var(--muted);
+}
+.toolbar button.on { background: #2563eb; color: #fff; border-color: #2563eb; }
+.toolbar button.peligro:not(:disabled) { color: var(--ocupado); border-color: #fecaca; }
+.cuenta { font-size: 0.85rem; color: var(--muted); min-width: 3.5rem; }
+.campo { font-size: 0.85rem; display: flex; align-items: center; gap: 0.35rem; }
+.campo input[type='number'] { width: 4rem; padding: 0.25rem; border: 1px solid var(--border); border-radius: 6px; }
+.campo input[type='checkbox'] { accent-color: #2563eb; }
+.orden {
+  border: 1px solid var(--border); border-radius: 8px; padding: 0.35rem 0.4rem;
+  font: inherit; font-size: 0.85rem; background: var(--panel); color: var(--text);
+}
+.apariencia { margin-left: auto; }
+.apariencia .et { font-weight: 600; font-size: 0.9rem; }
+.guardar { background: var(--libre) !important; color: #fff !important; border-color: var(--libre) !important; font-weight: 600; }
+.guardar:disabled { background: #fff !important; color: inherit !important; border-color: var(--border) !important; }
+.msg { margin: 0.5rem 1rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; padding: 0.45rem 0.7rem; border-radius: 8px; font-size: 0.9rem; }
+
+.cuerpo { display: grid; grid-template-columns: 240px 1fr; gap: 1rem; padding: 0 1rem 1rem; }
+@media (max-width: 780px) { .cuerpo { grid-template-columns: 1fr; } }
+
+aside { display: flex; flex-direction: column; gap: 0.5rem; max-height: 78vh; overflow-y: auto; }
+.nueva-btn { border: 1px dashed var(--border); background: #fff; border-radius: 8px; padding: 0.5rem; font-weight: 600; }
+.nueva-btn.sec { border-style: solid; font-weight: 500; font-size: 0.85rem; }
+
+.gestion {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem; background: var(--panel);
+}
+.campo-col { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; color: var(--muted); }
+.campo-col input { border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem; font-size: 0.9rem; color: var(--text); }
+.oculto { display: none; }
+.referencia {
+  border: 1px solid var(--border); border-radius: var(--radio-sm);
+  padding: 0.3rem 0.5rem; font: inherit; font-size: 0.82rem; width: 15rem;
+  background: var(--panel); color: var(--text);
+}
+.referencia:disabled { opacity: 0.5; }
+
+.gestion .hint { margin: 0; font-size: 0.75rem; color: var(--muted); line-height: 1.4; }
+/* Una categoría sin precio vende en 0 Bs: hay que verlo sin tener que buscarlo. */
+.aviso-precio {
+  margin: 0; font-size: 0.75rem; line-height: 1.4; font-weight: 600;
+  color: var(--danger);
+  background: var(--danger-suave);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  border-radius: var(--radio-sm); padding: 0.35rem 0.5rem;
+}
+.gestion .acciones { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.gestion .acciones button { flex: 1; border: 1px solid var(--border); background: #fff; border-radius: 6px; padding: 0.45rem; font-size: 0.82rem; }
+.gestion .acciones .peligro { color: var(--ocupado); border-color: #fecaca; }
+.form { display: flex; flex-direction: column; gap: 0.4rem; border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem; background: var(--panel); }
+.form input { border: 1px solid var(--border); border-radius: 6px; padding: 0.35rem; }
+.form label { font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; }
+.formas { display: flex; gap: 0.3rem; }
+.formas button, .forma { border: 1px solid var(--border); background: #fff; border-radius: 6px; width: 2rem; height: 2rem; }
+.formas button.on, .forma.on { background: #2563eb; color: #fff; }
+.crear { background: var(--libre); color: #fff; border: none; border-radius: 6px; padding: 0.45rem; font-weight: 600; }
+
+aside ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+aside li button {
+  width: 100%; display: flex; align-items: center; gap: 0.5rem; text-align: left;
+  border: 1px solid transparent; background: none; border-radius: 6px; padding: 0.4rem 0.5rem; font-size: 0.85rem;
+}
+aside li button.sel { background: #eff6ff; border-color: #bfdbfe; }
+.sw { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.nom { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.num { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.plano { position: relative; width: 100%; }
+/* El fondo no participa del arrastre: si no, el navegador inicia su propio drag de imagen.
+   `will-change/translateZ` le da al plano su propia capa de composicion, para que mover o
+   recolorear una caseta no obligue a re-rasterizar la imagen entera (ver Mapa.vue). */
+.plano img {
+  /* height:auto obligatorio: el <img> trae height="2376" como atributo HTML y, si el CSS
+     solo pisa el ancho, el alto se queda en ese numero literal y el plano sale estirado en
+     pantallas angostas. Aca ademas falsea las coordenadas: mapaX/mapaY se calculan sobre el
+     rectangulo renderizado, asi que colocar casetas sobre un plano deformado las guarda
+     descolocadas. Mismo arreglo que en Mapa.vue. */
+  width: 100%; height: auto; display: block;
+  pointer-events: none; user-select: none; -webkit-user-select: none;
+  /* `translateZ(0)` le da al plano su propia capa: cambiar de color UNA caseta no obliga a
+     re-rasterizar la imagen entera. Lo que SI se quito es `will-change: transform`, que
+     ademas congelaba la escala de rasterizado y dejaba la imagen borrosa al acercarse. */
+  transform: translateZ(0);
+}
+.modo-colocar { cursor: crosshair; }
+.modo-seleccionar { cursor: default; }
+
+/* ---- REGLA DE ORO DE ESTE BLOQUE ----
+   Dentro del mundo que transforma PanZoom, un `px` NO es un pixel: el zoom es un
+   `transform: scale()`, asi que toda medida absoluta se multiplica por el aumento. Con las
+   casetas a 0.005 del ancho del plano, una caseta mide ~2 px de maquetacion, y de ahi salian
+   los tres defectos que se veian en el APK:
+     · `border-radius: 2px` sobre una caja de 2 px = circulo perfecto. Por eso las casetas
+       cuadradas se veian redondas — y en el monitor no, porque alli la caseta mide 6 px.
+     · `box-shadow: 0 0 0 1px` = aro blanco de 22 px al acercarse. Ese era el halo.
+     · `0 1px 3px` de sombra difusa = 66 px de desenfoque. Ese era el velo gris.
+   Todo lo que se dibuje aqui va en fracciones de `--pin` (el ancho de la caseta, que publica
+   estiloPin) o en porcentaje. Nada en px absolutos. */
+/* La caja mide SIEMPRE 100 px y se reduce con transform. No se dimensiona con `width` en
+   porcentaje porque con casetas de 0.005 del ancho eso da 1.95 px de maquetacion, y el
+   navegador lo redondea a pixel entero de forma distinta segun donde caiga cada caseta: unas
+   salian de 1 px y otras de 2. Ese era el "unas mas anchas y otras mas pequeñas".
+
+   `transform-origin: 0 0` + `scale() translate(-50%, -50%)` en ese orden: el translate se
+   aplica primero sobre la caja sin escalar (la centra sobre su punto del plano) y el scale
+   despues, asi que el centro cae exacto en las coordenadas guardadas y el lado final mide
+   justo `--pin`. Dentro de la caja ya se puede medir en px normales: 100 px es la unidad. */
+.pin {
+  position: absolute; width: 100px; height: 100px;
+  transform-origin: 0 0;
+  /* El `rotate` va ENTRE el scale y el translate, y ese orden no es casual: el translate
+     centra la caja de 100 px sobre su punto del plano ANTES de girarla, asi que el giro sale
+     sobre el centro de la caseta y no la desplaza. Ponerlo despues la haria orbitar. */
+  transform: scale(calc(var(--pin, 20) / 100)) rotate(var(--giro, 0deg)) translate(-50%, -50%);
+  --borde: 6px;
+  --aro: 12px;
+  /* El separador va en box-shadow y no en `border`: con `box-sizing: border-box`, 1 px de
+     borde sobre una caseta de 2 px se come la caseta entera y solo queda el marco. */
+  border: none;
+  box-shadow: 0 0 0 var(--borde) rgba(255, 255, 255, 0.9);
+}
+.modo-seleccionar .pin { cursor: move; }
+.pin.sel { outline: var(--aro) solid #0f172a; outline-offset: var(--borde); z-index: 4; }
+
+/* El pin del editor se pinta con el color de su CATEGORÍA, así que hasta ahora una caseta
+   bloqueada, vendida o reservada se veía idéntica a una libre: el editor no delataba en qué
+   estado estaba lo que uno iba a tocar (y son justo las que el servidor rechaza bloquear o
+   eliminar). Se marca el estado sin perder el color de categoría. */
+.pin.est-X { filter: grayscale(1) brightness(0.85); box-shadow: 0 0 0 var(--aro) rgba(255, 255, 255, 0.9); }
+.pin.est-O { box-shadow: 0 0 0 var(--aro) var(--ocupado); }
+.pin.est-T { box-shadow: 0 0 0 var(--aro) var(--tramite); }
+/* En porcentaje, no en px: ver la regla de oro de arriba. */
+.forma-cuadrado { border-radius: 10%; }
+.forma-circulo { border-radius: 50%; }
+.forma-triangulo { clip-path: polygon(50% 0%, 100% 100%, 0% 100%); border: none; }
+
+/* ---- número de la caseta ----
+   El rótulo NO se mide con el font-size del pin, y esa es toda la historia: con casetas de
+   0.005 del ancho del plano el pin mide ~2 px de maquetación, su fuente saldría a ~1 px, y el
+   WebView de Android impone un tamaño MÍNIMO de fuente (8 px por defecto). El número salía
+   cuatro veces más grande que su caseta y `overflow: hidden` lo dejaba en un borrón: por eso
+   "no se veían las numeraciones" al acercarse.
+
+   En su lugar, una caja FIJA de 100 px con el texto a 52 px —tamaños normales, que ningún
+   mínimo toca— reducida con `transform: scale()` al tamaño real de la caseta. Un transform no
+   está sujeto a mínimos de fuente y además se compone con el zoom del mundo, así que el
+   navegador rasteriza el texto directamente a la escala final: nítido a cualquier zoom.
+
+   Está siempre en el DOM y lo encienden DOS condiciones, las dos en CSS a propósito — si
+   fueran reactivas, encenderlas obligaría a repintar los 500+ pines:
+     · `.con-numeros`   — la casilla "🔢 Números" de la barra.
+     · `.world.detalle` — PanZoom avisa de que el plano se ve lo bastante grande. Sin esto,
+       al ver la feria entera el número mediría 2 px y sería una mancha. */
+.num-caseta {
+  display: none;
+  /* Ya no se escala solo: el pin entero es una caja de 100 px que se reduce con transform,
+     asi que aqui basta con ocuparla entera y usar un tamaño de fuente normal. */
+  position: absolute; inset: 0;
+  align-items: center; justify-content: center;
+  /* Se deshace el giro de la caseta: lo que se gira es la FIGURA, no su numero. Una fila
+     puesta a 90 grados con los numeros de lado no la leeria nadie. */
+  transform: rotate(calc(-1 * var(--giro, 0deg)));
+  transform-origin: 50% 50%;
+  font-size: 52px; line-height: 1; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  /* El color lo elige el administrador y puede salir claro: la sombra mantiene el número
+     legible sobre cualquiera, sin un fondo que taparía la caseta. */
+  text-shadow: 0 2px 4px rgba(2, 6, 23, 0.92), 0 0 4px rgba(2, 6, 23, 0.85);
+  pointer-events: none;
+  overflow: hidden;
+}
+.world.detalle .con-numeros .num-caseta { display: flex; }
+/* En un triángulo el centro geométrico cae en la punta, donde no hay superficie: el número
+   se baja al tercio ancho. */
+.forma-triangulo .num-caseta { align-items: flex-end; padding-bottom: 8px; font-size: 40px; }
+
+/* Tambien viven dentro del mundo: en px absolutos, la guia se volvia una franja gruesa al
+   acercarse. Se miden contra `--mundo`, el ancho de diseño del plano que publica PanZoom. */
+.guia {
+  position: absolute; height: calc(var(--mundo, 1200) * 0.002px);
+  background: #2563eb; transform-origin: 0 50%; opacity: 0.7; pointer-events: none;
+}
+.caja {
+  position: absolute; border: calc(var(--mundo, 1200) * 0.0015px) dashed #2563eb;
+  background: rgba(37, 99, 235, 0.08); pointer-events: none;
+}
+</style>

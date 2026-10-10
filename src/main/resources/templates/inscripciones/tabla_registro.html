@@ -1,0 +1,118 @@
+<style>
+    .content-page .container-xxl,
+    .container,
+    .container-xxl {
+    max-width: 100% !important;
+    width: 100% !important;
+    }
+</style>
+<div class="container-fluid px-0">
+    <div class="card border-0 rounded-3">
+        <div class="card-header d-flex justify-content-lg-between">
+            <h5>Registro </h5>
+        </div>
+        <div class="card-datatable table-responsive pt-0">
+            <table class="table table-hover mb-0" id="data-table23">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Promotor</th>
+                        <th>Entidad</th>
+                        <th>Tipo</th>
+                        <th>NIT</th>
+                        <th>Nr Comprobante</th>
+                        <th>Pago</th>
+                        <th class="text-end">Puestos</th>
+                        <th>Categorías</th>
+                        <th class="text-end">Total (Bs)</th>
+                        <th>Fecha</th>
+                        <th>Comprobante</th>
+                    </tr>
+                </thead>
+                <tbody class="animate__animated animate__bounceInDown">
+                    <tr th:each="ins, i : ${inscripciones}">
+                        <td th:text="${i.index + 1}"></td>
+                        <td th:text="${ins.promotor != null ? ins.promotor : '—'}"></td>
+                        <td th:text="${ins.entidad != null ? ins.entidad : '—'}"></td>
+                        <td th:text="${ins.tipoEntidad != null ? ins.tipoEntidad : '—'}"></td>
+                        <td th:text="${ins.nit != null ? ins.nit : '—'}"></td>
+                        <td th:text="${ins.nroComprobante != null ? ins.nroComprobante : '—'}"></td>
+
+                        <td>
+                            <span th:if="${ins.pagoContado}" class="badge bg-primary">
+                                Contado
+                            </span>
+                            <span th:if="${!ins.pagoContado}" class="badge bg-secondary">
+                                No contado
+                            </span>
+                        </td>
+
+                        <td>
+                            <span th:if="${#lists.isEmpty(ins.codigosPuestos)}">—</span>
+                            <span
+                                th:each="cod : ${ins.codigosPuestos.size() > 6 ? ins.codigosPuestos.subList(0,6) : ins.codigosPuestos}"
+                                class="badge bg-info me-1" th:text="${cod}">P
+                            </span>
+                            <span th:if="${ins.codigosPuestos.size() > 6}" class="badge bg-secondary">
+                                + [[${ins.codigosPuestos.size() - 6}]]
+                            </span>
+                        </td>
+
+                        <td>
+                            <span th:if="${#lists.isEmpty(ins.categorias)}">—</span>
+                            <span th:each="cat : ${ins.categorias}" class="badge me-1"
+                                th:classappend="${cat} ? 'bg-primary' : 'bg-secondary'" th:text="${cat}">Cat</span>
+                        </td>
+
+                        <td class="text-end" th:text="${#numbers.formatDecimal(ins.total, 0, 'COMMA', 2, 'POINT')}">
+                        </td>
+
+                        <td th:text="${ins.fecha != null ? #temporals.format(ins.fecha, 'dd/MM/yyyy HH:mm') : '—'}">
+                        </td>
+
+                        <td class="text-center">
+                            <span th:if="${ins.imgComprobante != null and !#strings.isEmpty(ins.imgComprobante)}">
+                                <a th:href="|/files/${ins.imgComprobante}|" target="_blank">
+                                    <img th:src="|/files/${ins.imgComprobante}|" alt="Comprobante" class="img-thumbnail"
+                                        style="width:50px;height:50px;object-fit:cover;" />
+                                </a>
+                            </span>
+                            <span th:if="${ins.imgComprobante == null or #strings.isEmpty(ins.imgComprobante)}">—</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+
+<script>
+    if (window.$ && $.fn.DataTable) {
+        const id = "#data-table23";
+        if ($.fn.DataTable.isDataTable(id)) {
+            $(id).DataTable().destroy();
+        }
+        $(id).DataTable({
+            language: {
+                sProcessing: "Procesando...",
+                sLengthMenu: "Mostrar _MENU_ registros",
+                sZeroRecords: "No se encontraron resultados",
+                sInfo: "Mostrando _START_ a _END_ de _TOTAL_",
+                sInfoEmpty: "Mostrando 0 a 0 de 0",
+                sInfoFiltered: "(filtrado de _MAX_ totales)",
+                sSearch: "Buscar:",
+                oPaginate: {
+                    sFirst: "Primero",
+                    sLast: "Último",
+                    sNext: "Siguiente",
+                    sPrevious: "Anterior",
+                },
+                oAria: {
+                    sSortAscending: ": Orden ascendente",
+                    sSortDescending: ": Orden descendente",
+                },
+            },
+        });
+    }
+</script>

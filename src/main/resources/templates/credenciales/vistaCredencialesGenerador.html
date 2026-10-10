@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Credenciales con Textos y QR</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Pacifico&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+      font-weight: bold;
+    }
+
+    .editorContainer {
+      position: relative;
+      margin: 20px auto;
+      background-size: cover;
+      background-position: center;
+      width: 816px;   /* ancho carta */
+      height: 1056px; /* alto carta */
+      page-break-after: always; /* importante para impresión */
+    }
+
+    .editable-text {
+      position: absolute;
+      padding: 5px 10px;
+      cursor: move;
+      user-select: none;
+    }
+
+    .qr-code {
+      position: absolute;
+      width: 150px;
+      height: 150px;
+      cursor: move;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .foto-circular {
+      position: absolute;
+      width: 300px;   /* ajusta tamaño */
+      height: 300px;
+      border-radius: 50%;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff; /* opcional: fondo blanco */
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    }
+
+    .foto-circular img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover; /* recorta para que no se deforme */
+    }
+
+    #controls {
+      margin-top: 20px;
+      text-align: center;
+    }
+
+    #bgImage {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div style="background:#fff3cd;border:1px solid #ffc107;color:#664d03;padding:12px 16px;margin-bottom:16px;font-family:Arial,sans-serif;font-weight:normal;max-width:816px;">
+    <strong>⚠ En revisión, no depender de esto en un evento real todavía.</strong>
+    Este generador arma la credencial en el navegador y depende de tres servicios externos
+    por CDN (jsPDF, qrcodejs y Google Fonts): <strong>sin internet no genera ninguna
+    credencial</strong>, y el wifi de la feria es irregular. Tampoco guarda entre sesiones
+    las posiciones de texto/QR que se ajustan arrastrando con el mouse. Está pendiente de
+    rehacerse con las librerías incluidas en el bundle y las posiciones guardadas en la
+    base (ver PLAN.md, Bloque 3).
+  </div>
+
+  <label class="form-label" for="formValidationCategoria">SELECCIONAR LA CATEGORIA: </label>
+  <select name="formValidationCategoria" id="formValidationCategoria">
+    <option value="" selected>-- Seleccione una categoría --</option>
+    <th:block th:each="cats : ${categorias}">
+      <option th:value="${cats.id}" th:text="${cats.nombre}"></option>
+    </th:block>
+  </select>
+
+  <label class="form-label" for="formValidationInscripcionesDisponibles">SELECCIONAR LA INSCRIPCION: </label>
+  <select name="InscripcionesSeleccionados" id="formValidationInscripcionesDisponibles">
+    <!-- Se cargan dinámicamente con JS -->
+  </select>
+
+  <!-- Imagen oculta solo para obtener el tamaño -->
+  
+  <!-- Botón exportar -->
+  <div id="controls">
+      <button id="exportPdf">Exportar a PDF</button>
+      <span id="loadingText" style="display:none; margin-left:10px; font-weight:bold; color:red;">
+          Cargando...
+      </span> 
+  </div>
+  
+  <div id="modalContent">
+      
+  </div>
+  
+  
+  <!-- Librerías -->
+  <script src="../../assets/vendor/libs/jquery/jquery.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+   <script th:inline="javascript">
+    /*<![CDATA[*/
+    // Thymeleaf inyecta todos los Inscripciones en un array JS
+    let InscripcionesCategoria = /*[[${InscripcionesCategoria}]]*/[];
+
+    // convertir cada puesto en objeto limpio
+    InscripcionesCategoria = InscripcionesCategoria.map(insc => ({
+      id_categoria: insc.id_categoria,
+      id_inscripcion: insc.id_inscripcion,
+      nombre_entidad: insc.nombre_entidad,
+      representante_legal: insc.representante_legal,
+    }));
+    /*]]>*/
+  </script>
+  <script>
+    $(document).ready(function () {
+      let $InscripcionesSelect = $('#formValidationInscripcionesDisponibles');
+
+      // cuando cambia la categoría
+      $('#formValidationCategoria').on('change', function () {
+        let categoriaId = $(this).val();
+        $InscripcionesSelect.empty();
+
+        if (categoriaId) {
+          let filtrados = InscripcionesCategoria.filter(insc => insc.id_categoria == categoriaId);
+          filtrados.forEach(function (insc) {
+            $InscripcionesSelect.append(
+              new Option(insc.nombre_entidad + ' ---------- ' + insc.representante_legal, insc.id_inscripcion)
+            );
+          });
+        }
+
+        $InscripcionesSelect.trigger('change'); // refrescar
+      });
+
+      // cuando se selecciona una inscripción
+      $InscripcionesSelect.on('change', function () {
+        let inscripcionId = $(this).val();
+
+        if (inscripcionId) {
+
+          $.ajax({
+            url: '/vistaGenerarCredenciales/credenciales/' + inscripcionId,  // <-- usa el ID seleccionado
+            type: 'GET',
+            success: function (data) {
+
+              $("#modalContent").html(data);
+
+              // Una vez que el contenido se inserta, re-inicializa los QR y drag & drop
+              inicializarCredenciales();
+            },
+            error: function (xhr, status, error) {
+              console.error('Error al cargar inscripción:', error);
+            }
+          });
+        }
+      });
+
+    });
+  </script>
+
+  <script>
+    // Hacer arrastrables
+    function makeDraggable(el) {
+      let offsetX, offsetY, isDragging = false;
+      el.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        offsetX = e.clientX - el.offsetLeft;
+        offsetY = e.clientY - el.offsetTop;
+      });
+      document.addEventListener("mousemove", (e) => {
+        if (isDragging) {
+          el.style.left = (e.clientX - offsetX) + "px";
+          el.style.top = (e.clientY - offsetY) + "px";
+        }
+      });
+      document.addEventListener("mouseup", () => isDragging = false);
+    }
+
+    function inicializarCredenciales() {
+        document.querySelectorAll(".editorContainer").forEach((container) => {
+          const qrDiv = container.querySelector(".qr-code");
+          const qrInput = container.querySelector(".qr-value"); 
+
+          if (qrDiv && qrInput) {
+            // Generar QR
+            qrDiv.innerHTML = "";
+            new QRCode(qrDiv, {
+              text: qrInput.value,
+              width: 200,
+              height: 200,
+              correctLevel: QRCode.CorrectLevel.L, // usar nivel más bajo (más capacidad)
+              version: 10 // podés subir hasta 40 según necesidad
+            });
+
+            // Actualizar QR si cambia input oculto
+            qrInput.addEventListener("change", (e) => {
+              qrDiv.innerHTML = "";
+              new QRCode(qrDiv, {
+                text: qrInput.value,
+                width: 200,
+                height: 200,
+                correctLevel: QRCode.CorrectLevel.L, // usar nivel más bajo (más capacidad)
+                version: 10 // podés subir hasta 40 según necesidad
+              });
+            });
+          }
+
+          // Hacer arrastrables los textos y el QR
+          container.querySelectorAll(".editable-text, .qr-code").forEach(el => {
+            makeDraggable(el);
+          });
+        });
+        // Delegación de evento: escucha clicks en botones dentro de #modalContent
+        $(document).off('click', '#exportPdf').on('click', '#exportPdf', async function () {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'pt', 'letter');
+
+            $('#loadingText').show();
+            $('#exportPdf').prop('disabled', true);
+
+            const containers = document.querySelectorAll('.editorContainer');
+
+            // renderizar todos los contenedores en paralelo
+            const canvases = await Promise.all(
+                Array.from(containers).map(c =>
+                    html2canvas(c, { scale: 1.5, useCORS: true, willReadFrequently: true }) // scale más bajo mejora velocidad
+                )
+            );
+
+            canvases.forEach((canvas, i) => {
+                const imgData = canvas.toDataURL('image/jpeg', 0.85); // JPEG = más liviano
+                if (i > 0) pdf.addPage();
+                pdf.addImage(imgData, 'JPEG', 0, 0, 612, 792);
+            });
+
+            pdf.save('credenciales.pdf');
+
+            $('#loadingText').hide();
+            $('#exportPdf').prop('disabled', false);
+        });
+
+
+        
+        function ajustarFuente(element, maxFont = 40, minFont = 20) {
+            let fontSize = maxFont; // tamaño inicial máximo
+            element.style.fontSize = fontSize + 'px';
+
+            // Reducir tamaño hasta que el contenido quepa
+            while ((element.scrollWidth > element.clientWidth || element.scrollHeight > element.clientHeight) && fontSize > minFont) {
+                fontSize--;
+                element.style.fontSize = fontSize + 'px';
+            }
+
+            // Aumentar tamaño si hay mucho espacio disponible
+            while ((element.scrollWidth < element.clientWidth && element.scrollHeight < element.clientHeight) && fontSize < maxFont) {
+                fontSize++;
+                element.style.fontSize = fontSize + 'px';
+            }
+        }
+
+        // Aplicar a todos los elementos con la clase "nombre-entidad"
+        document.querySelectorAll('.nombre-entidad').forEach(el => ajustarFuente(el));
+        document.querySelectorAll('.nombre-responsable').forEach(el => ajustarFuente(el));
+
+    }
+    
+
+    // Inicializar al cargar la página (si ya hay contenido)
+    inicializarCredenciales();
+
+
+
+  </script>
+</body>
+</html>

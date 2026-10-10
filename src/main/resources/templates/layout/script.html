@@ -1,0 +1,274 @@
+<div th:fragment="script">
+    <!-- Librerías Básicas -->
+    <script src="../../assets/vendor/libs/jquery/jquery.js"></script>
+    <!-- <script src="../../assets/vendor/libs/popper/popper.js"></script> -->
+
+    <!-- Bootstrap -->
+    <script src="../../assets/vendor/js/bootstrap.js"></script>
+
+    <!-- Otras Librerías y Plugins -->
+    <script src="../../assets/vendor/libs/node-waves/node-waves.js"></script>
+    <script src="../../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
+    <script src="../../assets/vendor/libs/hammer/hammer.js"></script>
+    <script src="../../assets/vendor/libs/i18n/i18n.js"></script>
+    <script src="../../assets/vendor/libs/typeahead-js/typeahead.js"></script>
+    <script src="../../assets/vendor/js/menu.js"></script>
+
+    <!-- Vendors JS -->
+    <script src="../../assets/vendor/libs/select2/select2.js"></script>
+    <script src="../../assets/vendor/libs/tagify/tagify.js"></script>
+    <script src="../../assets/vendor/libs/bootstrap-select/bootstrap-select.js"></script>
+    <script src="../../assets/vendor/libs/bloodhound/bloodhound.js"></script>
+    <script src="../../assets/vendor/libs/autosize/autosize.js"></script>
+    <script src="../../assets/vendor/libs/cleavejs/cleave.js"></script>
+    <script src="../../assets/vendor/libs/cleavejs/cleave-phone.js"></script>
+    <script src="../../assets/vendor/libs/bootstrap-maxlength/bootstrap-maxlength.js"></script>
+    <script src="../../assets/vendor/libs/jquery-repeater/jquery-repeater.js"></script>
+    <script src="../../assets/js/forms-extras.js"></script>
+
+    <!-- moment JS -->
+    <script src="../../assets/vendor/libs/moment/moment.js"></script>
+
+    <!-- Cleave.js -->
+    <script src="../../assets/vendor/libs/cleavejs/cleave.js"></script>
+    <script src="../../assets/vendor/libs/cleavejs/cleave-phone.js"></script>
+
+    <!-- form-validacion -->
+
+    <script src="../../assets/vendor/libs/@form-validation/popular.js"></script>
+    <script src="../../assets/vendor/libs/@form-validation/bootstrap5.js"></script>
+    <script src="../../assets/vendor/libs/@form-validation/auto-focus.js"></script>
+
+
+    <!-- Scripts Principales -->
+    <script src="../../assets/js/main.js"></script>
+    <script src="../../assets/js/forms-selects.js"></script>
+    <!-- <script src="../../assets/js/forms-tagify.js"></script> -->
+    <script src="../../assets/js/forms-typeahead.js"></script>
+    <!-- <script src="../../assets/js/form-validation.js"></script> -->
+    <script src="../../assets/js/form-layouts.js"></script>
+    <!-- <script src="../../assets/js/ui-modals.js"></script> -->
+
+    <!-- Scripts de Tablas y DataTables -->
+    <script src="../../assets/vendor/libs/datatables-bs5/datatables-bootstrap5.js"></script>
+    <!-- <script src="../../assets/js/tables-datatables-basic.js"></script> -->
+    <script src="../../assets/js/tables-datatables-extensions.js"></script>
+
+    <script src="../../assets/js/ui-popover.js"></script>
+
+    <script src="../../assets/js/sweetalert2.all.min.js"></script>
+    
+    <!-- Scripts de fragmentos de alert que se usa en los modulos -->
+    <script src="../../assets/vendor/js/fragment.js"></script>
+
+    <!-- SCRIPT CREADOS PROPIOS -->
+    <script src="../../assets/js/login_publico.js"></script>
+
+    <script src="../../assets/vendor/libs/bs-stepper/bs-stepper.js"></script>
+    <script src="../../assets/js/form-wizard-validation.js"></script>
+    <script src="../../assets/js/form-wizard-numbered.js"></script>
+
+
+
+    <!-- CONFIGURACIÓN SIDEBAR -->
+    <script>
+        $.ajaxSetup({
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+
+        var botonPulsado;
+        $(document).ready(function () {
+
+            // ventana por defecto al iniciar sesión
+            if (document.body.dataset.ctx === "admin" && $("#contenido").length) {
+                cargarContenido("/adm/vista-administrador");
+            }
+            botonPulsado = document.getElementById("opcion_admin");
+            botonPulsado.classList.add("active");
+
+            // menú de usuario
+            $("#opcion_usuario").click(function (e) {
+                e.preventDefault();
+                cargarContenido("/administracion/usuario/vista");
+
+                if (botonPulsado.classList.contains("active")) {
+                    botonPulsado.classList.remove("active");
+                }
+
+                botonPulsado = document.getElementById("opcion_usuario");;
+
+                botonPulsado.classList.add("active");
+
+            });
+
+            // menú de persona
+            $("#opcion_persona").click(function (e) {
+                e.preventDefault();
+                cargarContenido("/administracion/persona/vista");
+
+                if (botonPulsado.classList.contains("active")) {
+                    botonPulsado.classList.remove("active");
+                }
+
+                botonPulsado = document.getElementById("opcion_persona");;
+
+                botonPulsado.classList.add("active");
+
+            });
+
+            $("#opcion_responsable").click(function (e) {
+                e.preventDefault();
+                cargarContenido("/administracion/responsable/vista");
+
+                if (botonPulsado.classList.contains("active")) {
+                    botonPulsado.classList.remove("active");
+                }
+
+                botonPulsado = document.getElementById("opcion_responsable");;
+
+                botonPulsado.classList.add("active");
+
+            });
+
+            $("#opcion_gaseta").click(function (e) {
+                e.preventDefault();
+                cargarContenido("/administracion/gaseta/vista");
+
+                if (botonPulsado.classList.contains("active")) {
+                    botonPulsado.classList.remove("active");
+                }
+
+                botonPulsado = document.getElementById("opcion_gaseta");;
+
+                botonPulsado.classList.add("active");
+
+            });
+
+            $("#opcion_sr").click(function (e) {
+                e.preventDefault();
+                cargarContenido("/administracion/inscripcion/resumen/vista");
+
+                if (botonPulsado.classList.contains("active")) {
+                    botonPulsado.classList.remove("active");
+                }
+
+                botonPulsado = document.getElementById("opcion_sr");;
+
+                botonPulsado.classList.add("active");
+
+            });
+
+            $("#opcion_inscripciones").click(function (e) {
+                e.preventDefault();
+                cargarContenido("/administracion/inscripcion/vista");
+
+                if (botonPulsado.classList.contains("active")) {
+                    botonPulsado.classList.remove("active");
+                }
+
+                botonPulsado = document.getElementById("opcion_inscripciones");;
+
+                botonPulsado.classList.add("active");
+
+            });
+
+            $("#opcion_responsables").click(function (e) {
+                e.preventDefault();
+                cargarContenido("/administracion/responsables/vista");
+
+                if (botonPulsado.classList.contains("active")) {
+                    botonPulsado.classList.remove("active");
+                }
+
+                botonPulsado = document.getElementById("opcion_responsables");;
+
+                botonPulsado.classList.add("active");
+
+            });
+
+            $("#opcion_credencial").click(function (e) {
+                e.preventDefault();
+                cargarContenido("/vistaGenerarCredenciales/");
+
+                if (botonPulsado.classList.contains("active")) {
+                    botonPulsado.classList.remove("active");
+                }
+
+                botonPulsado = document.getElementById("opcion_credencial");;
+
+                botonPulsado.classList.add("active");
+
+            });
+
+            $("#opcion_responsables_incritos").click(function (e) {
+                e.preventDefault();
+                cargarContenido("/administracion/responsables/vistaRA");
+
+                if (botonPulsado.classList.contains("active")) {    
+                    botonPulsado.classList.remove("active");
+                }
+
+                botonPulsado = document.getElementById("opcion_responsables_incritos");;
+
+                botonPulsado.classList.add("active");
+
+            });
+
+            $("#opcion_promotor").click(function (e) {
+                e.preventDefault();
+                cargarContenido("/administracion/promotor/vista");
+
+                if (botonPulsado.classList.contains("active")) {
+                    botonPulsado.classList.remove("active");
+                }
+
+                botonPulsado = document.getElementById("opcion_promotor");;
+
+                botonPulsado.classList.add("active");
+
+            });
+
+            function cargarContenido(url) {
+
+                $.ajax({
+                    url: "/adm/cargar-datos",
+                    method: "GET",
+                    success: function () {
+
+                        $("#contenido").html(`
+                            <div class="d-flex justify-content-center">
+                                <div class="spinner-border m-5 text-secondary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                            </div>`);
+
+                        $.ajax({
+                            url: url,
+                            method: "GET",
+                            success: function (data) {
+                                $("#contenido").html(data);
+                            },
+                            error: function (xhr) {
+                                console.error('Error en la solicitud:', xhr);
+                            }
+                        });
+                    },
+                    error: function (xhr) {
+                        if (xhr.status === 401) {
+                            Swal.fire({
+                                title: 'Sesión expirada',
+                                text: 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.',
+                                icon: 'warning',
+                                confirmButtonText: 'Ir al login'
+                            }).then((result) => {
+                                if (result.isConfirmed) {
+                                    window.location.href = '/';
+                                }
+                            });
+                        }
+                    }
+                });
+            }
+        });
+    </script>
+</div>

@@ -1,0 +1,21 @@
+# Lo que NO se manda al build de Docker: pesado, generado o con secretos locales.
+.git
+.github
+.vscode
+.idea
+.claude
+.agents
+target
+logs
+screenshots
+backups
+.env
+# Claves locales del perfil dev: nunca dentro de una imagen
+src/main/resources/application-dev.properties
+**/*.log
+
+frontend/node_modules
+frontend/dist
+frontend/android
+frontend/imagen-fuente
+frontend/pruebas

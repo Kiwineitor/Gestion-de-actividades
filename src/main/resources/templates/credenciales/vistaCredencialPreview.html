@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+
+    <th:block th:fragment="modalContent">
+         
+        
+        <img id="bgImage" src="../../assets/CREDENCIAL_4.jpg" alt="credencial">
+
+        <th:block th:each="insc : ${inscripciones}">
+
+
+        
+            <div class="editorContainer" style="background-image:url('../../assets/CREDENCIAL_4.jpg')">
+
+                <div class="foto-circular" style="top:150px; left:230px;">
+                    <img th:if="${insc.foto_persona != null}" 
+                        th:src="@{'/files/' + ${insc.foto_persona}}" 
+                        alt="Foto" />
+
+                    <img th:if="${insc.foto_persona == null}" 
+                        src="/assets/img/placeholder.png" 
+                        alt="Sin foto" />
+                </div>
+
+                
+
+                <div class="editable-text"  style="top:735px; left:562px; font-size: 50px;" th:text="${insc.id}"></div>
+                <div class="editable-text nombre-responsable"  style="top:510px; left:119px; font-size: 35px; height: 65px; width:560px; white-space:normal; word-wrap:break-word; display: flex; align-items: center; justify-content: flex-start;" th:text="${insc.nombre_persona+' '+insc.paterno_persona+' '+insc.materno_persona}"></div>
+                <div class="editable-text"  style="top:735px; left:119px; font-size: 50px;" th:text="${insc.ci_persona}"></div>
+                <div class="editable-text nombre-entidad" style="top:615px; left:119px; font-size: 20px; width:550px; height: 75px; white-space:normal; word-wrap:break-word; display: flex; align-items: center; justify-content: flex-start;" th:text="${insc.nombre_entidad}">EMPRENDIMIENTO ECOTURISTICO IDU FISU NARANJALITO FRUTOS AMAZONICO</div>
+
+                <!-- input oculto que define el valor del QR -->
+                <input type="hidden" class="qr-value" th:value="${insc.datoqr}">
+
+                <div class="qr-code" style="top:70px; left:595px;"></div>
+            </div>
+        </th:block>
+
+
+       
+    </th:block>
+
+    
+</body>
+</html>
+

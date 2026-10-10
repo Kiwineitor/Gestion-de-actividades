@@ -1,0 +1,471 @@
+package com.usic.uniFex.controller.admin;
+
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Controller;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+
+import com.usic.uniFex.anotacion.ValidarUsuarioAutenticado;
+import com.usic.uniFex.model.IService.ICategoriaService;
+import com.usic.uniFex.model.IService.IEntidadService;
+import com.usic.uniFex.model.IService.IInscripcionPuestoService;
+import com.usic.uniFex.model.IService.IInscripcionService;
+import com.usic.uniFex.model.IService.IPersonaService;
+import com.usic.uniFex.model.IService.IPuestoService;
+import com.usic.uniFex.model.IService.IResponsableService;
+import com.usic.uniFex.model.IService.ITipoEntidadService;
+import com.usic.uniFex.model.IService.IUsuarioService;
+import com.usic.uniFex.model.dto.UiMessage;
+import com.usic.uniFex.model.entity.Entidad;
+import com.usic.uniFex.model.entity.Inscripcion;
+import com.usic.uniFex.model.entity.InscripcionPuesto;
+import com.usic.uniFex.model.entity.Persona;
+import com.usic.uniFex.model.entity.Puesto;
+import com.usic.uniFex.model.entity.Responsable;
+import com.usic.uniFex.model.entity.Usuario;
+import com.usic.uniFex.model.repository.FuncionesInscripcion;
+import com.usic.uniFex.model.service.FileStorageService;
+import com.usic.uniFex.model.service.FileStorageService.Bucket;
+import com.usic.uniFex.model.service.PuestoEventPublisher;
+import com.usic.uniFex.model.service.PuestoReservaService;
+import com.usic.uniFex.model.service.ReciboPdfService;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import lombok.RequiredArgsConstructor;
+
+@Controller
+@RequiredArgsConstructor
+public class AdminController {
+
+    private final FuncionesInscripcion funcionesInscripcion;
+
+    private final ITipoEntidadService tipoEntidadService;
+    private final IInscripcionService inscripcionService;
+    private final IInscripcionPuestoService inscripcionPuestoService;
+    private final IResponsableService responsableService;
+    private final IPersonaService personaService;
+    private final IEntidadService entidadService;
+    private final ICategoriaService categoriaService;
+    private final IPuestoService puestoService;
+    private final IUsuarioService IusuarioService;
+    private final PasswordEncoder passwordEncoder;
+    private final ReciboPdfService reciboPdfService;
+    private static final Logger logger = LoggerFactory.getLogger(AdminController.class);
+
+    private final FileStorageService storage;
+    private final PuestoReservaService reservaService;
+    private final PuestoEventPublisher publisher;
+
+    @ValidarUsuarioAutenticado
+    @GetMapping(value = "/admin")
+    public String adminIndex(HttpServletRequest request, Model model) {
+        Usuario usuario = (Usuario) request.getSession().getAttribute("usuario");
+        Persona persona = usuario.getPersona();
+        model.addAttribute("tiposEntidads", tipoEntidadService.findAll());
+        model.addAttribute("categorias", categoriaService.findAll());
+        request.getSession().setAttribute("persona", persona);
+        logger.info("Usuario en sesión: {}", usuario.getPersona().getNombre());
+        model.addAttribute("responsables", responsableService.listarVistaExplode());
+        return "inicio-admin";
+    }
+
+    @GetMapping("/api/puestos-libres")
+    @ResponseBody
+    public List<Map<String, Object>> puestosLibresPorCategoria(@RequestParam("categoriaId") Long categoriaId) {
+        return puestoService.listarLibresPorCategoria(categoriaId)
+            .stream()
+            .map(p -> {
+                Map<String, Object> map = new HashMap<>();
+                map.put("id", p.getId());
+                map.put("codigo", p.getCodigo());
+                map.put("tamano", p.getTamano());
+                map.put("categoriaId", p.getCategoria().getId());
+                return map;
+            })
+            .collect(Collectors.toList());
+    }
+
+    @ValidarUsuarioAutenticado
+    @GetMapping(value = "/vistaR")
+    public String Index(@RequestParam(value = "inscripcionId", required = false) Long inscripcionId, HttpServletRequest request, Model model) {
+        Usuario usuario = (Usuario) request.getSession().getAttribute("usuario");
+        model.addAttribute("tiposEntidads", tipoEntidadService.findAll());
+        model.addAttribute("categorias", categoriaService.findAll());
+        model.addAttribute("puestos", puestoService.findAll());
+        model.addAttribute("inscripcionId", inscripcionId);
+        
+        Persona persona = usuario.getPersona();
+        request.getSession().setAttribute("persona", persona);
+
+        List<Map<String, Object>> inscripciones =
+                Optional.ofNullable(funcionesInscripcion.fn_get_inscripciones(usuario.getId()))
+                        .orElse(Collections.emptyList());
+
+        model.addAttribute("inscripciones", inscripciones);
+
+        logger.info("Usuario en sesión: {}", usuario.getPersona().getNombre());
+        logger.info("inscripcionId (flash): {}", inscripcionId);
+        System.out.println("vista responsable");
+        return "publico/responsable";
+    }
+
+    @ValidarUsuarioAutenticado
+    @Transactional
+    @PostMapping("/guardar")
+    public String adminIndexGuardar(
+            HttpServletRequest request, Model model,
+            @RequestParam("nombreEntidad") String nombreEntidad,
+            @RequestParam("nitEntidad") String nitEntidad,
+            @RequestParam("descripcionEntidad") String descripcionEntidad,
+            @RequestParam("objetoContratacion") String objetoContratacion,
+            @RequestParam("nombreR") String nombreR,
+            @RequestParam("ciR") String ciR,
+            @RequestParam("fechaInicio") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaInicio,
+            @RequestParam("fechaFin")    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaFin,
+            @RequestParam("tipoEntidad") Long tipoEntidad,
+            @RequestParam("nombreResponsable1") String nombreResponsable1,
+            @RequestParam("paternoResponsable1") String paternoResponsable1,
+            @RequestParam("maternoResponsable1") String maternoResponsable1,
+            @RequestParam("ciResponsable1") String ciResponsable1,
+            @RequestParam("correoResponsable1") String correoResponsable1,
+            @RequestParam("celularResponsable1") String celularResponsable1,
+            @RequestParam(value = "fotoResponsable1", required = false) MultipartFile fotoResponsable1,
+            @RequestParam(value = "nombreResponsable2", required = false) String nombreResponsable2,
+            @RequestParam(value = "paternoResponsable2", required = false) String paternoResponsable2,
+            @RequestParam(value = "maternoResponsable2", required = false) String maternoResponsable2,
+            @RequestParam(value = "ciResponsable2", required = false) String ciResponsable2,
+            @RequestParam(value = "correoResponsable2", required = false) String correoResponsable2,
+            @RequestParam(value = "celularResponsable2", required = false) String celularResponsable2,
+            @RequestParam(value = "fotoResponsable2", required = false) MultipartFile fotoResponsable2,
+            @RequestParam(value = "puestosSeleccionados", required = false) List<Long> puestosSeleccionados,
+            @RequestParam(value = "entidadBancaria", required = false) String entidadBancaria,
+            @RequestParam(value = "numComprobante", required = false) String numComprobante,
+            @RequestParam(value = "comprobante", required = false) MultipartFile comprobante,
+            @RequestParam(value = "pagoContado", defaultValue = "false") boolean pagoContado,
+
+            RedirectAttributes flash
+    ) {
+
+        Usuario usuario = (Usuario) request.getSession().getAttribute("usuario");
+
+        List<UiMessage> messages = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        
+        try {
+            Entidad entidad = new Entidad();
+            entidad.setNombre(nombreEntidad);
+            entidad.setNit(nitEntidad);
+            entidad.setDescripcion(descripcionEntidad);
+            entidad.setObjeto(objetoContratacion);
+            entidad.setRepresentanteLegal(nombreR);
+            entidad.setCiRepresentante(ciR);
+            entidad.setTipoEntidad(tipoEntidadService.findById(tipoEntidad));
+            entidad.setEstado("ACTIVO");
+            entidad.setRegistro(new Date());
+            entidad.setRegistroIdUsuario(usuario.getId());
+            entidad.setModificacion(new Date());
+            entidad.setModificacionIdUsuario(usuario.getId());
+            entidadService.save(entidad);
+
+            Persona persona1 = new Persona();
+            persona1.setNombre(nombreResponsable1);
+            persona1.setPaterno(paternoResponsable1);
+            persona1.setMaterno(maternoResponsable1);
+            persona1.setCi(ciResponsable1);
+            persona1.setCorreo(correoResponsable1);
+            persona1.setCelular(celularResponsable1);
+            persona1.setEstado("RESPONSABLE");
+            persona1.setRegistro(new Date());
+            persona1.setRegistroIdUsuario(usuario.getId());
+            persona1.setModificacion(new Date());
+            persona1.setModificacionIdUsuario(usuario.getId());
+
+            try {
+                String foto1Rel = storage.save(fotoResponsable1, Bucket.RESPONSABLES,
+                        nombreResponsable1 + " " + paternoResponsable1 + " " + maternoResponsable1);
+                persona1.setFoto(foto1Rel);
+            } catch (IOException e) {
+                logger.warn("No se pudo guardar foto de responsable 1: {}", e.getMessage());
+                persona1.setFoto(null);
+            }
+            personaService.save(persona1);
+
+            Responsable responsable1 = new Responsable();
+            responsable1.setEntidad(entidad);
+            responsable1.setPersona(persona1);
+            responsable1.setEstado("RESPONSABLE");
+            responsable1.setRegistro(new Date());
+            responsable1.setRegistroIdUsuario(usuario.getId());
+            responsable1.setModificacion(new Date());
+            responsable1.setModificacionIdUsuario(usuario.getId());
+            responsableService.save(responsable1);
+
+            boolean hayResp2 =
+                notBlank(nombreResponsable2) || notBlank(paternoResponsable2) || notBlank(maternoResponsable2) ||
+                notBlank(ciResponsable2) || notBlank(correoResponsable2) || notBlank(celularResponsable2) ||
+                (fotoResponsable2 != null && !fotoResponsable2.isEmpty());
+
+            if (hayResp2) {
+                Persona persona2 = new Persona();
+                persona2.setNombre(nvl(nombreResponsable2));
+                persona2.setPaterno(nvl(paternoResponsable2));
+                persona2.setMaterno(nvl(maternoResponsable2));
+                persona2.setCi(nvl(ciResponsable2));
+                persona2.setCorreo(nvl(correoResponsable2));
+                persona2.setCelular(nvl(celularResponsable2));
+                persona2.setEstado("RESPONSABLE");
+                persona2.setRegistro(new Date());
+                persona2.setRegistroIdUsuario(usuario.getId());
+                persona2.setModificacion(new Date());
+                persona2.setModificacionIdUsuario(usuario.getId());
+
+                try {
+                    String foto2Rel = storage.save(fotoResponsable2, Bucket.RESPONSABLES,
+                            (nombreResponsable2 + " " + paternoResponsable2 + " " + maternoResponsable2).trim());
+                    persona2.setFoto(foto2Rel);
+                } catch (IOException e) {
+                    logger.warn("No se pudo guardar foto de responsable 2: {}", e.getMessage());
+                    persona2.setFoto(null);
+                }
+                personaService.save(persona2);
+
+                Responsable responsable2 = new Responsable();
+                responsable2.setEntidad(entidad);
+                responsable2.setPersona(persona2);
+                responsable2.setEstado("RESPONSABLE");
+                responsable2.setRegistro(new Date());
+                responsable2.setRegistroIdUsuario(usuario.getId());
+                responsable2.setModificacion(new Date());
+                responsable2.setModificacionIdUsuario(usuario.getId());
+                responsableService.save(responsable2);
+            }
+
+            Inscripcion inscripcion = new Inscripcion();
+            inscripcion.setEntidad(entidad);
+            inscripcion.setFechaCompra(LocalDateTime.now());
+            inscripcion.setInscripcionEstado("PENDIENTE");
+            inscripcion.setEstado("ACTIVO");
+            inscripcion.setRegistro(new Date());
+            inscripcion.setRegistroIdUsuario(usuario.getId());
+            inscripcion.setModificacion(new Date());
+            inscripcion.setModificacionIdUsuario(usuario.getId());
+            inscripcion.setFechaInicio(java.sql.Date.valueOf(fechaInicio));
+            inscripcion.setFechaFin(java.sql.Date.valueOf(fechaFin));
+            inscripcion.setEntidadBancaria(entidadBancaria);
+
+            if (pagoContado) {
+                inscripcion.setPagoContado(true);
+                inscripcion.setNumComprobante(null);
+                inscripcion.setImgComprobante(null);
+            } else {
+                inscripcion.setPagoContado(false);
+                inscripcion.setNumComprobante(numComprobante);
+                try {
+                    String compRel = storage.save(comprobante, Bucket.COMPROBANTES, entidad.getNombre());
+                    inscripcion.setImgComprobante(compRel);
+                } catch (IOException e) {
+                    logger.warn("No se pudo guardar comprobante: {}", e.getMessage());
+                    inscripcion.setImgComprobante(null);
+                }
+            }
+            inscripcionService.save(inscripcion);
+
+            // ===== PUESTOS =====
+            List<Long> ocupados = new ArrayList<>();
+            if (puestosSeleccionados != null) {
+                for (Long puestoId : puestosSeleccionados) {
+                    // Ocupacion atomica: solo procede si la caseta sigue disponible
+                    // (LIBRE, o EN_TRAMITE reservada por este mismo usuario). Esto es
+                    // lo que impide la doble venta cuando dos registros eligen la
+                    // misma caseta casi al mismo tiempo. Al estar dentro de la
+                    // transaccion del metodo, si algo falla despues se revierte todo.
+                    boolean ocupadoOk = reservaService.ocupar(puestoId, usuario.getId());
+                    if (!ocupadoOk) {
+                        throw new IllegalStateException(
+                            "La caseta seleccionada (id " + puestoId + ") ya fue tomada por otro registro. "
+                            + "Revisa la disponibilidad e intenta nuevamente.");
+                    }
+                    ocupados.add(puestoId);
+
+                    Puesto puesto = puestoService.findById(puestoId);
+
+                    InscripcionPuesto ip = new InscripcionPuesto();
+                    ip.setPuesto(puesto);
+                    ip.setInscripcion(inscripcion);
+                    ip.setRegistro(new Date());
+                    ip.setRegistroIdUsuario(usuario.getId());
+                    ip.setModificacion(new Date());
+                    ip.setModificacionIdUsuario(usuario.getId());
+                    ip.setEstado("ACTIVO");
+
+                    // El precio sale siempre de la categoria (via la stored function, que
+                    // consulta categoria.precio_base). Aqui habia un caso especial cableado
+                    // para la categoria con id 25, con precios fijos por rango de codigo
+                    // (200/300/100). Se quito porque los ids de categoria no son estables:
+                    // tras reiniciar la gestion, el 25 pasa a ser una categoria cualquiera y
+                    // esa regla le aplicaria precios ajenos sin que nadie se entere.
+                    ip.setCosto(funcionesInscripcion.obtenerCostoPuesto(
+                            entidad.getTipoEntidad().getId(),
+                            puesto.getTamano(),
+                            puesto.getCategoria().getId()
+                    ));
+                    inscripcionPuestoService.save(ip);
+                }
+            }
+
+            // Difunde el nuevo estado (OCUPADO) al mapa en vivo, pero solo si la
+            // transaccion se confirma (asi no se avisa de casetas que luego se revierten).
+            if (!ocupados.isEmpty() && TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        ocupados.forEach(publisher::publicar);
+                    }
+                });
+            }
+
+            // ★ Mensaje de éxito + anexar warnings
+            messages.add(new UiMessage("success", "Registro completado",
+                    "La inscripción se registró correctamente."));
+            if (!warnings.isEmpty()) {
+                warnings.forEach(w -> messages.add(new UiMessage("warning", "Atención", w)));
+            }
+
+            // ★ Pasar datos por flash
+            flash.addFlashAttribute("messages", messages);
+            flash.addAttribute("inscripcionId", inscripcion.getId());
+            return "redirect:/vistaR";
+
+        } catch (IllegalStateException ex) {
+            logger.warn("Caseta no disponible al guardar inscripción: {}", ex.getMessage());
+            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+            messages.add(new UiMessage("warning", "Caseta no disponible", ex.getMessage()));
+            flash.addFlashAttribute("messages", messages);
+            return "redirect:/vistaR";
+
+        } catch (DataIntegrityViolationException ex) {
+            logger.error("Violación de integridad al guardar inscripción", ex);
+            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+            messages.add(new UiMessage("danger", "Error de datos",
+                    "No se pudo completar el registro: datos duplicados o no válidos."));
+            flash.addFlashAttribute("messages", messages);
+            return "redirect:/vistaR";
+
+        } catch (Exception ex) {
+            logger.error("Error inesperado al guardar inscripción", ex);
+            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+            messages.add(new UiMessage("danger", "Error inesperado",
+                    "Ocurrió un problema y no se guardaron los cambios."));
+            flash.addFlashAttribute("messages", messages);
+            return "redirect:/vistaR";
+        }
+    }
+
+
+    @ValidarUsuarioAutenticado
+    @GetMapping("/ver/inscripcion/{id}/recibo.pdf")
+    public void verRecibo(
+            @PathVariable Long id,
+            HttpServletResponse response) throws Exception {
+
+        response.setContentType("application/pdf");
+        response.setHeader("Content-Disposition", "attachment; filename=recibo-" + id + ".pdf");
+        reciboPdfService.generarRecibo(id, response.getOutputStream());
+        response.flushBuffer();
+    }
+
+    // Helpers
+    private boolean notBlank(String s) {
+        return s != null && !s.trim().isEmpty();
+    }
+    private String nvl(String s) {
+        return s == null ? "" : s.trim();
+    }
+
+    @Value("${app.upload-dir:uploads}")
+    private String uploadRoot;
+
+    @PostMapping("/iniciar-sesion")
+    public ResponseEntity<String> iniciarSesion(
+            @RequestParam String usuario,
+            @RequestParam String contrasena,
+            HttpServletRequest request, RedirectAttributes flash) {
+
+        // los dos parametros de usuario, contraseña vienen del formulario html
+        Usuario usuario_ = IusuarioService.findByUsername(usuario).orElse(null);
+        if (usuario_ == null || !passwordEncoder.matches(contrasena, usuario_.getPassword())) {
+            return ResponseEntity.ok("Usuario o contraseña incorrectos!");
+        }
+
+        if ("INACTIVO".equals(usuario_.getEstado())) {
+            return ResponseEntity.ok("Este usuario esta en estado inactivo!");
+        }
+
+        HttpSession session = request.getSession(true);
+        session.setAttribute("usuario", usuario_);
+        session.setAttribute("persona", usuario_.getPersona());
+
+        String rol = (usuario_.getRol() != null && usuario_.getRol().getNombre() != null)
+                ? usuario_.getRol().getNombre().toUpperCase()
+                : "";
+
+        session.setAttribute("nombre_rol", usuario_.getRol().getNombre());
+        flash.addAttribute("success", usuario_.getPersona().getNombre());
+
+        // 4) Respuesta según rol
+        String respuesta;
+        if ("ADMINISTRATIVO".equals(rol)) {
+            respuesta = "Inicio Responsable";
+        } else if ("VENDEDOR".equals(rol)) {
+            respuesta = "inicio vendedor";
+        } else {
+            respuesta = "Iniciando Session";
+        }
+        return ResponseEntity.ok(respuesta);
+    }
+
+    @ValidarUsuarioAutenticado
+    @RequestMapping("/cerrar_sesion")
+    public String cerrarSesion(HttpServletRequest request, RedirectAttributes flash) {
+        Usuario usuarioLogueado = (Usuario) request.getSession().getAttribute("usuario");
+        HttpSession sessionAdministrador = request.getSession();
+        if (sessionAdministrador != null) {
+            sessionAdministrador.invalidate();
+            flash.addAttribute("validado", "Se cerro sesion con exito");
+            logger.info("Usuario cerro sesión: {}", usuarioLogueado.getPersona().getNombre());
+        }
+        return "redirect:/";
+    }
+}

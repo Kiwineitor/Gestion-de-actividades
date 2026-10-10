@@ -1,0 +1,226 @@
+package com.usic.uniFex.Config;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
+
+import com.usic.uniFex.security.JwtAuthFilter;
+import com.usic.uniFex.security.JwtService;
+import com.usic.uniFex.security.MantenimientoApiFilter;
+import com.usic.uniFex.model.service.MantenimientoService;
+
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+
+import jakarta.servlet.http.HttpServletResponse;
+
+/**
+ * Dos cadenas: la del API (JWT, stateless) y la del sitio Thymeleaf (sesion).
+ *
+ * {@code @EnableMethodSecurity} habilita {@code @PreAuthorize} en los controladores del API.
+ * Sin el, las anotaciones se ignoran EN SILENCIO y el endpoint queda abierto a cualquier
+ * usuario autenticado, que es justo lo contrario de lo que aparenta el codigo.
+ */
+@Configuration
+@EnableMethodSecurity
+public class SecurityConfig {
+
+    /**
+     * Origenes que pueden llamar al API desde un navegador.
+     *
+     * Es una PROPIEDAD y no una lista fija por una razon practica: al probar el APK hay que
+     * abrir la aplicacion desde el telefono, o sea desde la IP de la maquina en la red local
+     * (`http://192.168.x.x:5173`), y esa direccion cambia de una red a otra. Con la lista
+     * clavada en el codigo, la unica salida era recompilar el backend.
+     *
+     * Se admiten comodines porque se usa {@code setAllowedOriginPatterns}. Un valor exacto
+     * tambien es un patron valido, asi que el comportamiento por defecto no cambia.
+     */
+    /**
+     * El valor por defecto vive AQUI, no solo en application.properties.
+     *
+     * Un {@code @Value} sin defecto convierte una propiedad ausente en un fallo de arranque:
+     * la inyeccion de securityConfig revienta, Tomcat no levanta y el servidor entero se queda
+     * abajo con un "Injection of autowired dependencies failed" que no nombra la propiedad
+     * hasta el cuarto "Caused by". Paso exactamente eso al desplegar con las clases nuevas y un
+     * application.properties todavia sin esta linea.
+     *
+     * Y el fallo era desproporcionado: quedarse sin lista de origenes CORS afecta a quien llama
+     * al API desde otro origen, no al resto del sistema. Con el defecto aqui, el despliegue
+     * funciona aunque el fichero de propiedades venga atrasado, y la propiedad pasa a ser lo
+     * que deberia: un ajuste opcional.
+     */
+    private static final String ORIGENES_POR_DEFECTO =
+            "https://localhost,capacitor://localhost,"
+            + "http://localhost:5173,http://127.0.0.1:5173,"
+            + "http://localhost:5174,http://127.0.0.1:5174,"
+            + "http://localhost:7676,http://127.0.0.1:7676";
+
+    @Value("${unifex.cors.origenes:" + ORIGENES_POR_DEFECTO + "}")
+    private String origenesCors;
+
+    @Bean
+    public org.springframework.web.filter.ForwardedHeaderFilter forwardedHeaderFilter() {
+        return new org.springframework.web.filter.ForwardedHeaderFilter();
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    /**
+     * CORS del API, para el APK.
+     *
+     * Los origenes son los que usa Capacitor en el WebView (`https://localhost` en Android,
+     * `capacitor://localhost` en iOS) mas los de desarrollo. Se listan explicitamente en vez
+     * de poner "*" porque con credenciales el comodin no es valido, y porque un API que
+     * acepta cualquier origen invita a que cualquier pagina web haga peticiones en nombre
+     * del usuario.
+     *
+     * `X-Origen` va en las cabeceras permitidas: es la que usa la auditoria para distinguir
+     * WEB de APK, y sin declararla el navegador la bloquea en la peticion previa (preflight).
+     */
+    private CorsConfigurationSource corsApi() {
+        CorsConfiguration config = new CorsConfiguration();
+        // Patrones y no origenes exactos: un valor sin comodines se comporta igual, pero asi
+        // la propiedad puede traer `http://192.168.*.*:5173` para probar el APK desde el
+        // telefono sin recompilar. `*` a secas sigue sin valer, y es lo correcto: con
+        // credenciales el comodin total no es valido, y un API que acepta cualquier origen
+        // invita a que cualquier pagina haga peticiones en nombre del usuario.
+        config.setAllowedOriginPatterns(List.of(origenesCors.split("\\s*,\\s*")));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        // If-None-Match lo manda el cliente para preguntar "¿cambio algo?"; sin declararlo,
+        // el navegador lo borra en silencio y el servidor responde SIEMPRE la lista entera.
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Origen", "If-None-Match"));
+        // Y sin exponer ETag, el cliente no puede LEER la etiqueta que acaba de recibir, asi
+        // que nunca podria preguntar. Las dos cosas fallan calladas: no hay error, solo se
+        // sigue bajando todo. En la feria eso son 250 KB por sincronizacion y por movil.
+        config.setExposedHeaders(List.of("ETag"));
+        config.setMaxAge(3600L); // cachea el preflight una hora: menos ida y vuelta en movil
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", config);
+        return source;
+    }
+
+    /**
+     * Cadena 1 (Fase 2): API movil/SPA. Stateless, autenticacion por JWT.
+     * Solo aplica a /api/auth/** (login, publico) y /api/app/** (protegido).
+     */
+    @Bean
+    @Order(1)
+    public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http, JwtService jwtService,
+                                                      MantenimientoService mantenimientoService) throws Exception {
+        http
+                // AntPathRequestMatcher (ruta pura) evita una peculiaridad del MvcRequestMatcher
+                // con /** que dejaba GET /api/app/puestos fuera de esta cadena.
+                .securityMatcher(new OrRequestMatcher(
+                        AntPathRequestMatcher.antMatcher("/api/auth/**"),
+                        AntPathRequestMatcher.antMatcher("/api/app/**"),
+                        // Verificacion de una nota de venta: quien comprueba un papel en la
+                        // puerta no tiene cuenta. Va en ESTA cadena y no en la web para que
+                        // responda JSON; en la cadena 2 un fallo se convierte en un 302 al
+                        // login, que desde un lector de QR no significa nada.
+                        AntPathRequestMatcher.antMatcher("/api/publico/**")))
+                .csrf(csrf -> csrf.disable())
+                // CORS solo en esta cadena: la web navegada no lo necesita (mismo origen),
+                // pero el APK si. Capacitor sirve la app desde https://localhost en Android,
+                // que para el backend es un ORIGEN DISTINTO; sin esto el navegador embebido
+                // bloquea hasta el login y el fallo se ve como un error de red sin causa.
+                .cors(cors -> cors.configurationSource(corsApi()))
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(AntPathRequestMatcher.antMatcher("/api/auth/**")).permitAll()
+                        .requestMatchers(AntPathRequestMatcher.antMatcher("/api/publico/**")).permitAll()
+                        .anyRequest().authenticated())
+                // API: responder con codigos HTTP (401/403) y cuerpo JSON, no redirigir a un
+                // login. Se usa setStatus + write (no sendError) para no disparar el forward
+                // interno a /error, que la cadena web volveria a redirigir con un 302.
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((req, res, e) -> {
+                            res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            res.setContentType("application/json;charset=UTF-8");
+                            res.getWriter().write("{\"ok\":false,\"mensaje\":\"No autenticado\"}");
+                        })
+                        .accessDeniedHandler((req, res, e) -> {
+                            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                            res.setContentType("application/json;charset=UTF-8");
+                            res.getWriter().write("{\"ok\":false,\"mensaje\":\"Sin permiso\"}");
+                        }))
+                .addFilterBefore(new JwtAuthFilter(jwtService), UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(new MantenimientoApiFilter(mantenimientoService), JwtAuthFilter.class);
+        return http.build();
+    }
+
+    /**
+     * Cadena 2: sitio web Thymeleaf. Autenticacion por sesion (comportamiento actual).
+     * Aplica a todo lo que no capturo la cadena 1.
+     */
+    @Bean
+    @Order(2)
+    public SecurityFilterChain webSecurityFilterChain(HttpSecurity http) throws Exception {
+        http.authorizeHttpRequests(
+                auth -> auth.requestMatchers(
+                        "/",
+                        // `/error` tiene que estar permitido, y no es un detalle.
+                        //
+                        // Un 404 dentro de una ruta permitida —un /files/** que ya no esta en
+                        // disco, por ejemplo— no se devuelve tal cual: Spring lo reenvia a
+                        // /error. Si /error exige sesion, ese reenvio se convierte en un 302 a
+                        // la pagina de login, asi que en vez de "ese archivo no existe" llega
+                        // una redireccion. Detras del proxy de desarrollo la redireccion apunta
+                        // al origen del backend y el navegador la corta por CORS, con un mensaje
+                        // que solo habla de la raiz del servidor y no dice nada del archivo que
+                        // faltaba. Es la causa del ERR_TOO_MANY_REDIRECTS de las fotos.
+                        "/error",
+                        // La vista publica de una credencial: la abre quien escanea el QR en la
+                        // puerta, que no tiene cuenta. Sin esto la cadena web le pedia sesion y
+                        // el telefono acababa en la pagina de login en vez de en la credencial.
+                        "/credencial/**",
+                        "/app/**",
+                        "/control-responsable",
+                        "/buscar-responsable",
+                        "/vistaR/**",
+                        "/admin/**",
+                        "/iniciar-sesion/**",
+                        "/acceso/**",
+                        "/ver/**",
+                        "/api/**",
+                        "/venta/**",
+                        "/guardar/**",
+                        "/actualizar/**",
+                        "/boletos/**",
+                        "/files/**",
+                        "/inscripciones/**",
+                        "/ws/**",
+                        "/app/**",
+                        "/cerrar_sesion",
+                        "/administracion/**",
+                        "/vistaGenerarCredenciales/**",
+                        "/assets/**").permitAll()
+                        .anyRequest()
+                        .authenticated())
+                .formLogin(login -> login
+                        .loginPage("/")
+                        .permitAll())
+                .headers(headers -> headers
+                        .frameOptions(frame -> frame.sameOrigin()))
+                .csrf(csrf -> csrf.disable());
+        return http.build();
+    }
+
+}

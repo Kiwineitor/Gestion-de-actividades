@@ -1,0 +1,2248 @@
+<script setup>
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue';
+import { url as urlApi } from '../config.js';
+import { aviso } from '../ui/alerta.js';
+import { vFiltro, CELULAR_VALIDO } from '../ui/filtroEntrada.js';
+import { escucharListasPublicas, SUSCRIPCION_NOCHES, SUSCRIPCION_NOTICIAS } from '../publicoEnVivo.js';
+import { IDIOMAS, TEXTOS } from '../i18n/feriaPublica.js';
+
+// Idioma de la vista: español o portugués (selector ES | PT arriba a la derecha). Se recuerda
+// en este navegador; la primera vez se toma el del propio navegador, así un teléfono de Brasil
+// abre directamente en portugués.
+const CLAVE_IDIOMA = 'feria.idioma';
+function idiomaInicial() {
+  try {
+    const guardado = localStorage.getItem(CLAVE_IDIOMA);
+    if (TEXTOS[guardado]) return guardado;
+  } catch { /* sin almacenamiento: se decide por el navegador */ }
+  return (navigator.language || '').toLowerCase().startsWith('pt') ? 'pt' : 'es';
+}
+const idioma = ref(idiomaInicial());
+const t = computed(() => TEXTOS[idioma.value]);
+const locale = computed(() => IDIOMAS.find((i) => i.codigo === idioma.value).locale);
+
+function cambiarIdioma(codigo) {
+  idioma.value = codigo;
+  try { localStorage.setItem(CLAVE_IDIOMA, codigo); } catch { /* solo se pierde el recuerdo */ }
+}
+
+// <html lang>: lo usan los lectores de pantalla (pronunciación) y el traductor del navegador,
+// que así no ofrece "traducir del español" una página que ya está en portugués.
+const langAnterior = document.documentElement.lang;
+watch(locale, (l) => { document.documentElement.lang = l; }, { immediate: true });
+
+const loading = ref(true);
+const error = ref(null);
+const datos = ref(null);
+const mostrarPlano = ref(false);
+const temaOscuro = ref(false);
+const menuAbierto = ref(false);
+const heroLogoWrap = ref(null);
+const ahora = ref(Date.now());
+
+// Producción sirve la SPA bajo /app/ (ver VITE_BASE en el perfil Maven "frontend"): una
+// ruta fija "/foo.png" apunta a la raíz del dominio, donde el archivo no existe, y da 404
+// solo ahí (en dev, base es "/", coincide por casualidad y el problema no se nota).
+// BASE_URL trae el prefijo correcto en cada entorno.
+const BASE = import.meta.env.BASE_URL;
+function imgPublica(nombre) {
+  return `${BASE}${nombre}`;
+}
+
+// Colores de las noches: los mismos rojo/morado/azul de las insignias de facultad del
+// logo. Se usan como identificador de cada jornada cuando el admin no eligió un color propio
+// para esa noche (ver panel "Noches de FEXPO").
+const COLORES_NOCHE = ['#e31e24', '#3c1884', '#0048c0'];
+
+// "Viernes 18 de septiembre" / "Sexta-feira, 18 de setembro" a partir de un ISO "2026-09-18"
+// (lo que manda el backend, ver NocheFexpoDTO), en el idioma elegido. Intl da el día de la
+// semana en minúscula; se capitaliza a mano porque así se ve en el resto de la página.
+function formatearFechaNoche(iso) {
+  if (!iso) return '';
+  // new Date('2026-09-18') se interpreta en UTC medianoche: sin el mediodía fijo, en husos
+  // horarios al oeste de UTC (como Bolivia) el dia local cae un dia antes.
+  const d = new Date(`${iso}T12:00:00`);
+  const texto = d.toLocaleDateString(locale.value, { weekday: 'long', day: 'numeric', month: 'long' });
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+// Mes abreviado del recuadro de la fecha ("sept" / "set"). Antes estaba escrito a mano como
+// "set", que solo acertaba con noches de septiembre.
+function mesCorto(iso) {
+  if (!iso) return '';
+  return new Date(`${iso}T12:00:00`).toLocaleDateString(locale.value, { month: 'short' }).replace('.', '');
+}
+
+function diaDelMes(iso) {
+  if (!iso) return '';
+  return new Date(`${iso}T12:00:00`).getDate();
+}
+
+// Programación nocturna: administrable desde el panel "Noches de FEXPO" (ver
+// NochesFexpoApiController). Cuando el admin no puso nombre de artista, se muestra la
+// silueta animada de "por revelar"; cuando no subió foto/video, la tarjeta se queda con el
+// fondo de color plano de siempre.
+//
+// En vivo por WebSocket (ver publicoEnVivo.js / NochesFexpoEventPublisher): cada alta,
+// edición, foto nueva o baja hecha en el panel llega aquí sola, sin recargar la página.
+// Mientras no haya llegado nada (null) se usa lo que trajo /api/publico/feria; desde entonces
+// manda lo recibido en vivo, que siempre es igual o más reciente.
+const nochesEnVivo = ref(null);
+// Una sola conexión para las noches y las noticias (ver onMounted).
+let dejarDeEscucharPublico = null;
+
+const nochesFexpo = computed(() => {
+  const noches = nochesEnVivo.value ?? datos.value?.noches ?? [];
+  return noches.map((n, i) => ({
+    ...n,
+    dia: diaDelMes(n.fecha),
+    mes: mesCorto(n.fecha),
+    fechaTexto: formatearFechaNoche(n.fecha),
+    color: n.color || COLORES_NOCHE[i % COLORES_NOCHE.length],
+    urlMedio: n.urlMedio ? urlApi(n.urlMedio) : null,
+    urlAudio: n.urlAudio ? urlApi(n.urlAudio) : null,
+  }));
+});
+
+// Noticias (V42, se cargan desde el panel "Noticias"): carrusel entre la cartelera de artistas
+// y los stands, con las 10 últimas registradas. En vivo por WebSocket, igual que las noches:
+// mientras no haya llegado nada (null) se usa lo que trajo /api/publico/feria. Lo que llega en
+// vivo es la lista ENTERA (la comparte con /feria/noticias), de ahí el slice.
+const MAXIMO_NOTICIAS_CARRUSEL = 10;
+const noticiasEnVivo = ref(null);
+
+const noticias = computed(() =>
+  (noticiasEnVivo.value ?? datos.value?.noticias ?? []).slice(0, MAXIMO_NOTICIAS_CARRUSEL).map((n) => ({
+    ...n,
+    urlMedio: urlApi(n.urlMedio),
+    fechaTexto: formatearFechaNoticia(n.fecha),
+  })));
+
+function formatearFechaNoticia(iso) {
+  if (!iso) return '';
+  // Mediodía fijo por lo mismo que formatearFechaNoche: en Bolivia la medianoche UTC es el día anterior.
+  return new Date(`${iso}T12:00:00`).toLocaleDateString(locale.value, { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+// Carrusel: una noticia por "página" de un contenedor con scroll horizontal y scroll-snap. El
+// desplazamiento lo hace el propio navegador, así deslizar con el dedo o el touchpad es nativo;
+// con ratón se arrastra (ver alPresionarPista). En PC hay además dos flechas tenues a los lados.
+//
+// Avanza solo cada 4 s. El temporizador se reprograma cada vez que el carrusel se detiene (por el
+// avance automático o porque alguien deslizó), así nunca salta justo después de que la persona
+// eligió una noticia. Se pausa mientras el cursor está encima (para leer) o se está arrastrando.
+const INTERVALO_NOTICIAS_MS = 4000;
+const pistaNoticias = ref(null);
+const noticiaActual = ref(0);
+let temporizadorNoticias = null;
+let finDeScroll = null;
+let cursorSobreNoticias = false;
+let arrastre = null;
+// true mientras se mueve por el avance automático: ese scroll no reinicia la cuenta de 4 s.
+let avanceAutomatico = false;
+const arrastrandoNoticias = ref(false);
+
+const movimientoReducido = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+function irANoticia(i, suave = true) {
+  const pista = pistaNoticias.value;
+  if (!pista || !noticias.value.length) return;
+  const total = noticias.value.length;
+  const destino = ((i % total) + total) % total;
+  pista.scrollTo({
+    left: destino * pista.clientWidth,
+    behavior: suave && !movimientoReducido.matches ? 'smooth' : 'auto',
+  });
+}
+
+// Flechas laterales (solo PC): la anterior desde la primera va a la última, y al revés.
+function noticiaVecina(paso) {
+  avanceAutomatico = false;
+  irANoticia(noticiaActual.value + paso);
+}
+
+function programarNoticias() {
+  clearTimeout(temporizadorNoticias);
+  if (noticias.value.length < 2 || cursorSobreNoticias || arrastre) return;
+  temporizadorNoticias = setTimeout(() => {
+    avanceAutomatico = true;
+    irANoticia(noticiaActual.value + 1);
+    // La siguiente cuenta empieza ya, no cuando termina la animación: así cambia cada 4 s justos.
+    programarNoticias();
+  }, INTERVALO_NOTICIAS_MS);
+}
+
+function alDesplazarNoticias() {
+  const pista = pistaNoticias.value;
+  if (!pista) return;
+  if (!avanceAutomatico) clearTimeout(temporizadorNoticias);
+  clearTimeout(finDeScroll);
+  // "scrollend" no existe en Safari: se da por terminado cuando deja de moverse un momento.
+  finDeScroll = setTimeout(() => {
+    noticiaActual.value = Math.round(pista.scrollLeft / Math.max(1, pista.clientWidth));
+    if (avanceAutomatico) avanceAutomatico = false;
+    else programarNoticias();
+  }, 120);
+}
+
+function alEntrarNoticias(e) {
+  if (e.pointerType !== 'mouse') return;
+  cursorSobreNoticias = true;
+  avanceAutomatico = false;
+  clearTimeout(temporizadorNoticias);
+}
+function alSalirNoticias(e) {
+  if (e.pointerType !== 'mouse') return;
+  cursorSobreNoticias = false;
+  programarNoticias();
+}
+
+// Arrastrar con el ratón. El dedo y el touchpad ya desplazan solos; el ratón no, y sin esto en
+// PC solo se podría cambiar de noticia con los puntos. Durante el arrastre se apaga el snap
+// (si no, el navegador lo corrige a cada píxel) y al soltar se encaja en la más cercana.
+function alPresionarPista(e) {
+  // Con el dedo el navegador desplaza solo; basta con que el avance automático no le gane la mano.
+  // La cuenta se reprograma cuando el deslizamiento termina (alDesplazarNoticias).
+  if (e.pointerType !== 'mouse') {
+    avanceAutomatico = false;
+    clearTimeout(temporizadorNoticias);
+    return;
+  }
+  if (e.button !== 0 || noticias.value.length < 2) return;
+  arrastre = { x: e.clientX, inicio: pistaNoticias.value.scrollLeft, movido: false };
+  avanceAutomatico = false;
+  clearTimeout(temporizadorNoticias);
+  window.addEventListener('pointermove', alMoverPista);
+  window.addEventListener('pointerup', alSoltarPista, { once: true });
+}
+function alMoverPista(e) {
+  if (!arrastre) return;
+  const dx = e.clientX - arrastre.x;
+  if (!arrastre.movido && Math.abs(dx) < 5) return;
+  arrastre.movido = true;
+  arrastrandoNoticias.value = true;
+  pistaNoticias.value.scrollLeft = arrastre.inicio - dx;
+}
+function alSoltarPista(e) {
+  window.removeEventListener('pointermove', alMoverPista);
+  const pista = pistaNoticias.value;
+  const datosArrastre = arrastre;
+  arrastre = null;
+  arrastrandoNoticias.value = false;
+  if (!pista || !datosArrastre) return;
+  if (!datosArrastre.movido) return programarNoticias();
+  // Un tirón corto ya cambia de noticia: no hace falta arrastrar media pantalla.
+  const dx = e.clientX - datosArrastre.x;
+  const desde = Math.round(datosArrastre.inicio / Math.max(1, pista.clientWidth));
+  const umbral = Math.min(80, pista.clientWidth * 0.15);
+  const destino = dx <= -umbral ? desde + 1 : dx >= umbral ? desde - 1 : desde;
+  irANoticia(Math.max(0, Math.min(noticias.value.length - 1, destino)));
+}
+
+// Si cambia la lista (llega una noticia nueva por WebSocket) o el tamaño de la ventana, se
+// vuelve a encajar en la noticia actual sin animación.
+watch(() => noticias.value.length, async (total) => {
+  if (noticiaActual.value >= total) noticiaActual.value = 0;
+  await nextTick();
+  irANoticia(noticiaActual.value, false);
+  programarNoticias();
+});
+function alRedimensionar() {
+  irANoticia(noticiaActual.value, false);
+}
+onMounted(() => window.addEventListener('resize', alRedimensionar));
+onUnmounted(() => {
+  window.removeEventListener('resize', alRedimensionar);
+  window.removeEventListener('pointermove', alMoverPista);
+  clearTimeout(temporizadorNoticias);
+  clearTimeout(finDeScroll);
+});
+
+// Música de cada noche (V38, se sube desde el panel "Noches de FEXPO"). Suena solo mientras el
+// cursor está sobre la tarjeta y se apaga con un fundido corto al salir. En pantallas táctiles
+// no existe "encima": ahí un toque la enciende o la apaga, igual que Enter/Espacio con el
+// teclado, y sobre las tarjetas se avisa que hay que tocarlas (ver esPantallaTactil). Dentro de
+// la tarjeta no hay ningún botón, ícono ni aviso.
+//
+// Un solo reproductor para toda la sección: pasar a otra tarjeta cambia la pista, así nunca
+// suenan dos a la vez. Volver a la misma tarjeta sigue donde se quedó.
+//
+// Los navegadores no dejan sonar audio hasta que la persona interactuó con la página (clic,
+// toque o tecla EN CUALQUIER PARTE); pasar el cursor o hacer scroll con la rueda NO cuenta, y
+// ningún código puede saltarse esa regla. Lo que se hace es aprovecharla sin que se note: la
+// primera interacción en cualquier lugar de la página desbloquea el reproductor en silencio y,
+// si el cursor ya estaba sobre una tarjeta, esa música arranca en ese momento.
+const VOLUMEN_MUSICA = 0.8;
+const nocheSonando = ref(null);     // id de la noche que suena
+let reproductor = null;
+let pistaActual = null;             // URL cargada (a.src devuelve la absoluta: no sirve para comparar)
+let fundido = null;
+// La noche que DEBERÍA sonar (el cursor está encima). play() es asíncrono (tiene que cargar el
+// MP3): si el cursor se va antes de que termine, ya no es la deseada y no debe empezar a sonar.
+let nocheDeseada = null;
+// La noche sobre la que está el cursor pero que el navegador todavía no dejó sonar.
+let nocheEnEspera = null;
+let sonidoDesbloqueado = false;
+// Tipo del último puntero que pulsó: el click de Safari no trae pointerType.
+let ultimoPuntero = 'mouse';
+
+function obtenerReproductor() {
+  if (!reproductor) {
+    reproductor = new Audio();
+    reproductor.loop = true;
+  }
+  return reproductor;
+}
+
+function fundirVolumen(objetivo, ms, alTerminar) {
+  clearInterval(fundido);
+  const a = obtenerReproductor();
+  const pasos = Math.max(1, Math.round(ms / 30));
+  const salto = (objetivo - a.volume) / pasos;
+  let dados = 0;
+  fundido = setInterval(() => {
+    dados++;
+    a.volume = Math.min(1, Math.max(0, a.volume + salto));
+    if (dados >= pasos) {
+      clearInterval(fundido);
+      fundido = null;
+      a.volume = objetivo;
+      alTerminar?.();
+    }
+  }, 30);
+}
+
+async function sonarNoche(n) {
+  if (!n.urlAudio || nocheSonando.value === n.id) return;
+  nocheDeseada = n.id;
+  const a = obtenerReproductor();
+  clearInterval(fundido);
+  if (pistaActual !== n.urlAudio) {
+    a.src = n.urlAudio;
+    pistaActual = n.urlAudio;
+  }
+  a.muted = false;
+  a.volume = 0;
+  try {
+    await a.play();
+  } catch (e) {
+    // NotAllowedError = falta esa primera interacción: se queda esperando, sin avisar nada, y
+    // arranca con el primer clic/toque/tecla (ver desbloquearSonido). Cualquier otro fallo
+    // (archivo que ya no existe, pista reemplazada a mitad de carga) se ignora.
+    if (nocheDeseada === n.id && e?.name === 'NotAllowedError') nocheEnEspera = n;
+    return;
+  }
+  sonidoDesbloqueado = true;
+  if (nocheDeseada !== n.id) {
+    // El cursor se fue mientras cargaba: que no se quede sonando en silencio de fondo.
+    if (nocheDeseada === null) a.pause();
+    return;
+  }
+  nocheEnEspera = null;
+  nocheSonando.value = n.id;
+  fundirVolumen(VOLUMEN_MUSICA, 400);
+}
+
+function callarNoche(n) {
+  if (nocheDeseada === n.id) nocheDeseada = null;
+  if (nocheEnEspera?.id === n.id) nocheEnEspera = null;
+  if (nocheSonando.value !== n.id) return;
+  nocheSonando.value = null;
+  fundirVolumen(0, 300, () => obtenerReproductor().pause());
+}
+
+// Sin fundido: para cuando la música tiene que parar ya (pestaña oculta, pista quitada).
+function callarYa() {
+  nocheDeseada = null;
+  nocheEnEspera = null;
+  nocheSonando.value = null;
+  clearInterval(fundido);
+  reproductor?.pause();
+}
+
+// Primera interacción en cualquier parte de la página. Si el cursor está sobre una tarjeta que
+// quedó esperando, esa música arranca ahora. Si no, se "ceba" el reproductor con un play/pause
+// en silencio dentro del gesto (Safari lo exige al propio elemento, Chrome no), para que pasar
+// el cursor después ya suene directamente.
+function desbloquearSonido() {
+  if (sonidoDesbloqueado) return;
+  if (nocheEnEspera) {
+    const n = nocheEnEspera;
+    nocheEnEspera = null;
+    sonarNoche(n);
+    return;
+  }
+  const pista = pistaActual || primeraPista();
+  if (!pista || nocheSonando.value !== null) return;
+  const a = obtenerReproductor();
+  if (pistaActual !== pista) {
+    a.src = pista;
+    pistaActual = pista;
+  }
+  // muted y no volume = 0: en iOS el volumen no se puede cambiar desde código.
+  a.muted = true;
+  a.play()
+    .then(() => {
+      sonidoDesbloqueado = true;
+      if (nocheDeseada === null) a.pause();
+    })
+    .catch(() => {})
+    .finally(() => { a.muted = false; });
+}
+
+// Celular o tablet: sin cursor que "pase por encima", la música solo suena tocando la tarjeta.
+// Se decide por el dispositivo (sin hover y con puntero de dedo), no por el ancho de la ventana:
+// una ventana de PC angosta sigue teniendo cursor. Reactivo por si cambia (tablet con ratón).
+const consultaTactil = window.matchMedia('(hover: none) and (pointer: coarse)');
+const esPantallaTactil = ref(consultaTactil.matches);
+function alCambiarTactil(e) {
+  esPantallaTactil.value = e.matches;
+}
+consultaTactil.addEventListener('change', alCambiarTactil);
+onUnmounted(() => consultaTactil.removeEventListener('change', alCambiarTactil));
+const hayMusicaEnNoches = computed(() => nochesFexpo.value.some((n) => n.urlAudio));
+
+function primeraPista() {
+  return nochesFexpo.value.find((x) => x.urlAudio)?.urlAudio || null;
+}
+
+const EVENTOS_DESBLOQUEO = ['pointerdown', 'keydown', 'touchend'];
+
+// Clic, toque o teclado sobre la tarjeta. Con ratón no apaga: la música depende solo de que el
+// cursor esté encima (un clic encima, si faltaba el desbloqueo, la hace sonar). Con dedo o
+// teclado alterna, porque ahí no hay "encima".
+function alPulsarNoche(n) {
+  if (!n.urlAudio) return;
+  if (ultimoPuntero === 'mouse') sonarNoche(n);
+  else if (nocheSonando.value === n.id) callarNoche(n);
+  else sonarNoche(n);
+}
+function alTeclaNoche(n) {
+  if (!n.urlAudio) return;
+  if (nocheSonando.value === n.id) callarNoche(n);
+  else sonarNoche(n);
+}
+
+// Solo el ratón "pasa por encima". Con dedo o lápiz, pointerenter llega junto con el toque, y
+// el click que viene detrás apagaría enseguida lo que acaba de encender.
+function alEntrarNoche(e, n) {
+  if (e.pointerType === 'mouse') sonarNoche(n);
+}
+function alSalirNoche(e, n) {
+  if (e.pointerType === 'mouse') callarNoche(n);
+}
+function alPresionar(e) {
+  ultimoPuntero = e.pointerType || 'mouse';
+}
+
+// Si desde el panel quitan o cambian la música de la noche que está sonando (llega en vivo
+// por WebSocket), se calla en vez de seguir con una pista que ya no le corresponde.
+watch(nochesFexpo, (lista) => {
+  if (nocheSonando.value === null) return;
+  const n = lista.find((x) => x.id === nocheSonando.value);
+  if (!n || n.urlAudio !== pistaActual) callarYa();
+});
+
+// Cambiar de pestaña con el cursor quieto no dispara pointerleave. Sin fundido: en una
+// pestaña oculta los temporizadores van a 1 por segundo y el fundido duraría una eternidad.
+function alCambiarVisibilidad() {
+  if (document.hidden) callarYa();
+}
+onMounted(() => {
+  document.addEventListener('visibilitychange', alCambiarVisibilidad);
+  document.addEventListener('pointerdown', alPresionar, true);
+  for (const ev of EVENTOS_DESBLOQUEO) document.addEventListener(ev, desbloquearSonido, true);
+});
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', alCambiarVisibilidad);
+  document.removeEventListener('pointerdown', alPresionar, true);
+  for (const ev of EVENTOS_DESBLOQUEO) document.removeEventListener(ev, desbloquearSonido, true);
+  callarYa();
+  if (reproductor) {
+    reproductor.removeAttribute('src');
+    reproductor.load(); // suelta el MP3 descargado
+  }
+});
+
+// Contador de visitas de esta página (V38), visible al pasar el cursor por "Quiero exponer".
+// Una visita por navegador y día: la primera carga del día hace POST (suma y devuelve el
+// total); las demás, solo GET. Así recargar no infla el número. Si falla (sin red, o una base
+// que aún no tiene V38) el contador simplemente no aparece: no es información crítica.
+const CLAVE_VISITA = 'feria.visita';
+const totalVisitas = ref(null);
+// "1.234" / "1 234" según el idioma de la vista; vacío mientras no hay dato (y entonces el
+// contador no se pinta). La etiqueta que va debajo sale de t.exponer.visitas.
+const visitasFormateadas = computed(() =>
+  totalVisitas.value === null ? '' : totalVisitas.value.toLocaleString(locale.value));
+
+async function cargarVisitas() {
+  const hoy = new Date().toLocaleDateString('sv'); // AAAA-MM-DD en hora local
+  let yaContada = false;
+  try { yaContada = localStorage.getItem(CLAVE_VISITA) === hoy; } catch { /* sin almacenamiento: cuenta */ }
+  try {
+    const r = await fetch(urlApi('/api/publico/feria/visitas'), { method: yaContada ? 'GET' : 'POST' });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (typeof d?.total !== 'number') return;
+    totalVisitas.value = d.total;
+    if (!yaContada) {
+      try { localStorage.setItem(CLAVE_VISITA, hoy); } catch { /* se contará de nuevo: tolerable */ }
+    }
+  } catch { /* sin red: no se muestra */ }
+}
+onMounted(cargarVisitas);
+
+// Vitrina de zonas para el público visitante, curada a mano (no viene del backend). Los
+// textos de cada zona, en los dos idiomas, están en i18n/feriaPublica.js bajo stands.lista[id].
+// `invertido` alterna imagen/texto tipo revista; se anima al entrar en pantalla (ver
+// onMounted).
+const standsDestacados = [
+  { id: 'mypes', imagen: imgPublica('STAND-MIPES.png'), invertido: false },
+  { id: 'empresas', imagen: imgPublica('STAND-EMPRESAS.png'), invertido: true },
+  { id: 'profesiografico', imagen: imgPublica('STAND-PROFESIOGRAFICA.png'), invertido: false },
+  { id: 'artesanias', imagen: imgPublica('STAND-ARTESANIAS.png'), invertido: true },
+  { id: 'agropecuario', imagen: imgPublica('AGROPECUARIA.png'), invertido: false },
+  { id: 'vivero', imagen: imgPublica('STAND-VIVERO.png'), invertido: true },
+  { id: 'vehicular', imagen: imgPublica('STAND-VEHICULAR.png'), invertido: false },
+  { id: 'comida', imagen: imgPublica('STAND-COMIDA.png'), invertido: true },
+];
+
+// Formulario "Quiero exponer": registro público de interesados (sin login).
+// `tocado` guarda qué campos ya perdió el foco al menos una vez, para no mostrar errores
+// en rojo antes de que la persona haya llegado a escribir nada (validación reactiva, pero
+// silenciosa hasta que el campo se usa).
+const formExponer = ref({ nombreCompleto: '', celular: '', empresa: '', rubro: '', categoriaId: '' });
+const tocadoExponer = ref({ nombreCompleto: false, celular: false, empresa: false, rubro: false, categoriaId: false });
+const enviandoExponer = ref(false);
+
+const categoriasParaExponer = computed(() => datos.value?.categorias || []);
+
+const erroresExponer = computed(() => {
+  const f = formExponer.value;
+  const e = t.value.exponer.errores;
+  return {
+    nombreCompleto: f.nombreCompleto.trim() ? '' : e.nombre,
+    celular: !f.celular.trim()
+      ? e.celularVacio
+      : CELULAR_VALIDO.test(f.celular.trim()) ? '' : e.celularInvalido,
+    empresa: f.empresa.trim() ? '' : e.empresa,
+    rubro: f.rubro.trim() ? '' : e.rubro,
+    categoriaId: f.categoriaId ? '' : e.categoria
+  };
+});
+
+const formExponerValido = computed(() => Object.values(erroresExponer.value).every((m) => !m));
+
+function tocarCampoExponer(campo) {
+  tocadoExponer.value[campo] = true;
+}
+
+async function enviarFormExponer() {
+  tocadoExponer.value = { nombreCompleto: true, celular: true, empresa: true, rubro: true, categoriaId: true };
+  if (!formExponerValido.value || enviandoExponer.value) return;
+
+  enviandoExponer.value = true;
+  try {
+    const res = await fetch(urlApi('/api/publico/interesados-stand'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nombreCompleto: formExponer.value.nombreCompleto.trim(),
+        celular: formExponer.value.celular.trim(),
+        empresa: formExponer.value.empresa.trim(),
+        rubro: formExponer.value.rubro.trim(),
+        categoriaId: Number(formExponer.value.categoriaId)
+      })
+    });
+    if (!res.ok) {
+      // 400 = el servidor rechazó un campo y dice cuál: ese mensaje se muestra tal cual.
+      const d = await res.json().catch(() => null);
+      throw Object.assign(new Error(res.status === 400 && d?.mensaje ? d.mensaje : ''), { delServidor: true });
+    }
+
+    formExponer.value = { nombreCompleto: '', celular: '', empresa: '', rubro: '', categoriaId: '' };
+    tocadoExponer.value = { nombreCompleto: false, celular: false, empresa: false, rubro: false, categoriaId: false };
+    // 4 s y no 2: quien visita la página tiene que alcanzar a leer el mensaje entero.
+    await aviso(t.value.exponer.okMensaje, 'ok', 4000, t.value.exponer.okTitulo);
+  } catch (e) {
+    // Un error de red ("Failed to fetch") no le dice nada al visitante: ahí va el mensaje
+    // genérico. Si el servidor rechazó un campo, su explicación viene en español: en portugués
+    // se cambia por un aviso equivalente (errorDatos).
+    const tx = t.value.exponer;
+    const delServidor = e?.delServidor && e.message ? (tx.errorDatos || e.message) : '';
+    await aviso(delServidor || tx.errorMensaje, 'error', 4000, tx.errorTitulo);
+  } finally {
+    enviandoExponer.value = false;
+  }
+}
+
+function cerrarMenu() {
+  menuAbierto.value = false;
+}
+
+function onHeroMouseMove(e) {
+  if (!heroLogoWrap.value) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width - 0.5;
+  const y = (e.clientY - rect.top) / rect.height - 0.5;
+  const grados = 14;
+  heroLogoWrap.value.style.transform = `perspective(900px) rotateY(${x * grados}deg) rotateX(${-y * grados}deg)`;
+}
+
+function onHeroMouseLeave() {
+  if (heroLogoWrap.value) heroLogoWrap.value.style.transform = '';
+}
+
+function pad(n) {
+  return String(n).padStart(2, '0');
+}
+
+async function cargarDatos() {
+  loading.value = true;
+  error.value = null;
+  try {
+    const res = await fetch(urlApi('/api/publico/feria'));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    datos.value = await res.json();
+  } catch {
+    // Solo se marca que falló: el texto lo pone la plantilla, en el idioma elegido.
+    error.value = true;
+  } finally {
+    loading.value = false;
+  }
+}
+
+function abrirPlano() {
+  mostrarPlano.value = true;
+  document.body.style.overflow = 'hidden';
+}
+
+function cerrarPlano() {
+  mostrarPlano.value = false;
+  document.body.style.overflow = '';
+}
+
+function toggleTema() {
+  temaOscuro.value = !temaOscuro.value;
+  document.documentElement.setAttribute('data-theme', temaOscuro.value ? 'dark' : 'light');
+  localStorage.setItem('tema', temaOscuro.value ? 'dark' : 'light');
+}
+
+onMounted(() => {
+  const guardado = localStorage.getItem('tema');
+  if (guardado) {
+    temaOscuro.value = guardado === 'dark';
+    document.documentElement.setAttribute('data-theme', guardado);
+  } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    temaOscuro.value = true;
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+  // Desplazamiento suave solo mientras esta vista está montada: es la única que navega
+  // por anclas dentro de la misma página.
+  document.documentElement.classList.add('fx-scroll-suave');
+  cargarDatos();
+});
+
+let intervaloReloj = null;
+onMounted(() => {
+  intervaloReloj = setInterval(() => {
+    ahora.value = Date.now();
+  }, 1000);
+
+  dejarDeEscucharPublico = escucharListasPublicas([
+    { ...SUSCRIPCION_NOCHES, onLista: (lista) => { nochesEnVivo.value = lista; } },
+    { ...SUSCRIPCION_NOTICIAS, onLista: (lista) => { noticiasEnVivo.value = lista; } },
+  ]);
+});
+
+// Entrada animada de las tarjetas de stands al hacer scroll. La clase que las oculta
+// ("fx-revela-js") la pone este mismo código, no el CSS: así, si el observer no llega a
+// correr por lo que sea, las tarjetas se quedan en su estado normal (visibles) en vez de
+// invisibles para siempre.
+let observadorStands = null;
+onMounted(() => {
+  nextTick(() => {
+    const tarjetas = document.querySelectorAll('#stands-destacados .stand-destacado');
+    if (!tarjetas.length) return;
+    document.documentElement.classList.add('fx-revela-js');
+    observadorStands = new IntersectionObserver(
+      (entradas) => {
+        entradas.forEach((entrada) => {
+          if (entrada.isIntersecting) {
+            entrada.target.classList.add('stand-visible');
+            observadorStands.unobserve(entrada.target);
+          }
+        });
+      },
+      { threshold: 0.15, rootMargin: '0px 0px -60px 0px' }
+    );
+    tarjetas.forEach((el) => observadorStands.observe(el));
+  });
+});
+
+onUnmounted(() => {
+  document.documentElement.classList.remove('fx-scroll-suave', 'fx-revela-js');
+  document.documentElement.lang = langAnterior;
+  clearInterval(intervaloReloj);
+  dejarDeEscucharPublico?.();
+  observadorStands?.disconnect();
+});
+
+const edicionActual = computed(() => {
+  if (!datos.value?.edicion) return null;
+  return datos.value.edicion;
+});
+
+const anioFeria = computed(() => edicionActual.value?.anio || new Date().getFullYear());
+
+// Cuenta regresiva hasta el inicio: 18 de septiembre, 18:00, hora local de quien mira la
+// página (no hay conversión de zona horaria — para el público de Cobija coincide).
+const fechaInicioFeria = computed(() => new Date(anioFeria.value, 8, 18, 18, 0, 0).getTime());
+
+const cuentaRegresiva = computed(() => {
+  const restante = Math.max(0, fechaInicioFeria.value - ahora.value);
+  return {
+    dias: Math.floor(restante / 86400000),
+    horas: Math.floor((restante % 86400000) / 3600000),
+    minutos: Math.floor((restante % 3600000) / 60000),
+    segundos: Math.floor((restante % 60000) / 1000),
+    empezo: restante <= 0
+  };
+});
+</script>
+
+<template>
+  <div class="feria-publica" :class="{ 'tema-oscuro': temaOscuro }">
+    <!-- Navegación -->
+    <header class="nav-fexpo">
+      <div class="nav-inner">
+        <a href="#inicio" class="nav-marca" @click="cerrarMenu">
+          <img :src="imgPublica('logo-fexpo-v2.png')" alt="FEXPO UAP" class="nav-logo" width="1254" height="1254" />
+          <span>FEXPO UAP <em class="nav-anio">{{ anioFeria }}</em></span>
+        </a>
+
+        <nav class="nav-links" :class="{ abierto: menuAbierto }" :aria-label="t.nav.secciones">
+          <a href="#inicio" @click="cerrarMenu">{{ t.nav.inicio }}</a>
+          <a href="#artistas" @click="cerrarMenu">{{ t.nav.artistas }}</a>
+          <a href="#stands-destacados" @click="cerrarMenu">{{ t.nav.stands }}</a>
+          <a href="#stand" class="nav-cta" @click="cerrarMenu">{{ t.nav.obtenStand }}</a>
+        </nav>
+
+        <div class="nav-acciones">
+          <div class="selector-idioma" role="group" :aria-label="t.nav.idioma">
+            <button
+              v-for="i in IDIOMAS"
+              :key="i.codigo"
+              type="button"
+              class="idioma-opcion"
+              :class="{ activo: idioma === i.codigo }"
+              :aria-pressed="idioma === i.codigo"
+              :lang="i.locale"
+              :title="i.nombre"
+              @click="cambiarIdioma(i.codigo)"
+            >{{ i.etiqueta }}</button>
+          </div>
+          <button class="btn-tema" @click="toggleTema" :aria-label="temaOscuro ? t.nav.temaClaro : t.nav.temaOscuro">
+            {{ temaOscuro ? '☀️' : '🌙' }}
+          </button>
+          <button
+            class="nav-hamburguesa"
+            @click="menuAbierto = !menuAbierto"
+            :aria-expanded="menuAbierto"
+            :aria-label="t.nav.abrirMenu"
+          >
+            <span></span><span></span><span></span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Hero: la foto pone la escena, el logo 3D y la cuenta regresiva son el centro -->
+    <section
+      id="inicio"
+      class="hero"
+      :style="{ '--hero-foto': `url(${imgPublica('hero-campus.png')})` }"
+      @mousemove="onHeroMouseMove"
+      @mouseleave="onHeroMouseLeave"
+    >
+      <div class="contenedor hero-contenido">
+        <div class="hero-logo-3d" ref="heroLogoWrap">
+          <img :src="imgPublica('FEXPO-UAP-TRASPARENTE.svg')" alt="FEXPO UAP v.2.0" class="hero-logo-img" width="976" height="661" />
+        </div>
+
+        <div class="hero-cuenta">
+          <template v-if="!cuentaRegresiva.empezo">
+            <span class="cuenta-titulo">{{ t.hero.comienzaEn }}</span>
+            <div class="cuenta-grid">
+              <div class="cuenta-item"><strong>{{ pad(cuentaRegresiva.dias) }}</strong><span>{{ t.hero.dias }}</span></div>
+              <span class="cuenta-sep">:</span>
+              <div class="cuenta-item"><strong>{{ pad(cuentaRegresiva.horas) }}</strong><span>{{ t.hero.horas }}</span></div>
+              <span class="cuenta-sep">:</span>
+              <div class="cuenta-item"><strong>{{ pad(cuentaRegresiva.minutos) }}</strong><span>{{ t.hero.min }}</span></div>
+              <span class="cuenta-sep">:</span>
+              <div class="cuenta-item"><strong>{{ pad(cuentaRegresiva.segundos) }}</strong><span>{{ t.hero.seg }}</span></div>
+            </div>
+          </template>
+          <span v-else class="cuenta-titulo cuenta-titulo--activa">{{ t.hero.yaComenzo }}</span>
+          <span class="hero-lugar">{{ t.hero.lugar }}</span>
+        </div>
+
+        <div class="hero-acciones">
+          <button class="btn btn-primario btn-grande" @click="abrirPlano">
+            {{ t.hero.verPlano }}
+          </button>
+          <a href="#stand" class="btn btn-hero-fantasma btn-grande">{{ t.hero.quieroExponer }}</a>
+        </div>
+      </div>
+      <svg class="hero-canopy" viewBox="0 0 1200 60" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M0,42 L40,14 L80,36 L120,8 L160,32 L200,16 L240,40 L280,10 L320,34 L360,6 L400,38 L440,18 L480,30 L520,4 L560,36 L600,12 L640,40 L680,18 L720,30 L760,6 L800,38 L840,14 L880,34 L920,8 L960,36 L1000,16 L1040,30 L1080,4 L1120,38 L1160,14 L1200,32 L1200,60 L0,60 Z" />
+      </svg>
+    </section>
+
+    <!-- Artistas: primera sección tras el hero. Administrable desde el panel "Noches de
+         FEXPO" (NochesFexpoApiController): cada noche sale de /api/publico/feria y los
+         cambios llegan en vivo por WebSocket (/topic/publico/noches). Sin
+         nombre de artista se ve la silueta animada de "por revelar"; sin foto/video de
+         fondo se queda con el color plano de la tarjeta. Si no hay ninguna noche cargada,
+         la sección entera no se muestra (ver v-if en <section>). -->
+    <section id="artistas" class="seccion noches" v-if="nochesFexpo.length">
+      <div class="noches-fondo" aria-hidden="true"></div>
+      <div class="contenedor">
+        <h2 class="titulo-seccion titulo-noches">{{ t.noches.titulo }}</h2>
+        <p class="subtitulo-seccion subtitulo-noches">{{ t.noches.subtitulo }}</p>
+        <!-- Solo en pantallas táctiles: ahí no hay cursor, la música suena al tocar la tarjeta. -->
+        <p v-if="esPantallaTactil && hayMusicaEnNoches" class="noches-aviso-tactil">{{ t.noches.tocaParaEscuchar }}</p>
+        <div class="grid-noches">
+          <!-- Con música (V38): suena mientras el cursor está encima y sigue donde quedó al
+               volver; con toque o Enter/Espacio se enciende o se apaga (ver sonarNoche).
+               Sin botón, ícono ni aviso dentro de la tarjeta. -->
+          <article
+            class="noche-card"
+            :class="{
+              'noche-card--media': n.urlMedio,
+              'noche-card--musica': n.urlAudio,
+              'noche-card--sonando': nocheSonando === n.id,
+            }"
+            :style="{ '--color-noche': n.color }"
+            v-for="n in nochesFexpo"
+            :key="n.id"
+            :tabindex="n.urlAudio ? 0 : undefined"
+            :role="n.urlAudio ? 'button' : undefined"
+            :aria-pressed="n.urlAudio ? nocheSonando === n.id : undefined"
+            @pointerenter="alEntrarNoche($event, n)"
+            @pointerleave="alSalirNoche($event, n)"
+            @click="alPulsarNoche(n)"
+            @keydown.enter.prevent="alTeclaNoche(n)"
+            @keydown.space.prevent="alTeclaNoche(n)"
+          >
+            <div v-if="n.urlMedio" class="noche-media" aria-hidden="true">
+              <!-- Copia borrosa y ampliada de la misma foto: rellena lo que deja libre el
+                   "contain" de abajo. Sin esto, una foto apaisada dentro de una tarjeta
+                   vertical deja dos franjas vacías; así la tarjeta se ve llena y la foto
+                   sigue viéndose ENTERA, sin recortar. En video no se duplica (serían dos
+                   decodificaciones del mismo archivo): ahí rellena el color de la noche. -->
+              <div
+                v-if="n.medioTipo !== 'VIDEO'"
+                class="noche-media-relleno"
+                :style="{ backgroundImage: `url(${n.urlMedio})` }"
+              ></div>
+              <video
+                v-if="n.medioTipo === 'VIDEO'"
+                class="noche-media-principal"
+                :src="n.urlMedio"
+                muted loop autoplay playsinline
+              />
+              <img v-else class="noche-media-principal" :src="n.urlMedio" alt="" />
+            </div>
+            <div class="noche-fecha" :style="{ background: n.color }"><strong>{{ n.dia }}</strong><span>{{ n.mes }}</span></div>
+            <div class="noche-cuerpo">
+              <h3>{{ n.titulo }}</h3>
+              <p class="noche-dia-semana">{{ n.fechaTexto }}</p>
+              <p class="noche-descripcion" v-if="n.descripcion">{{ n.descripcion }}</p>
+              <div class="noche-artista">
+                <template v-if="n.nombreArtista">
+                  <span class="artista-nombre">🎤 {{ n.nombreArtista }}</span>
+                </template>
+                <template v-else>
+                  <div class="artista-silueta" :style="{ '--color-artista': n.color }" aria-hidden="true"></div>
+                  <span class="artista-etiqueta">{{ t.noches.porRevelar }}</span>
+                </template>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Noticias (V42): las 10 más recientes, cargadas desde el panel "Noticias" y en vivo por
+         /topic/publico/noticias. Carrusel deslizable (dedo, touchpad o arrastrando con el
+         ratón) que avanza solo cada 4 s. Todas las tarjetas miden lo mismo: el medio se recorta
+         (cover) al rectángulo, sea cual sea la proporción de la foto o el video. Sin noticias,
+         la sección no se muestra. -->
+    <section id="noticias" class="seccion noticias" v-if="noticias.length">
+      <div class="contenedor">
+        <h2 class="titulo-seccion">{{ t.noticias.titulo }}</h2>
+        <p class="subtitulo-seccion">{{ t.noticias.subtitulo }}</p>
+        <div
+          class="noticias-carrusel"
+          role="region"
+          aria-roledescription="carousel"
+          :aria-label="t.noticias.region"
+          @pointerenter="alEntrarNoticias"
+          @pointerleave="alSalirNoticias"
+        >
+          <div class="noticias-marco">
+          <div
+            ref="pistaNoticias"
+            class="noticias-pista"
+            :class="{ arrastrando: arrastrandoNoticias }"
+            @scroll.passive="alDesplazarNoticias"
+            @pointerdown="alPresionarPista"
+          >
+            <article
+              v-for="(n, i) in noticias"
+              :key="n.id"
+              class="noticia"
+              aria-roledescription="slide"
+              :aria-label="t.noticias.irA.replace('{n}', i + 1).replace('{total}', noticias.length)"
+            >
+              <div class="noticia-medio">
+                <video v-if="n.medioTipo === 'VIDEO'" :src="n.urlMedio" muted loop autoplay playsinline draggable="false" />
+                <img v-else :src="n.urlMedio" :alt="n.titulo" draggable="false" loading="lazy" />
+              </div>
+              <div class="noticia-texto">
+                <time class="noticia-fecha" :datetime="n.fecha">{{ n.fechaTexto }}</time>
+                <h3 class="noticia-titulo">{{ n.titulo }}</h3>
+                <p class="noticia-contenido">{{ n.texto }}</p>
+              </div>
+            </article>
+          </div>
+          <!-- Flechas tenues a los lados, solo en PC (en celular se desliza con el dedo). -->
+          <template v-if="noticias.length > 1">
+            <button type="button" class="noticias-flecha noticias-flecha--anterior" :aria-label="t.noticias.anterior" @click="noticiaVecina(-1)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+            </button>
+            <button type="button" class="noticias-flecha noticias-flecha--siguiente" :aria-label="t.noticias.siguiente" @click="noticiaVecina(1)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
+            </button>
+          </template>
+          </div>
+          <div v-if="noticias.length > 1" class="noticias-puntos">
+            <button
+              v-for="(n, i) in noticias"
+              :key="n.id"
+              type="button"
+              class="noticias-punto"
+              :class="{ activo: i === noticiaActual }"
+              :aria-label="t.noticias.irA.replace('{n}', i + 1).replace('{total}', noticias.length)"
+              :aria-current="i === noticiaActual ? 'true' : undefined"
+              @click="irANoticia(i)"
+            ></button>
+          </div>
+          <div class="noticias-ver-todas">
+            <RouterLink to="/feria/noticias" class="btn btn-primario">{{ t.noticias.verTodas }}</RouterLink>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stands: qué se va a encontrar el público en la feria, con la primera zona
+         destacada (MYPES). Pensada para quien viene a visitar, no para quien expone
+         —esa conversación sigue más abajo, en "Zonas para exponer". -->
+    <section id="stands-destacados" class="seccion stands">
+      <div class="contenedor">
+        <h2 class="titulo-seccion">{{ t.stands.titulo }}</h2>
+        <p class="subtitulo-seccion">{{ t.stands.subtitulo }}</p>
+
+        <article
+          v-for="stand in standsDestacados"
+          :key="stand.id"
+          class="stand-destacado"
+          :class="{ 'stand-destacado--invertido': stand.invertido }"
+        >
+          <img :src="stand.imagen" :alt="t.stands.lista[stand.id].alt" class="stand-destacado-img" />
+          <div class="stand-destacado-texto">
+            <span class="stand-destacado-tag">{{ t.stands.destacada }}</span>
+            <h3>{{ t.stands.lista[stand.id].titulo }}</h3>
+            <p>{{ t.stands.lista[stand.id].descripcion }}</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Quiero exponer: registro de interesados, con su propio color para distinguirse
+         del resto de la página (verde de día, morado de noche, aquí rojo). -->
+    <section id="stand" class="seccion exponer">
+      <div class="exponer-fondo" aria-hidden="true"></div>
+      <div class="contenedor">
+        <h2 class="titulo-seccion titulo-exponer">{{ t.exponer.titulo }}</h2>
+        <p class="subtitulo-seccion subtitulo-exponer">{{ t.exponer.subtitulo }}</p>
+
+        <form class="exponer-card" @submit.prevent="enviarFormExponer" novalidate>
+          <div class="campo-exponer">
+            <label for="exp-nombre">{{ t.exponer.nombre }}</label>
+            <input
+              id="exp-nombre"
+              type="text"
+              v-filtro="'nombre'"
+              autocapitalize="characters"
+              maxlength="200"
+              v-model.trim="formExponer.nombreCompleto"
+              @blur="tocarCampoExponer('nombreCompleto')"
+              :class="{ invalido: tocadoExponer.nombreCompleto && erroresExponer.nombreCompleto }"
+              autocomplete="name"
+            />
+            <span class="error-campo" v-if="tocadoExponer.nombreCompleto && erroresExponer.nombreCompleto">{{ erroresExponer.nombreCompleto }}</span>
+          </div>
+
+          <div class="campo-exponer">
+            <label for="exp-celular">{{ t.exponer.celular }}</label>
+            <input
+              id="exp-celular"
+              type="tel"
+              v-filtro="'telefono'"
+              inputmode="tel"
+              maxlength="16"
+              v-model.trim="formExponer.celular"
+              @blur="tocarCampoExponer('celular')"
+              :class="{ invalido: tocadoExponer.celular && erroresExponer.celular }"
+              autocomplete="tel"
+              :placeholder="t.exponer.ejemploCelular"
+            />
+            <span class="error-campo" v-if="tocadoExponer.celular && erroresExponer.celular">{{ erroresExponer.celular }}</span>
+          </div>
+
+          <div class="campo-exponer">
+            <label for="exp-empresa">{{ t.exponer.empresa }}</label>
+            <input
+              id="exp-empresa"
+              type="text"
+              v-filtro="'letras'"
+              autocapitalize="characters"
+              maxlength="200"
+              v-model.trim="formExponer.empresa"
+              @blur="tocarCampoExponer('empresa')"
+              :class="{ invalido: tocadoExponer.empresa && erroresExponer.empresa }"
+            />
+            <span class="error-campo" v-if="tocadoExponer.empresa && erroresExponer.empresa">{{ erroresExponer.empresa }}</span>
+          </div>
+
+          <div class="campo-exponer">
+            <label for="exp-rubro">{{ t.exponer.rubro }}</label>
+            <input
+              id="exp-rubro"
+              type="text"
+              v-filtro="'letras'"
+              autocapitalize="characters"
+              maxlength="200"
+              v-model.trim="formExponer.rubro"
+              @blur="tocarCampoExponer('rubro')"
+              :class="{ invalido: tocadoExponer.rubro && erroresExponer.rubro }"
+              :placeholder="t.exponer.ejemploRubro"
+            />
+            <span class="error-campo" v-if="tocadoExponer.rubro && erroresExponer.rubro">{{ erroresExponer.rubro }}</span>
+          </div>
+
+          <div class="campo-exponer">
+            <label for="exp-categoria">{{ t.exponer.categoria }}</label>
+            <select
+              id="exp-categoria"
+              v-model="formExponer.categoriaId"
+              @blur="tocarCampoExponer('categoriaId')"
+              :class="{ invalido: tocadoExponer.categoriaId && erroresExponer.categoriaId }"
+            >
+              <option value="" disabled>{{ t.exponer.eligeCategoria }}</option>
+              <option v-for="cat in categoriasParaExponer" :key="cat.id" :value="cat.id">{{ cat.nombre }}</option>
+            </select>
+            <span class="error-campo" v-if="tocadoExponer.categoriaId && erroresExponer.categoriaId">{{ erroresExponer.categoriaId }}</span>
+          </div>
+
+          <button type="submit" class="btn btn-primario btn-grande exponer-enviar" :disabled="enviandoExponer">
+            {{ enviandoExponer ? t.exponer.enviando : t.exponer.enviar }}
+          </button>
+        </form>
+      </div>
+
+      <!-- Contador de visitas (V38): esquina inferior derecha de la sección. Aparece al pasar
+           el cursor por ella; en pantallas táctiles, que no tienen cursor, se ve siempre.
+           Si no se pudo cargar, no se muestra. -->
+      <div v-if="visitasFormateadas" class="exponer-visitas">
+        <span class="visitas-icono" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </span>
+        <span class="visitas-texto">
+          <strong>{{ visitasFormateadas }}</strong>
+          <small>{{ t.exponer.visitas(totalVisitas) }}</small>
+        </span>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer-fexpo">
+      <div class="contenedor footer-grid">
+        <div class="footer-marca">
+          <img :src="imgPublica('logo-fexpo-v2.png')" alt="FEXPO UAP" class="footer-logo" width="1254" height="1254" loading="lazy" />
+          <p>{{ t.pie.descripcion }}</p>
+        </div>
+        <nav class="footer-nav" :aria-label="t.nav.secciones">
+          <span class="footer-titulo">{{ t.pie.navegacion }}</span>
+          <a href="#inicio">{{ t.nav.inicio }}</a>
+          <a href="#artistas">{{ t.nav.artistas }}</a>
+          <a href="#stands-destacados">{{ t.nav.stands }}</a>
+          <a href="#stand">{{ t.nav.obtenStand }}</a>
+        </nav>
+      </div>
+      <div class="contenedor footer-legal">
+        <p>{{ t.pie.derechos(anioFeria) }}</p>
+        <p class="footer-version">{{ t.pie.equipo }}</p>
+      </div>
+    </footer>
+
+    <!-- Modal Plano -->
+    <div v-if="mostrarPlano" class="modal-overlay" @click.self="cerrarPlano" role="dialog" aria-modal="true" :aria-label="t.plano.dialogo">
+      <div class="modal-plano">
+        <button class="modal-cerrar" @click="cerrarPlano" :aria-label="t.plano.cerrarAria">✕</button>
+        <div class="plano-visor">
+          <img :src="imgPublica('MAPA-WEB-PUBLICO.png')" :alt="t.plano.alt" class="plano-imagen" />
+        </div>
+        <div class="modal-pie">
+          <a :href="imgPublica('MAPA-WEB-PUBLICO.png')" target="_blank" rel="noopener" class="btn btn-fantasma">{{ t.plano.abrirPestana }}</a>
+          <button class="btn btn-primario" @click="cerrarPlano">{{ t.plano.cerrar }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading / Error -->
+    <div v-if="loading" class="estado-carga" aria-live="polite">
+      <div class="spinner"></div>
+      <p>{{ t.estado.cargando }}</p>
+    </div>
+    <div v-else-if="error" class="estado-error" role="alert">
+      <p>⚠️ {{ t.estado.errorCarga }}</p>
+      <button class="btn btn-primario" @click="cargarDatos">{{ t.estado.reintentar }}</button>
+    </div>
+  </div>
+</template>
+
+<style>
+/* Sin scope a propósito: alterna el scroll suave del documento solo mientras esta vista
+   está montada (ver onMounted/onUnmounted). Un <style scoped> no puede alcanzar <html>. */
+html.fx-scroll-suave {
+  scroll-behavior: smooth;
+}
+</style>
+
+<style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&display=swap');
+
+/* Paleta tomada del logotipo real (imagenes/logoFexpoUapV2.png): lima + verde selva para
+   el día, y rojo/morado/azul —los mismos colores de las insignias de facultad del logo—
+   como acentos. Vive solo en esta vista: el resto de la app es una herramienta interna con
+   su propia identidad índigo y no necesita esta paleta. */
+.feria-publica {
+  --fx-lima: #a8d824;
+  --fx-selva: #0c8a0c;
+  --fx-selva-oscura: #063d06;
+  --fx-rojo: #e31e24;
+  --fx-rojo-suave: #fbe1e1;
+  --fx-azul: #0048c0;
+  --fx-azul-oscuro: #002b73;
+  --fx-morado: #3c1884;
+  --fx-morado-oscuro: #241050;
+  --fx-papel: #f7f9f1;
+  --fx-panel: #ffffff;
+  --fx-borde: #e1e6d6;
+  --fx-texto: #16210f;
+  --fx-muted: #5c6b53;
+
+  min-height: 100vh;
+  background: var(--fx-papel);
+  color: var(--fx-texto);
+  font-family: 'Work Sans', system-ui, sans-serif;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+.feria-publica.tema-oscuro {
+  --fx-papel: #0a1207;
+  --fx-panel: #121d0e;
+  --fx-borde: #22301a;
+  --fx-texto: #edf2e6;
+  --fx-muted: #9db08e;
+  --fx-rojo-suave: #3a1414;
+}
+
+.feria-publica h1, .feria-publica h2, .feria-publica h3 {
+  font-family: 'Anton', 'Work Sans', sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+/* Secciones ancladas por el menú: que el encabezado fijo no tape el título al saltar. */
+#inicio, #artistas, #stand, #stands-destacados {
+  scroll-margin-top: 68px;
+}
+
+/* Navegación */
+.nav-fexpo {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: rgba(4, 15, 4, 0.78);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nav-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0.55rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.nav-marca {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  text-decoration: none;
+  color: #ffffff;
+  font-family: 'Anton', sans-serif;
+  font-size: 1.05rem;
+  flex-shrink: 0;
+}
+
+.nav-logo { width: 34px; height: 34px; object-fit: contain; }
+.nav-anio { color: var(--fx-lima); font-style: normal; font-size: 0.75rem; font-family: 'Work Sans', sans-serif; font-weight: 700; margin-left: 0.1rem; }
+
+.nav-links { display: flex; align-items: center; gap: 1.4rem; }
+.nav-links a {
+  color: rgba(242, 247, 236, 0.88);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+.nav-links a:hover { color: var(--fx-lima); }
+
+.nav-cta {
+  background: var(--fx-lima);
+  color: #10280a !important;
+  padding: 0.45rem 0.9rem;
+  border-radius: 7px;
+}
+.nav-cta:hover { background: #93c11d; color: #10280a !important; }
+
+.nav-acciones { display: flex; align-items: center; gap: 0.6rem; flex-shrink: 0; }
+
+.nav-hamburguesa {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.nav-hamburguesa span { width: 18px; height: 2px; background: #f2f7ec; border-radius: 2px; }
+
+.btn-tema {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid rgba(242, 247, 236, 0.4);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f2f7ec;
+  font-size: 1rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease;
+}
+.btn-tema:hover { background: rgba(255, 255, 255, 0.16); }
+
+/* Selector de idioma ES | PT: dos botones en una píldora, el activo en lima como el CTA. */
+.selector-idioma {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid rgba(242, 247, 236, 0.4);
+  background: rgba(255, 255, 255, 0.08);
+}
+.idioma-opcion {
+  min-width: 36px;
+  height: 30px;
+  padding: 0 0.55rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #f2f7ec;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.idioma-opcion:hover { background: rgba(255, 255, 255, 0.14); }
+.idioma-opcion.activo { background: var(--fx-lima); color: #10280a; }
+.idioma-opcion:focus-visible { outline: 2px solid var(--fx-lima); outline-offset: 2px; }
+
+@media (max-width: 780px) {
+  .nav-links {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: rgba(4, 15, 4, 0.97);
+    backdrop-filter: blur(10px);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 0.25rem 1.25rem 1rem;
+    display: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .nav-links.abierto { display: flex; }
+  .nav-links a { padding: 0.7rem 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+  .nav-cta { margin-top: 0.7rem; text-align: center; }
+  .nav-hamburguesa { display: flex; }
+}
+
+/* Hero: la fotografía de la fachada con el logo proyectado es la protagonista.
+   Casi sin texto encima, a propósito: la imagen ya dice lo que hay que decir. */
+.hero {
+  position: relative;
+  /* La foto es 16:9 (1672×941). Si la altura del hero se fija aparte del ancho (antes
+     era min(78vh,620px)), "cover" tiene que ampliar la imagen para tapar la caja y en
+     pantallas angostas y altas termina recortando casi todos los costados —se ve "con
+     zoom". Igualando el aspecto al de la foto, cover casi no necesita recortar; el
+     min/max-height es solo un piso para que quepan las fechas y los botones, y un techo
+     para que en monitores muy anchos el hero no se vuelva gigante. */
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  min-height: 420px;
+  max-height: 680px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1.5rem 3.5rem;
+  overflow: hidden;
+  color: #f2f7ec;
+  background-color: var(--fx-selva-oscura);
+  /* La foto llega por variable CSS (puesta con :style en el <section>, ver script) en vez
+     de un url('/hero-campus.png') fijo: en producción la SPA se sirve bajo /app/ (VITE_BASE
+     del perfil Maven "frontend"), y un url() literal aquí no se reescribe con ese prefijo,
+     así que la foto daba 404 solo ahí. */
+  background-image:
+    linear-gradient(to top, rgba(3, 10, 3, 0.88) 0%, rgba(3, 10, 3, 0.2) 55%, rgba(3, 10, 3, 0.15) 100%),
+    var(--hero-foto);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.hero-contenido {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 1.4rem;
+  animation: entradaHero 0.7s ease both;
+}
+
+/* Logo 3D: perspective en el envoltorio (lo mueve el mousemove del hero, ver script),
+   flotación e inclinación continuas en la imagen (siempre activas, para que el efecto
+   "3D" se note también en móvil, donde no hay puntero). prefers-reduced-motion las
+   detiene junto con el resto de animaciones de la página (regla global al final). */
+.hero-logo-3d {
+  perspective: 900px;
+  transition: transform 0.15s ease-out;
+  /* Promueve el envoltorio a su propia capa de composición: el transform que le pone
+     el mousemove (ver script) no debería competir por repintado con la animación
+     continua del hijo. */
+  will-change: transform;
+}
+
+.hero-logo-img {
+  display: block;
+  width: min(46vw, 300px);
+  height: auto;
+  filter: drop-shadow(0 18px 32px rgba(0, 0, 0, 0.55));
+  transform-style: preserve-3d;
+  animation: flotarLogo3d 6s ease-in-out infinite;
+  /* will-change fuerza una capa de composición propia para esta imagen: sin esto, en
+     GPUs más débiles o con drivers distintos el navegador puede repintar el
+     drop-shadow por CPU en cada frame de la animación infinita, y si no llega a 60fps
+     la rotación se ve saltando/rebotando rápido en vez de flotar suave. */
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+@keyframes flotarLogo3d {
+  0%, 100% { transform: rotateY(-8deg) rotateX(4deg) translateY(0); }
+  50% { transform: rotateY(8deg) rotateX(-4deg) translateY(-10px); }
+}
+
+.hero-cuenta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  color: #ffffff;
+}
+
+.cuenta-titulo {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #ffffff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+}
+
+.cuenta-titulo--activa { font-family: 'Anton', sans-serif; font-size: 1.3rem; }
+
+.cuenta-grid { display: flex; align-items: flex-start; gap: 0.5rem; }
+
+.cuenta-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+  padding: 0.4rem 0.7rem;
+  min-width: 48px;
+}
+
+.cuenta-item strong {
+  font-family: 'Anton', sans-serif;
+  font-size: clamp(1.2rem, 3.5vw, 1.7rem);
+  color: #ffffff;
+  line-height: 1;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.cuenta-item span {
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.85);
+  margin-top: 0.15rem;
+}
+
+.cuenta-sep {
+  font-family: 'Anton', sans-serif;
+  font-size: 1.3rem;
+  color: rgba(255, 255, 255, 0.55);
+  margin-top: 0.3rem;
+}
+
+.hero-lugar {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.hero-acciones { display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; }
+
+.btn-grande { padding: 0.9rem 1.6rem; font-size: 1.05rem; }
+
+.btn-hero-fantasma {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid rgba(242, 247, 236, 0.6);
+  color: #f2f7ec;
+  background: rgba(3, 10, 3, 0.25);
+  border-radius: 7px;
+  text-decoration: none;
+  font-weight: 600;
+  transition: background 0.15s ease;
+}
+.btn-hero-fantasma:hover { background: rgba(242, 247, 236, 0.16); }
+
+@keyframes entradaHero {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hero-canopy {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  width: 100%;
+  height: 46px;
+  z-index: 1;
+}
+
+/* La sección que sigue al hero ahora es "Artistas" (fondo morado), no una clara: el
+   remate combina con el morado de esa franja en vez de con el papel del tema. */
+.hero-canopy path { fill: var(--fx-morado); }
+
+/* Secciones */
+.seccion { padding: 3.5rem 1.5rem; }
+
+.contenedor { max-width: 1180px; margin: 0 auto; }
+
+.titulo-seccion {
+  font-size: clamp(1.35rem, 2.4vw, 1.8rem);
+  margin: 0 0 0.5rem;
+  color: var(--fx-texto);
+}
+
+.subtitulo-seccion {
+  color: var(--fx-muted);
+  margin: 0 0 2rem;
+  font-size: 1rem;
+  max-width: 62ch;
+}
+
+/* Stands (vitrina para el público visitante) */
+.stand-destacado {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0;
+  margin-top: 2rem;
+  background: var(--fx-panel);
+  border: 1px solid var(--fx-borde);
+  border-radius: 18px;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.6s ease;
+}
+
+.stand-destacado:hover { transform: translateY(-4px); box-shadow: var(--sombra-md); }
+
+/* Entrada animada al hacer scroll (ver el IntersectionObserver del script). La clase que
+   oculta la tarjeta la agrega el propio JS al arrancar, así que sin JS —o si algo falla—
+   las tarjetas se quedan visibles de entrada en vez de invisibles para siempre. */
+.fx-revela-js .stand-destacado {
+  opacity: 0;
+  transform: translateY(32px);
+  transition: transform 0.6s ease, opacity 0.6s ease, box-shadow 0.2s ease;
+}
+
+.fx-revela-js .stand-destacado.stand-visible { opacity: 1; transform: translateY(0); }
+
+/* La regla de arriba iguala la especificidad del :hover normal; sin esto, una vez revelada
+   la tarjeta, pasar el mouse encima ya no la levantaba. */
+.fx-revela-js .stand-destacado.stand-visible:hover { transform: translateY(-4px); }
+
+/* Alterna imagen/texto en cada tarjeta siguiente, tipo revista: la de MYPES lleva la foto
+   a la izquierda, esta la lleva a la derecha. Se reordena con `order` (grid), no cambiando
+   el DOM, así el lector de pantalla sigue leyendo primero la foto y luego el texto. */
+.stand-destacado--invertido { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
+.stand-destacado--invertido .stand-destacado-img { order: 2; }
+.stand-destacado--invertido .stand-destacado-texto { order: 1; }
+
+.stand-destacado-img { width: 100%; height: 100%; min-height: 260px; object-fit: cover; display: block; }
+
+.stand-destacado-texto { padding: 2rem; display: flex; flex-direction: column; justify-content: center; }
+
+.stand-destacado-tag {
+  display: inline-block;
+  width: fit-content;
+  background: rgba(12, 138, 12, 0.12);
+  color: var(--fx-selva);
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-bottom: 0.85rem;
+}
+
+.tema-oscuro .stand-destacado-tag { background: rgba(168, 216, 36, 0.18); color: var(--fx-lima); }
+
+.stand-destacado-texto h3 { margin: 0 0 0.75rem; font-size: 1.4rem; }
+.stand-destacado-texto p { margin: 0; color: var(--fx-muted); line-height: 1.6; }
+
+
+/* Artistas / Noches de FEXPO */
+.noches { position: relative; overflow: hidden; color: #f2f7ec; }
+
+.noches-fondo {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(150deg, var(--fx-morado) 0%, var(--fx-morado-oscuro) 55%, var(--fx-azul-oscuro) 100%);
+}
+
+.noches .contenedor { position: relative; z-index: 1; }
+.titulo-noches { color: #ffffff; }
+.subtitulo-noches { color: rgba(242, 247, 236, 0.78); }
+
+/* Flex y no grid: con grid de columnas iguales, una sola noche se estiraba a todo el ancho.
+   Así cada tarjeta mantiene su ancho fijo, una sola queda centrada, y cada noche nueva se
+   coloca a su derecha (y baja de fila sola cuando ya no entran). */
+.grid-noches {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.25rem;
+}
+
+/* Rectángulo pequeño de proporción fija (tipo afiche): el ancho fijo es lo que permite que
+   una sola noche quede centrada en vez de estirarse, y que las siguientes se acomoden a su
+   derecha. El texto se ancla abajo, sobre el degradado. */
+.noche-card {
+  position: relative;
+  overflow: hidden;
+  width: min(272px, 100%);
+  aspect-ratio: 3 / 4;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background:
+    linear-gradient(170deg, color-mix(in srgb, var(--color-noche) 38%, #150b33) 0%, #0c0722 100%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  padding: 1.1rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.noche-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.35);
+}
+
+.noche-media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* La foto/video se ve COMPLETA: "contain", nunca "cover" —cover recortaba la cara o los
+   bordes de la imagen. Se escala sola hasta caber entera dentro del rectángulo. */
+.noche-media-principal {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* El relleno borroso va detrás de la imagen completa (ver comentario en la plantilla). */
+.noche-media-relleno {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  /* El scale tapa el borde translúcido que deja el blur al llegar al filo de la caja. */
+  transform: scale(1.2);
+  filter: blur(22px) brightness(0.55) saturate(1.1);
+}
+
+/* Degradado de lectura: transparente arriba (deja ver la foto entera) y opaco abajo, que es
+   donde está el texto. Sin esto, sobre una foto clara el texto blanco no se lee. */
+.noche-card--media::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(
+    to top,
+    rgba(6, 4, 18, 0.96) 0%,
+    rgba(6, 4, 18, 0.82) 28%,
+    rgba(6, 4, 18, 0.35) 55%,
+    rgba(6, 4, 18, 0.12) 100%
+  );
+}
+
+/* Por encima del medio y su degradado (que son position: absolute con z-index propio):
+   sin esto, el orden normal del flujo no garantiza que el contenido quede arriba de capas
+   posicionadas. Ojo: aquí NO va .noche-fecha — esta regla es más específica que la suya y
+   le pisaría el `position: absolute` con el que flota en la esquina. */
+.noche-card > .noche-cuerpo {
+  position: relative;
+  z-index: 3;
+}
+
+/* La fecha flota arriba a la izquierda para no robarle alto al texto de abajo. */
+.noche-fecha {
+  position: absolute;
+  top: 0.9rem;
+  left: 0.9rem;
+  z-index: 3;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+}
+
+.noche-fecha strong { font-family: 'Anton', sans-serif; font-size: 1.3rem; line-height: 1; }
+.noche-fecha span { font-size: 0.64rem; }
+
+.noche-cuerpo h3 { margin: 0 0 0.2rem; font-size: 1.1rem; }
+.noche-dia-semana { margin: 0 0 0.45rem; font-size: 0.76rem; color: rgba(242, 247, 236, 0.72); }
+
+/* Recortada a 3 líneas: una descripción larga estiraría el texto hasta tapar la foto y
+   dejaría las tarjetas descuadradas entre sí. */
+.noche-descripcion {
+  margin: 0 0 0.6rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: rgba(242, 247, 236, 0.88);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Cartel aún por confirmar: un artista por noche, en silueta. El degradado que la rellena
+   se desliza sin parar —un "brillo" que dice "esto se revela pronto" sin texto. */
+.noche-artista {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+}
+
+.artista-silueta {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  /* Color de respaldo por si el navegador no soporta mask-image: sin esto, sin el
+     ::before (que sí queda recortado por la máscara) se vería vacío. */
+  background: var(--color-artista);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='20' r='12'/%3E%3Cpath d='M32 36c-15 0-26 10-26 22v6h52v-6c0-12-11-22-26-22z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='20' r='12'/%3E%3Cpath d='M32 36c-15 0-26 10-26 22v6h52v-6c0-12-11-22-26-22z'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+/* El brillo ya no anima "background-position" (una propiedad que fuerza repintado en
+   cada frame): en vez de eso desliza con "transform" una capa más ancha que el propio
+   ícono, que el navegador sí puede componer por GPU de forma fiable. La máscara del
+   padre (.artista-silueta) recorta este ::before a la silueta igual que antes. */
+.artista-silueta::before {
+  content: '';
+  position: absolute;
+  inset: 0 -80%;
+  background: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--color-artista) 60%, black) 0%,
+    var(--color-artista) 35%,
+    #ffffff 50%,
+    var(--color-artista) 65%,
+    color-mix(in srgb, var(--color-artista) 60%, black) 100%
+  );
+  animation: brillarSilueta 3.2s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes brillarSilueta {
+  0% { transform: translateX(-25%); }
+  100% { transform: translateX(25%); }
+}
+
+.artista-etiqueta {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(242, 247, 236, 0.9);
+}
+
+/* Artista confirmado (nombre puesto desde el panel): reemplaza la silueta animada, ya no
+   hace falta decir "por revelar". */
+.artista-nombre {
+  font-family: 'Anton', sans-serif;
+  font-size: 1.05rem;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+
+/* Música de la noche (V38): la tarjeta suena mientras el cursor está encima. */
+.noche-card--musica { cursor: pointer; }
+.noche-card--musica:focus-visible { outline: 3px solid #ffffff; outline-offset: 3px; }
+
+/* Mientras suena, el borde toma el color de la noche: se ve cuál es la que se escucha. */
+.noche-card--sonando {
+  border-color: var(--color-noche);
+  box-shadow:
+    0 16px 32px rgba(0, 0, 0, 0.35),
+    0 0 0 2px var(--color-noche),
+    0 0 28px color-mix(in srgb, var(--color-noche) 55%, transparent);
+}
+
+/* Aviso de las noches solo en pantallas táctiles: tocar la tarjeta hace sonar la música. */
+.noches-aviso-tactil {
+  display: inline-block;
+  margin: -0.4rem 0 1.4rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* Noticias (V42). Todas las tarjetas son el mismo rectángulo horizontal: en PC el medio llena la
+   tarjeta entera y el texto va encima, sobre un degradado; en celular el medio es un 16:9 arriba
+   y el texto un bloque de alto fijo abajo, así ninguna noticia mide distinto por tener más texto. */
+.noticias-carrusel { position: relative; }
+
+.noticias-pista {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  border-radius: 18px;
+  cursor: grab;
+  touch-action: pan-x pan-y;
+}
+.noticias-pista::-webkit-scrollbar { display: none; }
+.noticias-pista.arrastrando { scroll-snap-type: none; cursor: grabbing; user-select: none; }
+
+.noticia {
+  position: relative;
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  aspect-ratio: 21 / 9;
+  overflow: hidden;
+  background: #0b0f08;
+  color: #ffffff;
+}
+
+/* overflow + imagen en absoluto: una foto vertical no puede estirar el cuadro (con aspect-ratio,
+   el contenido que sobra agranda la caja en vez de recortarse). */
+.noticia-medio { position: absolute; inset: 0; overflow: hidden; }
+.noticia-medio img, .noticia-medio video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+.noticia-texto {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 4.5rem 2rem 1.8rem;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.6) 55%, transparent 100%);
+}
+.noticia-fecha {
+  display: inline-block;
+  margin-bottom: 0.45rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  background: var(--fx-lima);
+  color: #10280a;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.noticia-titulo {
+  margin: 0 0 0.4rem;
+  font-family: 'Anton', sans-serif;
+  font-weight: 400;
+  font-size: clamp(1.3rem, 2.4vw, 2rem);
+  line-height: 1.15;
+  max-width: 40ch;
+}
+.noticia-contenido {
+  margin: 0;
+  max-width: 75ch;
+  color: rgba(255, 255, 255, 0.88);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.noticias-marco { position: relative; }
+
+/* Flechas: tenues para no tapar la foto; se ven del todo al pasar por encima de ellas. Solo con
+   ratón: en pantallas táctiles no aparecen. */
+.noticias-flecha {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: none;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #ffffff;
+  cursor: pointer;
+  opacity: 0.45;
+  transform: translateY(-50%);
+  transition: opacity 0.2s ease, background 0.2s ease;
+  backdrop-filter: blur(2px);
+}
+.noticias-flecha svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.noticias-flecha--anterior { left: 14px; }
+.noticias-flecha--siguiente { right: 14px; }
+.noticias-marco:hover .noticias-flecha { opacity: 0.7; }
+.noticias-flecha:hover, .noticias-flecha:focus-visible { opacity: 1; background: rgba(0, 0, 0, 0.55); }
+.noticias-flecha:focus-visible { outline: 2px solid var(--fx-lima); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) {
+  .noticias-flecha { display: grid; }
+}
+
+.noticias-ver-todas { display: flex; justify-content: center; margin-top: 1.2rem; }
+
+.noticias-puntos { display: flex; justify-content: center; gap: 0.5rem; margin-top: 1rem; }
+.noticias-punto {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--fx-borde);
+  cursor: pointer;
+  transition: width 0.25s ease, background 0.25s ease;
+}
+.noticias-punto.activo { width: 28px; background: var(--fx-rojo); }
+.noticias-punto:focus-visible { outline: 2px solid var(--fx-rojo); outline-offset: 2px; }
+
+@media (max-width: 720px) {
+  .noticia { aspect-ratio: auto; display: flex; flex-direction: column; background: var(--fx-panel); color: var(--fx-texto); border: 1px solid var(--fx-borde); border-radius: 18px; }
+  .noticias-pista { gap: 0; }
+  .noticia-medio { position: relative; inset: auto; aspect-ratio: 16 / 9; flex-shrink: 0; }
+  .noticia-texto { position: static; padding: 1rem 1.1rem 1.2rem; background: none; height: 11.5rem; box-sizing: border-box; }
+  .noticia-titulo { font-size: 1.25rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .noticia-contenido { color: var(--fx-muted); font-size: 0.92rem; }
+}
+
+/* Quiero exponer: sección roja a propósito, para que se note que es una acción distinta
+   (registrar interés) de todo lo informativo que viene antes. */
+/* padding-bottom mayor que el de .seccion: es el sitio del contador de visitas, en la esquina
+   inferior derecha (ver .exponer-visitas). */
+.exponer { position: relative; overflow: hidden; text-align: center; padding-bottom: 6rem; }
+
+.exponer-fondo {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(160deg, var(--fx-rojo) 0%, #7a1216 60%, #430a0c 100%);
+}
+
+.exponer .contenedor { position: relative; z-index: 1; }
+
+.titulo-exponer { color: #ffffff; }
+
+.subtitulo-exponer {
+  color: rgba(255, 255, 255, 0.85);
+  max-width: 52ch;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.exponer-card {
+  max-width: 560px;
+  margin: 2rem auto 0;
+  text-align: left;
+  padding: 2.25rem;
+  background: #fff8f7;
+  border-radius: 18px;
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+/* Contador de visitas (V38), en la esquina inferior derecha de la sección roja.
+   - Vidrio translúcido en vez de una pastilla opaca: toma el rojo del fondo y no compite con
+     el formulario, que es lo principal de la sección.
+   - Número en Anton, como los títulos de la página; etiqueta en Work Sans, en mayúsculas.
+   - Aparece al pasar el cursor por la sección o al entrar en ella con el teclado. En pantallas
+     sin cursor (táctiles) queda siempre visible: ahí "pasar por encima" no existe.
+   Su sitio es el padding-bottom extra de .exponer: sin él, entre ~640 y ~1030 px de ancho el
+   contador se montaba sobre la esquina de la tarjeta del formulario. */
+.exponer-visitas {
+  position: absolute;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1.1rem 0.5rem 0.5rem;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.06));
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  text-align: left;
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.exponer:hover .exponer-visitas,
+.exponer:focus-within .exponer-visitas {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (hover: none) {
+  .exponer-visitas { opacity: 1; transform: none; }
+}
+
+/* Recuadro blanco con el ojo en el rojo de la página: el único acento del contador. */
+.visitas-icono {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--fx-rojo);
+}
+.visitas-icono svg { width: 20px; height: 20px; }
+
+.visitas-texto { display: flex; flex-direction: column; gap: 0.15rem; line-height: 1; }
+.visitas-texto strong {
+  font-family: 'Anton', sans-serif;
+  font-weight: 400;
+  font-size: 1.4rem;
+  letter-spacing: 0.02em;
+}
+.visitas-texto small {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* En el teléfono no queda esquina libre junto a la tarjeta: va debajo, centrado. */
+@media (max-width: 640px) {
+  .exponer { padding-bottom: 3.5rem; }
+  .exponer-visitas { position: static; width: fit-content; margin: 1.5rem auto 0; }
+}
+
+.campo-exponer { display: flex; flex-direction: column; gap: 0.4rem; }
+
+.campo-exponer label { font-size: 0.85rem; font-weight: 700; color: #3a1214; }
+
+.campo-exponer input, .campo-exponer select {
+  font: inherit;
+  padding: 0.65rem 0.8rem;
+  border-radius: 8px;
+  border: 1.5px solid #e6cdcd;
+  background: #ffffff;
+  color: #241010;
+}
+
+.campo-exponer input:focus, .campo-exponer select:focus {
+  outline: none;
+  border-color: var(--fx-rojo);
+  box-shadow: 0 0 0 3px rgba(227, 30, 36, 0.18);
+}
+
+.campo-exponer input.invalido, .campo-exponer select.invalido { border-color: var(--fx-rojo); }
+
+.error-campo { font-size: 0.78rem; color: var(--fx-rojo); font-weight: 600; }
+
+.exponer-enviar { margin-top: 0.4rem; }
+
+/* Footer */
+.footer-fexpo { background: var(--fx-panel); border-top: 1px solid var(--fx-borde); }
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.3fr) 1fr;
+  gap: 2rem;
+  padding: 3rem 1.5rem 2rem;
+}
+
+.footer-marca { display: flex; flex-direction: column; gap: 0.85rem; }
+.footer-logo { width: 44px; height: 44px; object-fit: contain; }
+.footer-marca p { margin: 0; font-size: 0.88rem; color: var(--fx-muted); max-width: 30ch; }
+
+.footer-titulo {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--fx-muted);
+  margin-bottom: 0.85rem;
+}
+
+.footer-nav { display: flex; flex-direction: column; gap: 0.6rem; }
+.footer-nav a {
+  color: var(--fx-texto);
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-weight: 500;
+  width: fit-content;
+}
+.footer-nav a:hover { color: var(--fx-rojo); }
+
+.footer-legal {
+  border-top: 1px solid var(--fx-borde);
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--fx-muted);
+}
+.footer-legal p { margin: 0; }
+
+/* Modal Plano */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(6, 15, 6, 0.78);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; padding: 1rem;
+}
+
+.modal-plano {
+  background: var(--fx-panel);
+  border: 1px solid var(--fx-borde);
+  border-radius: 14px;
+  width: 100%; max-width: 1100px;
+  /* height, no max-height: un flex column solo reparte espacio "de sobra" con flex-grow
+     cuando el propio contenedor tiene una altura definida — con max-height se ajusta al
+     contenido y, ahora que la imagen del plano vive fuera del flujo (position: absolute),
+     no queda contenido que la fuerce a crecer, así que el visor terminaba en 0px. */
+  height: min(90vh, 760px);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+.modal-cerrar {
+  position: absolute; top: 1rem; right: 1rem;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--fx-panel);
+  border: 1px solid var(--fx-borde);
+  font-size: 1.2rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1;
+}
+
+.modal-cerrar:hover { background: var(--fx-rojo-suave); color: var(--fx-rojo); }
+
+/* El mapa es un plano blanco con su propia leyenda de colores por zona: se deja tal cual,
+   sobre un papel blanco fijo (no el fx-papel del tema), como una lámina dentro del marco
+   verde/lima de la modal — así nunca queda ilegible en modo oscuro. */
+.plano-visor {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: var(--fx-selva-oscura);
+}
+
+/* Posicionada en vez de w/h:100% + object-fit dentro del flex: el % de alto de un hijo
+   normal contra un item flex no siempre se resuelve (el navegador lo trataba como auto y
+   la imagen se salía de su caja). Contra un contenedor posicionado, el % de una imagen
+   absoluta sí se resuelve de forma fiable. */
+.plano-imagen {
+  position: absolute;
+  inset: 1.25rem;
+  width: calc(100% - 2.5rem);
+  height: calc(100% - 2.5rem);
+  object-fit: contain;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.modal-pie { display: flex; justify-content: flex-end; gap: 0.75rem; padding: 1rem 1.5rem; border-top: 1px solid var(--fx-borde); }
+
+/* Botones propios de esta vista (sobreescriben los genéricos de style.css solo aquí) */
+.feria-publica .btn-primario {
+  background: var(--fx-lima);
+  border-color: var(--fx-lima);
+  color: #10280a;
+  font-weight: 700;
+}
+
+.feria-publica .btn-primario:hover { background: #93c11d; filter: none; }
+
+.feria-publica .btn-fantasma { background: transparent; border-color: var(--fx-borde); color: var(--fx-texto); }
+
+/* Estados */
+.estado-carga, .estado-error {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 400px; padding: 2rem; text-align: center; gap: 1rem;
+}
+
+.spinner {
+  width: 46px; height: 46px;
+  border: 4px solid var(--fx-borde);
+  border-top-color: var(--fx-selva);
+  border-radius: 50%;
+  animation: girar 1s linear infinite;
+}
+
+@keyframes girar { to { transform: rotate(360deg); } }
+
+.estado-error p { color: var(--fx-rojo); margin: 0; }
+
+/* Responsive */
+@media (max-width: 720px) {
+  .footer-grid { grid-template-columns: 1fr; gap: 1.75rem; }
+  .footer-legal { flex-direction: column; text-align: center; }
+}
+
+@media (max-width: 640px) {
+  .hero { padding: 1.25rem 1rem 1.75rem; }
+  .hero-contenido { gap: 1rem; }
+  .hero-logo-img { width: min(44vw, 190px); }
+  .hero-acciones { flex-direction: column; width: 100%; }
+  .btn-grande { width: 100%; }
+  .stand-destacado { grid-template-columns: 1fr; }
+  .stand-destacado--invertido .stand-destacado-img,
+  .stand-destacado--invertido .stand-destacado-texto {
+    order: initial;
+  }
+  .stand-destacado-img { min-height: 200px; }
+  .stand-destacado-texto { padding: 1.5rem; }
+  /* La tarjeta de noche ya es un rectángulo de ancho fijo que entra en pantalla de teléfono
+     (272px), así que no necesita reordenarse aquí: se deja igual que en escritorio. */
+  .plano-visor { min-height: 400px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+</style>

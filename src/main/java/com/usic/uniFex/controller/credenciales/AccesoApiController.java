@@ -67,7 +67,7 @@ public class AccesoApiController {
     public record Movimiento(String codigo, String sentido) {}
 
     @PostMapping
-    @PreAuthorize(Roles.CONTROLA_ACCESO)
+    @PreAuthorize(Roles.CONTROLA_ACCESO_O_ESCANER)
     public ResponseEntity<Map<String, Object>> registrar(
             @RequestBody Movimiento req,
             @RequestHeader(value = "X-Origen", required = false) String origen) {
@@ -135,7 +135,7 @@ public class AccesoApiController {
 
     /** Cuanta gente hay dentro ahora mismo: el numero que importa en una evacuacion. */
     @GetMapping("/dentro")
-    @PreAuthorize(Roles.CONTROLA_ACCESO)
+    @PreAuthorize(Roles.CONTROLA_ACCESO_O_ESCANER)
     public Map<String, Object> dentro() {
         return Map.of("dentro", accesos.dentroAhora());
     }

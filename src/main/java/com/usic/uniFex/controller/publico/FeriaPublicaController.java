@@ -18,11 +18,7 @@ import com.usic.uniFex.model.entity.Categoria;
 import com.usic.uniFex.model.entity.Edicion;
 import com.usic.uniFex.model.entity.Puesto;
 import com.usic.uniFex.model.dto.EdicionDTO;
-import com.usic.uniFex.model.dto.NocheFexpoDTO;
-import com.usic.uniFex.model.dto.NoticiaDTO;
 import com.usic.uniFex.model.dto.PlanoDTO;
-import com.usic.uniFex.model.service.NochesFexpoService;
-import com.usic.uniFex.model.service.NoticiasService;
 import com.usic.uniFex.model.service.VisitasPaginaService;
 
 import lombok.RequiredArgsConstructor;
@@ -36,8 +32,6 @@ public class FeriaPublicaController {
     private final ICategoriaDao categoriaDao;
     private final IPuestoDao puestoDao;
     private final com.usic.uniFex.model.service.PlanoService planoService;
-    private final NochesFexpoService nochesFexpoService;
-    private final NoticiasService noticiasService;
     private final VisitasPaginaService visitasService;
 
     /**
@@ -155,15 +149,6 @@ public class FeriaPublicaController {
                 .toList();
         cuerpo.put("estadisticasPorCategoria", statsPorCategoria);
 
-        // 6. Noches de FEXPO (cartelera de artistas, administrable desde el panel — ver V26)
-        List<NocheFexpoDTO> noches = nochesFexpoService.listarDeEdicionActiva().stream()
-                .map(NocheFexpoDTO::de)
-                .toList();
-        cuerpo.put("noches", noches);
-
-        // 6b. Noticias: las 10 últimas registradas, para el carrusel de novedades (ver V42)
-        cuerpo.put("noticias", noticiasService.recientesPublicas().stream().map(NoticiaDTO::de).toList());
-
         // 7. Plano (info completa para el visor público)
         PlanoDTO plano = planoService.activo();
         if (plano != null) {
@@ -176,31 +161,6 @@ public class FeriaPublicaController {
         }
 
         return cuerpo;
-    }
-
-    /**
-     * Solo la cartelera de noches. Los cambios llegan en vivo por WebSocket
-     * ({@code /topic/publico/noches}, ver NochesFexpoEventPublisher); este GET es para que el
-     * cliente se ponga al día cada vez que (re)conecta, porque lo que cambió mientras estaba
-     * desconectado no se vuelve a difundir. Aparte del {@code /api/publico/feria} completo,
-     * que recalcula las estadísticas de todas las casetas en cada llamada.
-     */
-    @GetMapping("/noches")
-    public List<NocheFexpoDTO> noches() {
-        return nochesFexpoService.listarDeEdicionActiva().stream()
-                .map(NocheFexpoDTO::de)
-                .toList();
-    }
-
-    /**
-     * TODAS las noticias de la edición activa, de la última registrada a la primera: la vista
-     * "todas las noticias" (agrupada por día) y la resincronización del carrusel, que se queda
-     * con las 10 primeras. Mismo papel que {@link #noches()}: es la misma lista que difunde
-     * {@code /topic/publico/noticias} (ver NoticiasEventPublisher), pedida al (re)conectar.
-     */
-    @GetMapping("/noticias")
-    public List<NoticiaDTO> noticias() {
-        return noticiasService.listarDeEdicionActiva().stream().map(NoticiaDTO::de).toList();
     }
 
     /**

@@ -1,0 +1,33 @@
+# Entorno de revisión aislado. Usar junto a docker-compose.yml:
+# docker compose -f docker-compose.yml -f docker-compose.mejoras.yml up -d --build app-mejoras
+# La base unifex_mejoras se crea primero como copia de unifex (ver DOCKER.md).
+services:
+  app-mejoras:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: unifex-app:mejoras
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/unifex_mejoras
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-unifex}
+      DB_PASSWORD: ${DB_PASSWORD:-unifex_dev_2026}
+      API_KEY: ${API_KEY:-clave-api-solo-para-pruebas-locales}
+      JWT_SECRET: ${JWT_SECRET:-secreto-jwt-solo-para-pruebas-locales-0123456789}
+      ADMIN1_PASSWORD: ${ADMIN1_PASSWORD:-Admin1Fexpo2026}
+      ADMIN2_PASSWORD: ${ADMIN2_PASSWORD:-Admin2Fexpo2026}
+      UNIFEX_PUBLICO_BASE_URL: ${UNIFEX_MEJORAS_PUBLICO_BASE_URL:-http://localhost:7677}
+      NOTA_VERIFICACION_URL: ${NOTA_VERIFICACION_URL:-}
+      WHATSAPP_ENABLED: "false"
+    volumes:
+      - uploads-mejoras:/var/lib/unifex
+      - logs-mejoras:/var/log/unifex
+    ports:
+      - "127.0.0.1:${APP_MEJORAS_PUERTO:-7677}:7676"
+
+volumes:
+  uploads-mejoras:
+  logs-mejoras:

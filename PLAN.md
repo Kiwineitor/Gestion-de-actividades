@@ -8,6 +8,12 @@ probó (navegó, ejecutó, comprobó) — no por intención.
 
 **Actualizado el 2026-08-11** con las decisiones del usuario y el flujo de venta definido.
 
+**Mejoras de actividades (2026-10-23):** ver `PLAN_MEJORAS_ACTIVIDADES.md` para las fases,
+decisiones y el estado de la base local `unifex_mejoras`. Las pantallas de Noticias,
+Noches de FEXPO y Seguimiento por facultad se retiraron del código; el SQL local
+`db/reserva/local/retirar_modulos_descartados.sql` elimina sus datos y permisos
+únicamente cuando se ejecuta manualmente en una base elegida explícitamente.
+
 ---
 
 ## Visión del producto

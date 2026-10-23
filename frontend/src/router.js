@@ -9,7 +9,7 @@ import { usePermisosStore } from './stores/permisos';
  * cámbialo también allí.
  */
 const TITULO_PESTANA_FERIA = 'Gestión de Ferias';
-const TITULO_PESTANA_SISTEMA = 'Gestión de Ferias — Casetas';
+const TITULO_PESTANA_SISTEMA = 'Gestión de Actividades — Puestos';
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -32,12 +32,6 @@ const router = createRouter({
       meta: { titulo: 'Gestión de Ferias', publico: true, tituloPestana: TITULO_PESTANA_FERIA }
     },
     {
-      // Todas las noticias de la edición activa, agrupadas por día (el "Ver todas" del carrusel).
-      path: '/feria/noticias',
-      component: () => import('./views/FeriaNoticias.vue'),
-      meta: { titulo: 'Noticias', publico: true, tituloPestana: TITULO_PESTANA_FERIA }
-    },
-    {
       // Layout global: AppShell (menu/cabecera fijos) con el router-view dentro.
       // Cada vista se carga de forma diferida y asincrona en el contenedor central.
       path: '/',
@@ -54,7 +48,6 @@ const router = createRouter({
         { path: 'puestos', component: () => import('./views/Puestos.vue'), meta: { titulo: 'Puestos', requiereAuth: true, pantalla: 'puestos'} },
         { path: 'seguimiento', component: () => import('./views/Seguimiento.vue'), meta: { titulo: 'Seguimiento en vivo', requiereAuth: true, pantalla: 'seguimiento'} },
         { path: 'anuncios', component: () => import('./views/Anuncios.vue'), meta: { titulo: 'Anuncios', requiereAuth: true, pantalla: 'anuncios'} },
-        { path: 'seguimiento-facultad', component: () => import('./views/SeguimientoFacultad.vue'), meta: { titulo: 'Seguimiento por facultad', requiereAuth: true, pantalla: 'seguimiento-facultad'} },
         { path: 'responsables-extra', component: () => import('./views/ResponsablesExtra.vue'), meta: { titulo: 'Responsables extra', requiereAuth: true, pantalla: 'responsables-extra'} },
         { path: 'usuarios', component: () => import('./views/Usuarios.vue'), meta: { titulo: 'Usuarios', requiereAuth: true, pantalla: 'usuarios'} },
         { path: 'roles', component: () => import('./views/Roles.vue'), meta: { titulo: 'Roles', requiereAuth: true, pantalla: 'roles'} },
@@ -67,8 +60,6 @@ const router = createRouter({
         { path: 'reportes', component: () => import('./views/Reportes.vue'), meta: { titulo: 'Reportes', requiereAuth: true, pantalla: 'reportes'} },
         { path: 'control-ventas', component: () => import('./views/ControlVentas.vue'), meta: { titulo: 'Control de ventas', requiereAuth: true, pantalla: 'control-ventas'} },
         { path: 'reporte-responsables', component: () => import('./views/ReporteResponsables.vue'), meta: { titulo: 'Reporte de Responsables', requiereAuth: true, pantalla: 'reporte-responsables'} },
-        { path: 'noches-fexpo', component: () => import('./views/NochesFexpo.vue'), meta: { titulo: 'Noches de FEXPO', requiereAuth: true, pantalla: 'noches-fexpo' } },
-        { path: 'noticias', component: () => import('./views/Noticias.vue'), meta: { titulo: 'Noticias', requiereAuth: true, pantalla: 'noticias' } },
         { path: 'inscripciones', component: () => import('./views/Inscripciones.vue'), meta: { titulo: 'Inscripciones', requiereAuth: true, pantalla: 'inscripciones'} },
         { path: 'interesados', component: () => import('./views/Interesados.vue'), meta: { titulo: 'Interesados en exponer', requiereAuth: true, pantalla: 'interesados' } },
         { path: 'notificaciones', component: () => import('./views/Notificaciones.vue'), meta: { titulo: 'Notificaciones', requiereAuth: true, pantalla: 'notificaciones'} },

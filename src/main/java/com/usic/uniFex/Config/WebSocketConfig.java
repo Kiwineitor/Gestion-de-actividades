@@ -33,8 +33,7 @@ import lombok.RequiredArgsConstructor;
  * - Los clientes se conectan al endpoint {@code /ws} por WebSocket nativo.
  * - El servidor publica el estado de las casetas en {@code /topic/puestos} (y demas topics
  *   internos), que exigen JWT, y el contenido de la vista publica bajo
- *   {@link #PREFIJO_PUBLICO} (hoy, la cartelera de "Noches de FEXPO" y las noticias), abierto a
- *   anonimos.
+ *   {@link #PREFIJO_PUBLICO}, reservado para contenido publico, abierto a anonimos.
  */
 @Configuration
 @EnableWebSocketMessageBroker
@@ -58,7 +57,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
         // Latido del servidor cada 10 s. Sin el, una conexion que no recibe mensajes —la vista
-        // publica, donde la cartelera cambia muy de vez en cuando— queda muda, y un proxy
+        // publica, donde los cambios pueden ser infrecuentes— queda muda, y un proxy
         // delante (nginx corta a los 60 s por defecto) la cierra: el cliente vive reconectando.
         // El segundo valor es 0 a proposito: el servidor NO exige latidos al cliente, porque el
         // navegador frena los temporizadores de las pestañas en segundo plano y el broker

@@ -32,15 +32,13 @@ const TODOS = [
   { p: 'escaner', a: '/escaner', icono: '📷', titulo: 'Escanear credencial',
     desc: 'Control de entradas y salidas en la puerta.', color: '#ea580c' },
   { p: 'inscripciones', a: '/inscripciones', icono: '📋', titulo: 'Inscripciones',
-    desc: 'Todas las ventas de la feria, con su detalle y lo adjuntado.', color: '#4f46e5' },
+    desc: 'Todas las ventas de la actividad, con su detalle y lo adjuntado.', color: '#4f46e5' },
   { p: 'reportes', a: '/reportes', icono: '📊', titulo: 'Reportes',
     desc: 'Recaudación y ventas por categoría, entidad y vendedor.', color: '#0891b2' },
   { p: 'editor', a: '/editor', icono: '✏️', titulo: 'Editor del plano',
     desc: 'Casetas, colores y distribución sobre el plano.', color: '#7c3aed' },
   { p: 'categorias', a: '/categorias', icono: '🏷️', titulo: 'Categorías',
     desc: 'Nombre, color, tamaño y las opciones de precio de cada categoría.', color: '#c026d3' },
-  { p: 'seguimiento', a: '/seguimiento', icono: '📡', titulo: 'Seguimiento en vivo',
-    desc: 'Quién está conectado ahora mismo y qué está haciendo.', color: '#0284c7' },
   { p: 'usuarios', a: '/usuarios', icono: '👥', titulo: 'Usuarios',
     desc: 'Crear y gestionar los usuarios del sistema.', color: '#db2777' },
 ];
@@ -73,7 +71,7 @@ const subtitulo = computed(() => {
          en otra pantalla, y una pagina en blanco parece que la aplicacion se rompio. -->
     <section v-else class="bienvenida card">
       <span class="icono-grande" aria-hidden="true">🎪</span>
-      <h3>Bienvenido a FEXPO UAP</h3>
+      <h3>Bienvenido al sistema de actividades</h3>
       <p class="muted">
         Tu cuenta está activa. Lo que puedes hacer está en el menú
         <strong>de abajo</strong>; si no ves lo que esperabas, pídele a administración que

@@ -147,6 +147,10 @@ public final class Roles {
     public static final String CONTROLA_ACCESO =
             "hasAnyRole('SUPER_USUARIO','ADMINISTRADOR','CONTROL')";
 
+    /** La pantalla Escáner habilita el registro, también para un rol personalizado. */
+    public static final String CONTROLA_ACCESO_O_ESCANER =
+            CONTROLA_ACCESO + " or @acceso.puede('escaner')";
+
     public static final String USA_CREDENCIALES =
             "hasAnyRole('SUPER_USUARIO','ADMINISTRADOR','VERIFICADOR','ADMINISTRATIVO')";
 

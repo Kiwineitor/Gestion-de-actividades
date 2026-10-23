@@ -11,6 +11,8 @@ const usuarios = ref([]);
 const roles = ref([]);
 const cargando = ref(true);
 const filtro = ref('');
+const filtroRol = ref('');
+const filtroEstado = ref('');
 const guardando = ref(false);
 // Una operacion de fila por vez; evita dobles clicks en acciones de fila y contraseña.
 const ocupado = ref(false);
@@ -33,10 +35,20 @@ const academico = useAcademicoStore();
 
 const usuariosFiltrados = computed(() => {
   const q = filtro.value.trim().toLowerCase();
-  if (!q) return usuarios.value;
   return usuarios.value.filter((u) =>
-    [u.username, u.persona, u.rol].some((c) => (c || '').toLowerCase().includes(q)));
+    (!q || [u.username, u.persona, u.rol].some((c) => (c || '').toLowerCase().includes(q)))
+    && (!filtroRol.value || u.rol === filtroRol.value)
+    && (!filtroEstado.value || (u.estado === 'ACTIVO' ? 'activo' : 'inactivo') === filtroEstado.value));
 });
+
+function ejecutarAccion(evento, usuario) {
+  const accion = evento.target.value;
+  evento.target.value = '';
+  if (accion === 'editar') abrirEditar(usuario);
+  if (accion === 'password') abrirPassword(usuario);
+  if (accion === 'estado') alternarEstado(usuario);
+  if (accion === 'eliminar') eliminar(usuario);
+}
 
 const rolElegido = computed(() => roles.value.find((r) => r.id === modal.rolId) || null);
 
@@ -269,7 +281,19 @@ onMounted(() => {
 
 <template>
   <div class="fila entre encabezado">
-    <input v-model="filtro" class="control busca" placeholder="Buscar por usuario, persona o rol…" />
+    <div class="filtros">
+      <input v-model="filtro" class="control busca" type="search" aria-label="Buscar usuarios"
+             placeholder="Buscar por usuario o persona…" />
+      <select v-model="filtroRol" class="control" aria-label="Filtrar por rol">
+        <option value="">Todos los roles</option>
+        <option v-for="r in roles" :key="r.id" :value="r.nombre">{{ r.nombre }}</option>
+      </select>
+      <select v-model="filtroEstado" class="control" aria-label="Filtrar por estado">
+        <option value="">Todos los estados</option>
+        <option value="activo">Activos</option>
+        <option value="inactivo">Inactivos</option>
+      </select>
+    </div>
     <button class="btn btn-primario" @click="abrirCrear">＋ Nuevo usuario</button>
   </div>
 
@@ -277,6 +301,7 @@ onMounted(() => {
     <div v-if="cargando" class="vacio">Cargando…</div>
     <div v-else-if="usuariosFiltrados.length === 0" class="vacio">No hay usuarios que mostrar.</div>
     <div v-else class="tabla-scroll">
+      <p class="resumen">{{ usuariosFiltrados.length }} de {{ usuarios.length }} usuarios</p>
       <table class="tabla">
         <thead>
           <tr><th>Usuario</th><th>Persona</th><th>Rol</th><th>Estado</th><th></th></tr>
@@ -292,13 +317,14 @@ onMounted(() => {
               </span>
             </td>
             <td class="acciones">
-              <button class="btn btn-sm btn-fantasma" :disabled="ocupado" title="Editar" @click="abrirEditar(u)">✏️</button>
-              <button class="btn btn-sm btn-fantasma" :disabled="ocupado" title="Contraseña" @click="abrirPassword(u)">🔑</button>
-              <button class="btn btn-sm btn-fantasma" :disabled="ocupado"
-                      :title="u.estado === 'ACTIVO' ? 'Desactivar' : 'Activar'" @click="alternarEstado(u)">
-                {{ u.estado === 'ACTIVO' ? '⏸️' : '▶️' }}
-              </button>
-              <button class="btn btn-sm btn-peligro" :disabled="ocupado" title="Eliminar" @click="eliminar(u)">🗑</button>
+              <select class="control menu-acciones" :disabled="ocupado" :aria-label="`Acciones de ${u.username}`"
+                      @change="ejecutarAccion($event, u)">
+                <option value="">Acciones…</option>
+                <option value="editar">Editar usuario</option>
+                <option value="password">Cambiar contraseña</option>
+                <option value="estado">{{ u.estado === 'ACTIVO' ? 'Desactivar' : 'Activar' }}</option>
+                <option value="eliminar">Eliminar usuario</option>
+              </select>
             </td>
           </tr>
         </tbody>
@@ -438,7 +464,11 @@ onMounted(() => {
 
 <style scoped>
 .encabezado { margin-bottom: 1rem; gap: 0.8rem; }
-.busca { max-width: 360px; }
+.filtros { display: flex; flex-wrap: wrap; gap: 0.6rem; flex: 1; }
+.filtros .control { min-width: 150px; width: auto; }
+.filtros .busca { min-width: 220px; flex: 1; max-width: 360px; }
+.menu-acciones { min-width: 155px; }
+.resumen { margin: 0 0 0.6rem; font-size: 0.82rem; color: var(--muted); }
 .card { overflow: visible; }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }

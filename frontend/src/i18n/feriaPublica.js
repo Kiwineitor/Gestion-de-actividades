@@ -4,8 +4,7 @@
  * Portugués de Brasil a propósito: Cobija es frontera con Brasil (Brasiléia/Epitaciolândia,
  * en Acre) y buena parte del público que cruza lee portugués.
  *
- * Solo la interfaz. Lo que escribe el panel de administración —títulos y descripciones de las
- * noches, nombres de artistas y de categorías— se muestra tal como se guardó.
+ * Solo la interfaz. Los nombres de categorías se muestran tal como se guardaron.
  *
  * Para añadir un texto: la MISMA clave en los dos idiomas. Si falta en uno, la vista mostraría
  * "undefined" justo en esa etiqueta.
@@ -21,7 +20,6 @@ export const TEXTOS = {
     nav: {
       secciones: 'Secciones de la feria',
       inicio: 'Inicio',
-      artistas: 'Artistas',
       stands: 'Stands',
       obtenStand: 'Obtén tu stand',
       idioma: 'Idioma',
@@ -39,37 +37,6 @@ export const TEXTOS = {
       lugar: '18 de septiembre · Cobija, Pando',
       verPlano: 'Ver el plano de la feria',
       quieroExponer: 'Quiero exponer',
-    },
-    noches: {
-      titulo: 'Noches de FEXPO',
-      subtitulo: 'Cada jornada de exposición cierra con música y cultura en vivo. Los artistas se van confirmando poco a poco.',
-      porRevelar: 'Artista por revelar',
-      tocaParaEscuchar: 'Toca el cuadro de un artista para escuchar su música',
-    },
-    noticias: {
-      titulo: 'Novedades de la FEXPO',
-      subtitulo: 'Lo último que está pasando en la feria, contado en fotos y videos.',
-      region: 'Carrusel de noticias',
-      irA: 'Ver noticia {n} de {total}',
-      anterior: 'Noticia anterior',
-      siguiente: 'Noticia siguiente',
-      verTodas: 'Ver todas las noticias',
-    },
-    todasNoticias: {
-      titulo: 'Todas las noticias',
-      subtitulo: 'Lo que pasó en cada día de la FEXPO, de lo más reciente a lo más antiguo.',
-      volver: 'Volver a la feria',
-      dia: 'Día {n}',
-      cantidad: '{n} noticias',
-      unaNoticia: '1 noticia',
-      verMas: 'Ver más ({n})',
-      verMenos: 'Ver menos',
-      sinNoticiasDia: 'Todavía no hay noticias de este día.',
-      sinNoticias: 'Todavía no hay noticias publicadas.',
-      cargando: 'Cargando noticias…',
-      error: 'No se pudieron cargar las noticias.',
-      reintentar: 'Reintentar',
-      navegacionDias: 'Días de la feria',
     },
     stands: {
       titulo: 'Ven y disfruta con la familia: los stands te están esperando',
@@ -172,7 +139,6 @@ export const TEXTOS = {
     nav: {
       secciones: 'Seções da feira',
       inicio: 'Início',
-      artistas: 'Artistas',
       stands: 'Estandes',
       obtenStand: 'Garanta seu estande',
       idioma: 'Idioma',
@@ -190,37 +156,6 @@ export const TEXTOS = {
       lugar: '18 de setembro · Cobija, Pando',
       verPlano: 'Ver o mapa da feira',
       quieroExponer: 'Quero expor',
-    },
-    noches: {
-      titulo: 'Noites da FEXPO',
-      subtitulo: 'Cada dia de exposição termina com música e cultura ao vivo. Os artistas vão sendo confirmados aos poucos.',
-      porRevelar: 'Artista a ser revelado',
-      tocaParaEscuchar: 'Toque no quadro de um artista para ouvir a música',
-    },
-    noticias: {
-      titulo: 'Novidades da FEXPO',
-      subtitulo: 'O que está acontecendo na feira, contado em fotos e vídeos.',
-      region: 'Carrossel de notícias',
-      irA: 'Ver notícia {n} de {total}',
-      anterior: 'Notícia anterior',
-      siguiente: 'Próxima notícia',
-      verTodas: 'Ver todas as notícias',
-    },
-    todasNoticias: {
-      titulo: 'Todas as notícias',
-      subtitulo: 'O que aconteceu em cada dia da FEXPO, do mais recente ao mais antigo.',
-      volver: 'Voltar para a feira',
-      dia: 'Dia {n}',
-      cantidad: '{n} notícias',
-      unaNoticia: '1 notícia',
-      verMas: 'Ver mais ({n})',
-      verMenos: 'Ver menos',
-      sinNoticiasDia: 'Ainda não há notícias deste dia.',
-      sinNoticias: 'Ainda não há notícias publicadas.',
-      cargando: 'Carregando notícias…',
-      error: 'Não foi possível carregar as notícias.',
-      reintentar: 'Tentar novamente',
-      navegacionDias: 'Dias da feira',
     },
     stands: {
       titulo: 'Venha curtir com a família: os estandes estão esperando por você',

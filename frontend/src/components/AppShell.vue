@@ -42,10 +42,11 @@ const inmersivo = computed(() => Boolean(route.meta.inmersivo));
  */
 const GRUPOS = [
   { clave: 'Mi trabajo', titulo: 'Mi trabajo' },
-  { clave: 'Feria', titulo: 'Feria' },
+  { clave: 'Actividad', titulo: 'Actividad' },
   { clave: 'Acreditacion', titulo: 'Acreditación' },
   { clave: 'Plano y precios', titulo: 'Plano y precios' },
   { clave: 'Administracion', titulo: 'Administración' },
+  { clave: 'Sistema', titulo: 'Sistema' },
 ];
 
 const TODOS = [
@@ -56,13 +57,11 @@ const TODOS = [
   { a: '/mis-ventas', p: 'mis-ventas', g: 'Mi trabajo', icono: '🧾', txt: 'Mis ventas' },
   { a: '/notificaciones', p: 'notificaciones', g: 'Mi trabajo', icono: '🔔', txt: 'Notificaciones' },
 
-  // --- Feria: lo que pasa de puertas afuera ---
-  { a: '/tablero', p: 'tablero', g: 'Feria', icono: '📌', txt: 'Tablero' },
-  { a: '/catalogo', p: 'catalogo', g: 'Feria', icono: '🏷️', txt: 'Catálogo' },
-  { a: '/inscripciones', p: 'inscripciones', g: 'Feria', icono: '📋', txt: 'Inscripciones' },
-  { a: '/interesados', p: 'interesados', g: 'Feria', icono: '🙋', txt: 'Interesados' },
-  { a: '/noches-fexpo', p: 'noches-fexpo', g: 'Feria', icono: '🎤', txt: 'Noches de FEXPO' },
-  { a: '/noticias', p: 'noticias', g: 'Feria', icono: '📰', txt: 'Noticias' },
+  // --- Actividad: lo que pasa de puertas afuera ---
+  { a: '/tablero', p: 'tablero', g: 'Actividad', icono: '📌', txt: 'Tablero' },
+  { a: '/catalogo', p: 'catalogo', g: 'Actividad', icono: '🏷️', txt: 'Catálogo' },
+  { a: '/inscripciones', p: 'inscripciones', g: 'Actividad', icono: '📋', txt: 'Inscripciones' },
+  { a: '/interesados', p: 'interesados', g: 'Actividad', icono: '🙋', txt: 'Interesados' },
 
   // --- Acreditacion: la puerta ---
   { a: '/credenciales', p: 'credenciales', g: 'Acreditacion', icono: '🪪', txt: 'Credenciales' },
@@ -80,18 +79,16 @@ const TODOS = [
   { a: '/direccion', p: 'direccion', g: 'Administracion', icono: '📈', txt: 'Tablero de dirección' },
   { a: '/reportes', p: 'reportes', g: 'Administracion', icono: '📊', txt: 'Reportes' },
   { a: '/control-ventas', p: 'control-ventas', g: 'Administracion', icono: '💰', txt: 'Control de ventas' },
-  { a: '/seguimiento', p: 'seguimiento', g: 'Administracion', icono: '📡', txt: 'Seguimiento en vivo' },
   { a: '/vendedores', p: 'vendedores', g: 'Administracion', icono: '👥', txt: 'Vendedores' },
-  { a: '/anuncios', p: 'anuncios', g: 'Administracion', icono: '📣', txt: 'Anuncios' },
-  { a: '/seguimiento-facultad', p: 'seguimiento-facultad', g: 'Feria', icono: '🎓', txt: 'Seguimiento por facultad' },
+  { a: '/anuncios', p: 'anuncios', g: 'Administracion', icono: '📣', txt: 'Comunicados' },
   { a: '/responsables-extra', p: 'responsables-extra', g: 'Acreditacion', icono: '🧾', txt: 'Responsables extra' },
   { a: '/usuarios', p: 'usuarios', g: 'Administracion', icono: '👤', txt: 'Usuarios' },
   { a: '/roles', p: 'roles', g: 'Administracion', icono: '🛡️', txt: 'Roles' },
   { a: '/permisos', p: 'permisos', g: 'Administracion', icono: '🔐', txt: 'Permisos' },
   { a: '/personas', p: 'personas', g: 'Administracion', icono: '🪪', txt: 'Personas' },
   { a: '/personal-apoyo', p: 'personal-apoyo', g: 'Administracion', icono: '👥', txt: 'Personal de apoyo' },
-  { a: '/mantenimiento', p: 'mantenimiento', g: 'Administracion', icono: '⚙️', txt: 'Mantenimiento' },
-  { a: '/errores', soloAdministracion: true, g: 'Administracion', icono: '⚠️', txt: 'Registro de errores' },
+  { a: '/mantenimiento', p: 'mantenimiento', g: 'Sistema', icono: '⚙️', txt: 'Mantenimiento' },
+  { a: '/errores', soloAdministracion: true, g: 'Sistema', icono: '⚠️', txt: 'Registro de errores' },
   { a: '/whatsapp', soloAdministracion: true, g: 'Administracion', icono: '💬', txt: 'WhatsApp' },
 ];
 

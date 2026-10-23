@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue';
+import { ref, computed, onBeforeUnmount, onMounted } from 'vue';
 import { url as urlApi } from '../config.js';
 import { apiFetch } from '../api';
 import { alerta } from '../ui/alerta.js';
@@ -34,19 +34,17 @@ const modalRepetido = ref(false);
 const datosRepetido = ref(null);
 
 /*
- * Entrada o salida: LO ELIGE QUIEN ESCANEA, y se queda elegido.
+ * Cada apertura comienza en Entrada. Quien escanea puede habilitar Salida desde las opciones.
  *
  * La alternativa era alternar solo —primer escaneo entrada, segundo salida— y parece mas
  * comodo hasta que alguien escanea dos veces por nerviosismo o porque el telefono no respondio
  * a la primera: a partir de ahi todo queda invertido y nadie se entera hasta mirar los numeros
  * al cierre. Con el sentido elegido, un escaneo de mas es un movimiento de mas.
  *
- * Se queda pegado entre escaneos porque en la puerta se trabaja por tandas: entra el grupo
- * entero y luego sale el grupo entero. Cambiarlo en cada persona seria un toque de mas por
- * cada una.
+ * La eleccion dura durante esta visita a la pantalla porque en la puerta se trabaja por
+ * tandas. Al volver a entrar, se restablece Entrada para no heredar una Salida olvidada.
  */
-const sentido = ref(localStorage.getItem('escaner.sentido') || 'E');
-watch(sentido, (v) => localStorage.setItem('escaner.sentido', v));
+const sentido = ref('E');
 
 const dentro = ref(null);   // cuanta gente hay dentro ahora
 
@@ -275,18 +273,19 @@ const mensajeRepetido = computed(() =>
 
 <template>
   <div class="escaner">
-    <!-- Lo PRIMERO: si esto marca entrada o salida. Es lo que cambia el significado de cada
-         escaneo, asi que va arriba y grande, no escondido en un ajuste. -->
+    <!-- Entrada es el flujo inicial; el operador autorizado puede habilitar Salida. -->
     <section class="modo card" :class="sentido === 'E' ? 'es-entrada' : 'es-salida'">
-      <div class="botones-modo" role="radiogroup" aria-label="Entrada o salida">
-        <button type="button" class="modo-btn" :class="{ activo: sentido === 'E' }"
-                role="radio" :aria-checked="sentido === 'E'" @click="sentido = 'E'">
-          <span class="ico">⬇️</span><strong>Entrada</strong>
-        </button>
-        <button type="button" class="modo-btn" :class="{ activo: sentido === 'S' }"
-                role="radio" :aria-checked="sentido === 'S'" @click="sentido = 'S'">
-          <span class="ico">⬆️</span><strong>Salida</strong>
-        </button>
+      <div class="modo-resumen">
+        <strong>{{ sentido === 'E' ? '⬇️ Registrando entradas' : '⬆️ Registrando salidas' }}</strong>
+        <details class="opciones-sentido">
+          <summary>Cambiar tipo de registro</summary>
+          <div class="botones-modo" role="group" aria-label="Tipo de registro">
+            <button type="button" class="modo-btn" :class="{ activo: sentido === 'E' }"
+                    :aria-pressed="sentido === 'E'" @click="sentido = 'E'">Entrada</button>
+            <button type="button" class="modo-btn" :class="{ activo: sentido === 'S' }"
+                    :aria-pressed="sentido === 'S'" @click="sentido = 'S'">Salida</button>
+          </div>
+        </details>
       </div>
       <p class="dentro" v-if="dentro !== null">
         <strong>{{ dentro }}</strong> persona{{ dentro === 1 ? '' : 's' }} dentro ahora
@@ -425,15 +424,17 @@ const mensajeRepetido = computed(() =>
 .modo { padding: 0.8rem; display: flex; flex-direction: column; gap: 0.6rem; border-top: 5px solid var(--border); }
 .modo.es-entrada { border-top-color: var(--ok); }
 .modo.es-salida { border-top-color: var(--tramite); }
+.modo-resumen { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; flex-wrap: wrap; }
+.opciones-sentido { position: relative; }
+.opciones-sentido summary { cursor: pointer; color: var(--acento); font-size: 0.86rem; }
+.opciones-sentido[open] { width: 100%; }
+.opciones-sentido[open] summary { margin-bottom: 0.6rem; }
 .botones-modo { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
 .modo-btn {
-  font: inherit; cursor: pointer; display: flex; flex-direction: column; align-items: center;
-  gap: 0.15rem; padding: 0.9rem 0.6rem; border-radius: var(--radio-sm);
+  font: inherit; cursor: pointer; padding: 0.55rem 0.6rem; border-radius: var(--radio-sm);
   border: 2px solid var(--border); background: var(--panel); color: var(--texto);
   transition: border-color 0.15s ease, background 0.15s ease;
 }
-.modo-btn .ico { font-size: 1.4rem; line-height: 1; }
-.modo-btn strong { font-size: 1.05rem; }
 .es-entrada .modo-btn.activo {
   border-color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, var(--panel));
 }

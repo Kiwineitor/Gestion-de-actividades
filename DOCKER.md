@@ -122,6 +122,27 @@ Conviene tener dos navegadores (o una ventana normal y otra privada) para ver el
 
 ## 6. La base de datos
 
+### Entorno aislado para las mejoras de actividades
+
+El trabajo de `PLAN_MEJORAS_ACTIVIDADES.md` se prueba sobre `unifex_mejoras`, una copia de la base local `unifex` dentro del mismo PostgreSQL de Docker. La aplicación de revisión usa el puerto **7677** y volúmenes propios para archivos y logs. La base original `unifex` no recibe las migraciones ni las escrituras de esa aplicación.
+
+En una instalación local nueva, iniciar primero solo PostgreSQL y crear la copia mientras no haya conexiones a `unifex`:
+
+```powershell
+docker compose up -d db
+docker compose exec -T db psql -U unifex -d postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE unifex_mejoras WITH TEMPLATE unifex OWNER unifex'
+Get-Content -Raw 'src/main/resources/db/reserva/local/retirar_modulos_descartados.sql' | docker compose exec -T db psql -U unifex -d unifex_mejoras -v ON_ERROR_STOP=1
+docker compose -f docker-compose.yml -f docker-compose.mejoras.yml up -d --build app-mejoras
+```
+
+Abrir `http://localhost:7677/app/`. Si la base original ya está en uso, cerrar primero las aplicaciones conectadas o hacer la copia desde un respaldo: PostgreSQL no permite `CREATE DATABASE ... TEMPLATE` mientras haya sesiones en la base de origen. Si `unifex_mejoras` ya existe, **no** volver a ejecutar la creación; el contenedor conserva los cambios de prueba.
+
+El SQL de retirada está en `db/reserva/local/` para que el ejecutor habitual de migraciones no lo aplique a otras bases. Se ejecuta de forma explícita únicamente contra `unifex_mejoras`.
+
+Los archivos subidos se guardan en `uploads-mejoras`. Si la base original contiene archivos que la copia necesita mostrar, copiar también el contenido de `unifex_uploads` a `unifex_uploads-mejoras` antes de iniciar `app-mejoras`; la base y los archivos son dos respaldos distintos. En el entorno local revisado el 2026-10-22, el volumen de origen no contenía archivos.
+
+**No ejecutar `docker compose down -v` durante este trabajo:** elimina el volumen compartido de PostgreSQL y con él tanto `unifex` como `unifex_mejoras`. `docker compose down` sin `-v` conserva las bases.
+
 ### Cómo se crea
 
 La imagen oficial de PostgreSQL ejecuta los scripts de `/docker-entrypoint-initdb.d` **una sola

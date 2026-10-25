@@ -17,7 +17,6 @@ import java.nio.file.Paths;
 import javax.imageio.ImageIO;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
 import com.itextpdf.text.pdf.BarcodeQRCode;
@@ -51,6 +50,7 @@ import lombok.extern.slf4j.Slf4j;
 public class CredencialImagenService {
 
     private final CredencialCodigoService codigos;
+    private final ImagenPlantillaCredencial imagenes;
 
     /** Donde viven las fotos subidas. Es la misma raiz que sirve /files/**. */
     @Value("${app.upload-root:uploads}")
@@ -82,7 +82,7 @@ public class CredencialImagenService {
             int h = lienzo.getHeight();
 
             dibujarQr(g, plantilla.qr(), w, h, codigos.urlPublica(urlBase, c.codigo()));
-            dibujarFoto(g, plantilla.foto(), w, h, c);
+            dibujarFoto(g, plantilla.foto(), w, h, c, plantilla.fotoCircular());
 
             // Solo el nombre y la empresa admiten dos lineas: son los unicos que se alargan.
             // Un C.I. o un numero de caseta partido en dos seria ilegible, no mas legible.
@@ -91,6 +91,7 @@ public class CredencialImagenService {
             texto(g, plantilla.ci(), w, h, c.ci(), plantilla, 1);
             texto(g, plantilla.codigo(), w, h, c.casetas(), plantilla, 1);
             texto(g, plantilla.zona(), w, h, c.categoria(), plantilla, 1);
+            texto(g, plantilla.tipo(), w, h, CredencialPdfService.tipoDe(c, plantilla), plantilla, 1);
 
             g.dispose();
             ByteArrayOutputStream salida = new ByteArrayOutputStream();
@@ -110,7 +111,7 @@ public class CredencialImagenService {
     }
 
     private BufferedImage leerPlantilla(String recurso) throws IOException {
-        try (InputStream in = new ClassPathResource(recurso).getInputStream()) {
+        try (InputStream in = new java.io.ByteArrayInputStream(imagenes.bytes(recurso))) {
             BufferedImage img = ImageIO.read(in);
             if (img == null) throw new IOException("La plantilla no es una imagen legible: " + recurso);
             return img;
@@ -138,7 +139,7 @@ public class CredencialImagenService {
      * cuadrado del hueco deja caras achatadas; aqui se recorta el centro del lado largo, que es
      * lo que hace cualquier aplicacion con las fotos de perfil.
      */
-    private void dibujarFoto(Graphics2D g, Caja caja, int w, int h, CredencialDTO c) {
+    private void dibujarFoto(Graphics2D g, Caja caja, int w, int h, CredencialDTO c, boolean circular) {
         if (caja == null) {
             log.info("[CREDENCIAL-WA] Plantilla sin caja de foto responsable={} inscripcion={}",
                     c.responsableId(), c.inscripcionId());
@@ -176,7 +177,8 @@ public class CredencialImagenService {
         gf.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         gf.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                 RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        gf.fill(new Ellipse2D.Float(0, 0, lado, lado));
+        if (circular) gf.fill(new Ellipse2D.Float(0, 0, lado, lado));
+        else gf.fillRect(0, 0, lado, lado);
         // SRC_IN: lo que se dibuje a partir de aqui solo se ve donde ya habia circulo.
         gf.setComposite(AlphaComposite.SrcIn);
 
@@ -297,7 +299,7 @@ public class CredencialImagenService {
         }
 
         g.setFont(fuente);
-        g.setColor(TINTA);
+        g.setColor(CredencialPdfService.colorDe(p.colorTexto(), TINTA));
         java.awt.FontMetrics fm = g.getFontMetrics(fuente);
         // Las lineas se centran verticalmente en la caja, juntas: con interlineado del alto
         // completo, dos lineas se salen por abajo.

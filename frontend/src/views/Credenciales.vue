@@ -8,6 +8,7 @@ import { toast } from '../ui/toast';
 import { alerta } from '../ui/alerta';
 import { asegurarCategorias, categorias } from '../ui/catalogoCategorias';
 import UiModal from '../components/UiModal.vue';
+import EditarDatosCredencial from '../components/EditarDatosCredencial.vue';
 
 /*
  * Acreditacion: preparar y emitir las credenciales de la feria.
@@ -156,6 +157,12 @@ const rotas = ref(new Set());
 /** Fila sobre la que se esta subiendo un archivo, para deshabilitar sus botones. */
 const subiendo = ref(null);
 const historial = ref(null);   // { credencial, filas[] } del panel de impresiones
+const editando = ref(null);
+
+async function datosGuardados() {
+  editando.value = null;
+  await cargar();
+}
 
 // ---- ajustes de impresion ----
 const plantilla = ref('CON_ETIQUETAS');
@@ -607,6 +614,7 @@ onMounted(() => {
               <span class="muted">
                 C.I. {{ c.ci || '—' }}
                 <template v-if="c.esTitular"> · titular</template>
+                <template v-if="c.cargo"> · {{ c.cargo }}</template>
               </span>
             </div>
 
@@ -651,6 +659,10 @@ onMounted(() => {
                        :title="`Adjuntar la foto de ${c.nombre}`">📷 Foto</label>
               </template>
 
+              <button class="btn btn-sm" :disabled="generando"
+                      :title="`Corregir nombre, C.I., cargo o foto de ${c.nombre}`"
+                      @click="editando = c">✏️ Datos</button>
+
               <button class="btn btn-primario btn-sm"
                       :disabled="generando || !c.listo?.[ID_VIRTUAL]"
                       :title="c.listo?.[ID_VIRTUAL]
@@ -693,6 +705,9 @@ onMounted(() => {
         <button class="btn btn-primario" :disabled="generando" @click="confirmarReenvio">{{ generando ? 'Enviando…' : 'Reenviar' }}</button>
       </template>
     </UiModal>
+
+    <EditarDatosCredencial v-if="editando" :credencial="editando"
+                           @cerrar="editando = null" @guardado="datosGuardados" />
 
     <!-- Historial de impresiones de una credencial -->
     <div v-if="historial" class="velo" @click.self="historial = null">

@@ -65,6 +65,7 @@ const TODOS = [
 
   // --- Acreditacion: la puerta ---
   { a: '/credenciales', p: 'credenciales', g: 'Acreditacion', icono: '🪪', txt: 'Credenciales' },
+  { a: '/credenciales-diseno', soloAdministracion: true, g: 'Acreditacion', icono: '🎨', txt: 'Diseño de credenciales' },
   { a: '/credenciales-apoyo', p: 'credenciales-apoyo', g: 'Acreditacion', icono: '🎫', txt: 'Credenciales personal apoyo' },
   { a: '/impresion-masiva', p: 'impresion-masiva', g: 'Acreditacion', icono: '🖨️', txt: 'Impresión Masiva' },
   { a: '/escaner', p: 'escaner', g: 'Acreditacion', icono: '📷', txt: 'Escanear credencial' },

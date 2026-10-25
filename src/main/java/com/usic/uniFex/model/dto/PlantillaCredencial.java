@@ -63,10 +63,25 @@ public record PlantillaCredencial(
          * cuadrado que la contiene y el generador la recorta en circulo. Declarar la forma
          * seria un campo mas que solo usa una plantilla.
          */
-        Caja foto) {
+        Caja foto,
+        Caja tipo,
+        String tipoTexto,
+        String colorTexto,
+        boolean fotoCircular,
+        boolean multilinea) {
 
     /** Un rectangulo dentro de la plantilla, en fracciones de su ancho y su alto. */
     public record Caja(double x, double y, double ancho, double alto) {
+    }
+
+    public PlantillaCredencial(String id, String etiqueta, String detalle, String imagen,
+                               boolean requiereFoto, boolean centrado, boolean mayusculas,
+                               Caja qr, Caja nombre, Caja empresa, Caja ci, Caja codigo,
+                               Caja zona, Caja foto) {
+        this(id, etiqueta, detalle, imagen, requiereFoto, centrado, mayusculas,
+                qr, nombre, empresa, ci, codigo, zona, foto, null, null, null,
+                "EXPOSITOR".equals(id) || "CREDENCIAL_VIRTUAL".equals(id),
+                "EXPOSITOR".equals(id));
     }
 
     /**
@@ -194,6 +209,32 @@ public record PlantillaCredencial(
     /** La que se usa cuando quien llama no pide ninguna. */
     public static final PlantillaCredencial POR_DEFECTO = CREDENCIAL_VIRTUAL;
 
+    private static volatile List<PlantillaCredencial> vigentes = CATALOGO;
+    private static volatile String idPorDefecto = POR_DEFECTO.id();
+
+    public static void registrar(List<PlantillaCredencial> plantillas, String porDefecto) {
+        if (plantillas == null || plantillas.isEmpty()) {
+            vigentes = CATALOGO;
+            idPorDefecto = POR_DEFECTO.id();
+            return;
+        }
+        vigentes = List.copyOf(plantillas);
+        idPorDefecto = plantillas.stream().anyMatch(p -> p.id().equals(porDefecto))
+                ? porDefecto : plantillas.get(0).id();
+    }
+
+    public static List<PlantillaCredencial> catalogo() {
+        return vigentes;
+    }
+
+    public static PlantillaCredencial porDefecto() {
+        return vigentes.stream().filter(p -> p.id().equals(idPorDefecto)).findFirst().orElse(POR_DEFECTO);
+    }
+
+    public static PlantillaCredencial actual(PlantillaCredencial base) {
+        return vigentes.stream().filter(p -> p.id().equals(base.id())).findFirst().orElse(base);
+    }
+
     /**
      * La plantilla con ese id, o vacio si no existe.
      *
@@ -204,11 +245,11 @@ public record PlantillaCredencial(
      */
     public static Optional<PlantillaCredencial> de(String id) {
         String n = id == null ? "" : id.trim().toUpperCase();
-        return CATALOGO.stream().filter(p -> p.id().equals(n)).findFirst();
+        return vigentes.stream().filter(p -> p.id().equals(n)).findFirst();
     }
 
     /** La plantilla con ese id, o la de por defecto. Para lecturas, donde no hay a quien avisar. */
     public static PlantillaCredencial oPorDefecto(String id) {
-        return de(id).orElse(POR_DEFECTO);
+        return de(id).orElseGet(PlantillaCredencial::porDefecto);
     }
 }

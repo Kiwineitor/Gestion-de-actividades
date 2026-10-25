@@ -25,7 +25,7 @@ class ImpresionOficioTest {
     private static final float CRED_H = 13f * CM;
     private static final float X0 = (21f * CM - 2 * CRED_W) / 2;
     private static final float Y0 = (29.7f * CM - 2 * CRED_H) / 2;
-    private final CredencialPdfService pdf = new CredencialPdfService();
+    private final CredencialPdfService pdf = new CredencialPdfService(new com.usic.uniFex.model.service.ImagenPlantillaCredencial());
     private final CredencialCodigoService codigos = new CredencialCodigoService();
 
     private CredencialDTO credencial(long id) {
@@ -34,7 +34,7 @@ class ImpresionOficioTest {
                 "12345678", null, true,
                 "ASOCIACION DE PRODUCTORES AGROPECUARIOS DEL NORTE INTEGRADO",
                 "PRODUCTOS REGIONALES", "CIENCIAS ECONOMICAS Y FINANCIERAS", 1L,
-                "14, 15, 16", 1L, true, false, false, null, null, false);
+                "14, 15, 16", 1L, true, false, false, null, null, false, null);
     }
 
     /** Origen del hueco i (0: arriba-izq, 1: arriba-der, 2: abajo-izq, 3: abajo-der). */
@@ -170,7 +170,7 @@ class ImpresionOficioTest {
         var lote = List.of("foto.png", "rota.png").stream().map(archivo -> new CredencialDTO(
                 base.responsableId(), base.codigo(), base.nombre(), base.ci(), "/files/" + archivo,
                 true, base.entidad(), base.rubro(), base.categoria(), 1L, base.casetas(), 1L,
-                true, true, false, null, null, false)).toList();
+                true, true, false, null, null, false, null)).toList();
         byte[] contenido = pdf.generarGrupoDe4(lote, PlantillaCredencial.EXPOSITOR, 10, 13, "https://ejemplo.test", codigos);
         var lector = new PdfReader(contenido);
         try {

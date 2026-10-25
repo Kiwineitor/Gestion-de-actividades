@@ -155,7 +155,8 @@ public class CredencialService {
                 // Nulo se trata como 0: una venta sin casetas vivas no ha cobrado nada. El
                 // `signum() <= 0` en vez de `== 0` por si alguna correccion dejara un negativo;
                 // tampoco ahi habria recibo que pedir.
-                f.getTotalVenta() == null || f.getTotalVenta().signum() <= 0);
+                f.getTotalVenta() == null || f.getTotalVenta().signum() <= 0,
+                limpio(f.getCargo()));
     }
 
     private static String nombreCompleto(CredencialFilaView f) {

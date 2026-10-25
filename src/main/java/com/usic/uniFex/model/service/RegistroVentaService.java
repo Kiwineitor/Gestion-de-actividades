@@ -557,7 +557,7 @@ public class RegistroVentaService {
             log.info("[WHATSAPP-VENTA] Recibo generado inscripcion={} bytes={}",
                     inscripcionId, salidaRecibo.size());
 
-            PlantillaCredencial plantilla = PlantillaCredencial.POR_DEFECTO;
+            PlantillaCredencial plantilla = PlantillaCredencial.actual(PlantillaCredencial.CREDENCIAL_VIRTUAL);
             var datosCredenciales = credencialService.porInscripcion(inscripcionId);
             log.info("[WHATSAPP-VENTA] Credenciales encontradas inscripcion={} cantidad={}",
                     inscripcionId, datosCredenciales.size());

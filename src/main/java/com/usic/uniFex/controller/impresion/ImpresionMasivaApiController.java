@@ -88,12 +88,12 @@ public class ImpresionMasivaApiController {
                     c.responsableId(), codigo, c.nombre(), c.ci(), c.fotoUrl(),
                     c.esTitular(), c.entidad(), c.rubro(), c.categoria(), c.categoriaId(),
                     c.casetas(), c.inscripcionId(), c.conComprobante(), c.conFoto(),
-                    c.esExtra(), c.montoExtra(), c.comprobanteExtraUrl(), c.sinCosto());
+                    c.esExtra(), c.montoExtra(), c.comprobanteExtraUrl(), c.sinCosto(), c.cargo());
         }).toList();
 
         byte[] pdf = pdfService.generarDuplex4(
                 conCodigo,
-                PlantillaCredencial.EXPOSITOR,
+                PlantillaCredencial.actual(PlantillaCredencial.EXPOSITOR),
                 CredencialPdfService.CRED_ANCHO_CM, // 10 cm de ancho
                 CredencialPdfService.CRED_ALTO_CM, // 14,85 cm de alto (llena la A4 a lo alto)
                 "https://fexpo-uapv2.uap.edu.bo/app", // URL base para QR

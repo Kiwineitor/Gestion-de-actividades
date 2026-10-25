@@ -13,7 +13,6 @@ import java.awt.image.BufferedImage;
 import javax.imageio.ImageIO;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
 import com.itextpdf.text.BaseColor;
@@ -53,6 +52,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class CredencialPdfService {
 
+    private final ImagenPlantillaCredencial imagenes;
+
     /** Ancho impreso por defecto. Con la proporcion de la plantilla da unos 13 cm de alto. */
     public static final double ANCHO_CM_POR_DEFECTO = 10.0;
     private static final float CM = 72f / 2.54f;   // puntos PostScript por centimetro
@@ -61,16 +62,6 @@ public class CredencialPdfService {
     /** Medida impresa de la credencial EXPOSITOR: ocupa la hoja al maximo. */
     public static final float CRED_ANCHO_CM = 10f;
     public static final float CRED_ALTO_CM = 13f;
-
-    /**
-     * Los bytes de cada plantilla, leidos del jar una sola vez.
-     *
-     * Se cachean los BYTES y no la {@link Image} de iText: una imagen ya construida arrastra la
-     * referencia indirecta del documento en el que se uso, y compartirla entre dos PDF a la vez
-     * es pedir un PDF corrupto. Construir la imagen desde bytes ya en memoria es barato; leer
-     * 1,2 MB del classpath en cada peticion, no.
-     */
-    private final Map<String, byte[]> cache = new ConcurrentHashMap<>();
 
     /** Donde viven las fotos subidas. Es la misma raiz que sirve /files/**. */
     @Value("${app.upload-root:uploads}")
@@ -202,7 +193,8 @@ public class CredencialPdfService {
         textoDato(lienzo, fuente, d.nombre(), valor(c.nombre(), d), x0, y0, w, h, d);
         textoDato(lienzo, fuente, d.empresa(), valor(empresa, d), x0, y0, w, h, d);
         textoDato(lienzo, fuente, d.ci(), valor(c.ci(), d), x0, y0, w, h, d);
-        dibujarFoto(lienzo, d.foto(), c, x0, y0, w, h, "EXPOSITOR".equals(d.id()));
+        textoDato(lienzo, fuente, d.tipo(), valor(tipoDe(c, d), d), x0, y0, w, h, d);
+        dibujarFoto(lienzo, d.foto(), c, x0, y0, w, h, d.fotoCircular());
         if (d.zona() != null) {
             // La plantilla ya trae "COD. PUESTO" y "ZONA" impresos uno al lado del otro: cada
             // valor va en su caja y no hace falta apilarlos.
@@ -211,7 +203,7 @@ public class CredencialPdfService {
         } else {
             // La caseta con su categoria debajo: el numero solo no dice nada si hay trece zonas.
             codigoConCategoria(lienzo, fuente, d.codigo(), valor(c.casetas(), d),
-                    valor(c.categoria(), d), x0, y0, w, h, d.centrado());
+                    valor(c.categoria(), d), x0, y0, w, h, d.centrado(), tinta(d));
         }
     }
 
@@ -224,7 +216,7 @@ public class CredencialPdfService {
      */
     private void codigoConCategoria(PdfContentByte lienzo, BaseFont fuente, Caja caja,
                                     String codigo, String categoria, float x0, float y0,
-                                    float w, float h, boolean centrado) {
+                                    float w, float h, boolean centrado, BaseColor color) {
         if (caja == null || codigo == null || codigo.isBlank()) return;
 
         float cajaW = (float) (caja.ancho() * w);
@@ -242,7 +234,7 @@ public class CredencialPdfService {
 
         lienzo.beginText();
         lienzo.setFontAndSize(fuente, tamNumero);
-        lienzo.setColorFill(BaseColor.BLACK);
+        lienzo.setColorFill(color);
         lienzo.showTextAligned(alineacion, codigo, xTexto,
                 y + cajaH - altoNumero + (altoNumero - tamNumero * 0.70f) / 2f, 0);
         lienzo.endText();
@@ -279,7 +271,7 @@ public class CredencialPdfService {
      * texto largo se saldria de la credencial por el lado derecho.
      */
     private void texto(PdfContentByte lienzo, BaseFont fuente, Caja caja, String contenido,
-                       float x0, float y0, float w, float h, boolean centrado) {
+                       float x0, float y0, float w, float h, boolean centrado, BaseColor color) {
         if (caja == null || contenido == null || contenido.isBlank()) return;
 
         float cajaW = (float) (caja.ancho() * w);
@@ -303,7 +295,7 @@ public class CredencialPdfService {
 
         lienzo.beginText();
         lienzo.setFontAndSize(fuente, tam);
-        lienzo.setColorFill(BaseColor.BLACK);
+        lienzo.setColorFill(color);
         // El descuento de 0.30 centra opticamente la linea: la altura de una mayuscula es
         // ~0.7 del tamaño de fuente, no el tamaño entero.
         lienzo.showTextAligned(
@@ -318,8 +310,8 @@ public class CredencialPdfService {
     private void textoDato(PdfContentByte lienzo, BaseFont fuente, Caja caja, String contenido,
                            float x0, float y0, float w, float h, PlantillaCredencial plantilla) {
         if (caja == null || contenido == null || contenido.isBlank()) return;
-        if (!"EXPOSITOR".equals(plantilla.id())) {
-            texto(lienzo, fuente, caja, contenido, x0, y0, w, h, plantilla.centrado());
+        if (!plantilla.multilinea()) {
+            texto(lienzo, fuente, caja, contenido, x0, y0, w, h, plantilla.centrado(), tinta(plantilla));
             return;
         }
         float ancho = (float) caja.ancho() * w;
@@ -349,7 +341,7 @@ public class CredencialPdfService {
             float base = y + (alto + altoTexto) / 2 - ascenso;
             lienzo.beginText();
             lienzo.setFontAndSize(fuente, tam);
-            lienzo.setColorFill(BaseColor.BLACK);
+            lienzo.setColorFill(tinta(plantilla));
             for (String parte : lineas) {
                 lienzo.showTextAligned(Element.ALIGN_LEFT, parte, x, base, 0);
                 base -= interlineado;
@@ -357,7 +349,21 @@ public class CredencialPdfService {
             lienzo.endText();
             return;
         }
-        texto(lienzo, fuente, caja, limpio, x0, y0, w, h, false);
+        texto(lienzo, fuente, caja, limpio, x0, y0, w, h, false, tinta(plantilla));
+    }
+
+    static String tipoDe(CredencialDTO c, PlantillaCredencial d) {
+        return c.cargo() != null && !c.cargo().isBlank() ? c.cargo() : d.tipoTexto();
+    }
+
+    static BaseColor tinta(PlantillaCredencial d) {
+        java.awt.Color c = colorDe(d.colorTexto(), java.awt.Color.BLACK);
+        return new BaseColor(c.getRed(), c.getGreen(), c.getBlue());
+    }
+
+    static java.awt.Color colorDe(String hex, java.awt.Color porDefecto) {
+        if (hex == null || !hex.matches("#[0-9a-fA-F]{6}")) return porDefecto;
+        return new java.awt.Color(Integer.parseInt(hex.substring(1), 16));
     }
 
     private void dibujarFoto(PdfContentByte lienzo, Caja caja, CredencialDTO c,
@@ -731,13 +737,6 @@ public class CredencialPdfService {
     }
 
     private byte[] bytes(String recurso) {
-        return cache.computeIfAbsent(recurso, r -> {
-            try (InputStream in = new ClassPathResource(r).getInputStream()) {
-                return in.readAllBytes();
-            } catch (Exception e) {
-                throw new IllegalStateException(
-                        "No se encontro la plantilla de credencial: " + r, e);
-            }
-        });
+        return imagenes.bytes(recurso);
     }
 }

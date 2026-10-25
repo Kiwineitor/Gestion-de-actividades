@@ -27,6 +27,9 @@ public class Responsable extends AuditoriaConfig{
      * el orden de creacion, que se pierde en cuanto se edita algo. Se necesita explicito para
      * emitir credenciales y para saber a quien reclamarle un pago pendiente.
      */
+    @Column(length = 60)
+    private String cargo;
+
     @Column(name = "es_titular", nullable = false)
     private boolean esTitular;
 

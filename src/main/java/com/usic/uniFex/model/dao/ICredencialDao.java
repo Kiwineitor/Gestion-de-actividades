@@ -30,6 +30,7 @@ String SELECT = """
                    p.ci                                   AS ci,
                    p.foto                                 AS foto,
                    r.es_titular                           AS esTitular,
+                   r.cargo                                AS cargo,
                    r.es_extra                             AS esExtra,
                    r.monto_extra                          AS montoExtra,
                    r.comprobante_extra                    AS comprobanteExtra,
@@ -69,7 +70,7 @@ String SELECT = """
             """;
 
     String GROUP = """
-             GROUP BY r.id, p.nombre, p.paterno, p.materno, p.ci, p.foto, r.es_titular,
+             GROUP BY r.id, p.nombre, p.paterno, p.materno, p.ci, p.foto, r.es_titular, r.cargo,
                       r.es_extra, r.monto_extra, r.comprobante_extra,
                       e.nombre, e.descripcion, i.id, i.pago_contado, i.img_comprobante,
                       c.id

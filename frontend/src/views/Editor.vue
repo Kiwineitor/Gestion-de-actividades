@@ -1,7 +1,7 @@
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
-import * as pdfjsLib from 'pdfjs-dist';
+import { primeraPaginaEnCanvas } from '../ui/pdf';
 import PanZoom from '../components/PanZoom.vue';
 import RotuloPlano from '../components/RotuloPlano.vue';
 import { apiFetch } from '../api';
@@ -14,8 +14,6 @@ import {
   ETIQUETA_ESTADO, anchoParaTocar, estiloPin, numeracionCompacta, numerosVisibles,
   ordenLectura, tamanoDe, medidaLegible,
 } from '../mapa';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
 const ESCALA_MIN = 0.2;
 const ESCALA_MAX = 6;
@@ -877,13 +875,7 @@ async function ubicacionSeleccion() {
 }
 
 async function pdfAImagen(archivo) {
-  const pdf = await pdfjsLib.getDocument({ data: await archivo.arrayBuffer() }).promise;
-  const pagina = await pdf.getPage(1);
-  const viewport = pagina.getViewport({ scale: 2.0 });
-  const canvas = document.createElement('canvas');
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  await pagina.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+  const canvas = await primeraPaginaEnCanvas(await archivo.arrayBuffer(), document.createElement('canvas'), 2);
   return new Blob([await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 0.9))], { type: 'image/png' });
 }
 

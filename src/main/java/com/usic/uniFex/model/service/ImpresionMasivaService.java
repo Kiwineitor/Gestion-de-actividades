@@ -121,7 +121,8 @@ public class ImpresionMasivaService {
                 f.getMontoExtra(),
                 (f.getComprobanteExtra() != null && !f.getComprobanteExtra().isBlank())
                         ? "/files/" + f.getComprobanteExtra() : null,
-                false); // sinCosto = false (no aplica para expositor)
+                false,
+                limpio(f.getCargo()));
     }
 
     private static String nombreCompleto(CredencialFilaView f) {

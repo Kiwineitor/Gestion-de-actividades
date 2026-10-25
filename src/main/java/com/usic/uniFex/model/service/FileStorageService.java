@@ -37,6 +37,7 @@ public class FileStorageService {
         PUESTOS("puestos"),
         /** Plano de la feria, uno por edicion (ver V13 y PlanoService). */
         PLANOS("planos"),
+        CREDENCIALES("credenciales"),
         /** Foto del personal de apoyo, para el circulo de su credencial (ver V47). */
         APOYO("apoyo");
 

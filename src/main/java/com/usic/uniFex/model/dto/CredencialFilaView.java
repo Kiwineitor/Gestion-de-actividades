@@ -29,4 +29,5 @@ public interface CredencialFilaView {
     String getCategorias();
     String getCasetas();
     Long getCategoriaId();
+    String getCargo();
 }

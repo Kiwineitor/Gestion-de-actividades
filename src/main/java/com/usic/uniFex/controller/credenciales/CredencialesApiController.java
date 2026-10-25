@@ -56,6 +56,7 @@ public class CredencialesApiController {
     private final WhatsAppService whatsApp;
     private final IInscripcionService inscripcionService;
     private final com.usic.uniFex.model.dao.CredencialImpresionDao impresiones;
+    private final com.usic.uniFex.model.service.CredencialDatosService datosService;
 
     /**
      * Raiz publica que se mete en el QR. Vacia = se deduce de la peticion.
@@ -81,7 +82,7 @@ public class CredencialesApiController {
     @GetMapping("/plantillas")
     @PreAuthorize(Roles.USA_CREDENCIALES_O_PANTALLA)
     public List<Map<String, Object>> plantillas() {
-        return PlantillaCredencial.CATALOGO.stream().map(p -> {
+        return PlantillaCredencial.catalogo().stream().map(p -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", p.id());
             m.put("etiqueta", p.etiqueta());
@@ -182,6 +183,7 @@ public class CredencialesApiController {
             m.put("ci", c.ci());
             m.put("fotoUrl", c.fotoUrl());
             m.put("esTitular", c.esTitular());
+            m.put("cargo", c.cargo());
             m.put("entidad", c.entidad());
             m.put("rubro", c.rubro());
             m.put("categoria", c.categoria());
@@ -210,7 +212,7 @@ public class CredencialesApiController {
             // y cambiar de plantilla en pantalla no obliga a volver a pedir la lista.
             Map<String, Object> listo = new LinkedHashMap<>();
             Map<String, Object> falta = new LinkedHashMap<>();
-            for (PlantillaCredencial p : PlantillaCredencial.CATALOGO) {
+            for (PlantillaCredencial p : PlantillaCredencial.catalogo()) {
                 listo.put(p.id(), c.apto(p.id()));
                 falta.put(p.id(), c.faltantes(p.id()));
             }
@@ -254,7 +256,7 @@ public class CredencialesApiController {
         // papel, y para entonces ya se imprimieron trescientas.
         PlantillaCredencial disposicion;
         if (pedida == null || pedida.isBlank()) {
-            disposicion = PlantillaCredencial.POR_DEFECTO;
+            disposicion = PlantillaCredencial.porDefecto();
         } else {
             var hallada = PlantillaCredencial.de(pedida);
             if (hallada.isEmpty()) {
@@ -362,7 +364,7 @@ public class CredencialesApiController {
 
         byte[] pdf = pdfService.generarDuplex4(
                 elegidas,
-                PlantillaCredencial.EXPOSITOR,
+                PlantillaCredencial.actual(PlantillaCredencial.EXPOSITOR),
                 req == null || req.anchoCm() == null
                         ? com.usic.uniFex.model.service.CredencialPdfService.CRED_ANCHO_CM
                         : req.anchoCm(),
@@ -405,7 +407,7 @@ public class CredencialesApiController {
         CredencialDTO c = credencialService.porResponsable(responsableId).orElse(null);
         if (c == null) return ResponseEntity.notFound().build();
 
-        PlantillaCredencial p = PlantillaCredencial.CREDENCIAL_VIRTUAL;
+        PlantillaCredencial p = PlantillaCredencial.actual(PlantillaCredencial.CREDENCIAL_VIRTUAL);
         if (!forzar && !c.apto(p.id())) {
             return ResponseEntity.status(409)
                     .contentType(MediaType.TEXT_PLAIN)
@@ -462,7 +464,7 @@ public class CredencialesApiController {
             return ResponseEntity.badRequest().body(Map.of("ok", false, "mensaje", "La venta no tiene celular del cliente"));
         }
 
-        PlantillaCredencial plantilla = PlantillaCredencial.CREDENCIAL_VIRTUAL;
+        PlantillaCredencial plantilla = PlantillaCredencial.actual(PlantillaCredencial.CREDENCIAL_VIRTUAL);
         List<Long> seleccion = req.responsables() == null ? List.of() : req.responsables();
         var todas = credencialService.porInscripcion(req.inscripcionId());
         log.info("[WHATSAPP-REENVIO] Credenciales de inscripcion={} total={} seleccion={}",
@@ -513,6 +515,52 @@ public class CredencialesApiController {
             return ResponseEntity.status(500).body(Map.of("ok", false,
                     "mensaje", "No se pudo reenviar por WhatsApp"));
         }
+    }
+
+    @GetMapping("/{responsableId}/datos")
+    @PreAuthorize(Roles.USA_CREDENCIALES_O_PANTALLA)
+    public ResponseEntity<Map<String, Object>> datos(@PathVariable Long responsableId) {
+        if (!alcanza(responsableId)) return ResponseEntity.status(403).build();
+        Map<String, Object> d = datosService.datos(responsableId);
+        return d == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(d);
+    }
+
+    @org.springframework.web.bind.annotation.PatchMapping("/{responsableId}/datos")
+    @PreAuthorize(Roles.USA_CREDENCIALES_O_PANTALLA)
+    public ResponseEntity<Map<String, Object>> corregirDatos(
+            @PathVariable Long responsableId,
+            @RequestBody com.usic.uniFex.model.service.CredencialDatosService.Cambio cambio) {
+        if (!alcanza(responsableId)) return ResponseEntity.status(403).build();
+        return respuestaDatos(datosService.actualizar(responsableId, cambio, usuarioActual()));
+    }
+
+    @PostMapping(value = "/{responsableId}/foto", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize(Roles.USA_CREDENCIALES_O_PANTALLA)
+    public ResponseEntity<Map<String, Object>> cambiarFoto(
+            @PathVariable Long responsableId,
+            @RequestParam("archivo") org.springframework.web.multipart.MultipartFile archivo) {
+        if (!alcanza(responsableId)) return ResponseEntity.status(403).build();
+        return respuestaDatos(datosService.cambiarFoto(responsableId, archivo, usuarioActual()));
+    }
+
+    @GetMapping("/{responsableId}/cambios")
+    @PreAuthorize(Roles.USA_CREDENCIALES_O_PANTALLA)
+    public List<Map<String, Object>> cambios(@PathVariable Long responsableId) {
+        return alcanza(responsableId) ? datosService.historial(responsableId) : List.of();
+    }
+
+    private boolean alcanza(Long responsableId) {
+        Long soloMias = alcanceDelUsuario();
+        return soloMias == null || credencialService.esDeUsuario(responsableId, soloMias);
+    }
+
+    private ResponseEntity<Map<String, Object>> respuestaDatos(
+            com.usic.uniFex.model.service.CredencialDatosService.Resultado r) {
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("ok", r.ok());
+        cuerpo.put("mensaje", r.mensaje());
+        cuerpo.put("datos", r.datos());
+        return ResponseEntity.status(r.ok() ? 200 : 400).body(cuerpo);
     }
 
     /** Quien imprimio esta credencial, cuando, con que plantilla y que faltaba entonces. */

@@ -59,7 +59,8 @@ public record CredencialDTO(
          * exige comprobante— y mandar el numero obligaria a cada cliente a repetir la misma
          * comparacion. El importe ya se consulta en Mis ventas y en los reportes.
          */
-        boolean sinCosto) {
+        boolean sinCosto,
+        String cargo) {
 
     /**
      * ¿Esa plantilla imprime datos de la persona y por tanto exige su foto?

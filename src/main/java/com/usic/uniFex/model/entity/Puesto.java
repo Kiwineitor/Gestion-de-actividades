@@ -76,6 +76,9 @@ public class Puesto extends AuditoriaConfig{
     @Column(length = 200)
     private String referencia;
 
+    @Column(length = 500)
+    private String observacion;
+
     /**
      * Precio propio de ESTA caseta, en Bs. {@code null} = usa el de su categoria (V37).
      *

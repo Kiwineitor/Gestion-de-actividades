@@ -59,7 +59,7 @@ public class PlanoApiController {
         PlanoService.Resultado r = planoService.reemplazar(archivo, usuarioId);
 
         // LinkedHashMap y no Map.of: `plano` es null cuando falla, y Map.of lanza NPE con un
-        // valor null — el mismo tropiezo que ya rompio "Mis ventas" (ver PLAN.md).
+        // valor null — el mismo tropiezo que ya rompio "Mis ventas".
         Map<String, Object> cuerpo = new LinkedHashMap<>();
         cuerpo.put("ok", r.ok());
         cuerpo.put("mensaje", r.mensaje());

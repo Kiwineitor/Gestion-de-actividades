@@ -22,7 +22,7 @@ import jakarta.transaction.Transactional;
 
 /**
  * PENDIENTE: boleteria por pasarela de pago, sin conectar a la SPA ni probada contra la
- * pasarela real todavia (ver PLAN.md, Bloque 8, y DEPLOY.md). Se deja lista para
+ * pasarela real todavia (ver DEPLOY.md). Se deja lista para
  * retomarla, no en el flujo activo de venta.
  */
 @RestController

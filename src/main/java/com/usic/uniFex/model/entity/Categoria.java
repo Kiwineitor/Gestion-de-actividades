@@ -32,6 +32,12 @@ public class Categoria extends AuditoriaConfig{
     /** Precio por defecto de una categoria nueva: 0 = "todavia sin definir". */
     public static final java.math.BigDecimal PRECIO_POR_DEFECTO = java.math.BigDecimal.ZERO;
 
+    public static final java.util.Set<String> FORMAS = java.util.Set.of(
+            "cuadrado", "rectangulo", "circulo", "triangulo", "hexagono");
+
+    public static final double PROPORCION_MIN = 0.2;
+    public static final double PROPORCION_MAX = 5.0;
+
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
@@ -39,7 +45,7 @@ public class Categoria extends AuditoriaConfig{
     private String descripcion;
     private String color;
 
-    /** Figura del marcador en el mapa: cuadrado | circulo | triangulo. */
+    /** Figura del marcador en el mapa; valores en {@link #FORMAS}. */
     private String forma;
 
     /**
@@ -50,6 +56,9 @@ public class Categoria extends AuditoriaConfig{
      */
     @Column(name = "tamano_mapa")
     private Double tamanoMapa;
+
+    @Column(name = "mapa_proporcion")
+    private Double mapaProporcion;
 
     /**
      * Precio de venta de una caseta de esta categoria, en Bs.

@@ -33,12 +33,13 @@ public class CategoriaMapaService {
      * @param tamano     medida de negocio de las casetas ("3x3"). Null = {@link Categoria#TAMANO_POR_DEFECTO}.
      */
     public record NuevaCategoria(String nombre, Integer cantidad, String color, String forma,
-                                 Double tamanoMapa, BigDecimal precioBase, String tamano) {
+                                 Double tamanoMapa, BigDecimal precioBase, String tamano,
+                                 Double mapaProporcion) {
     }
 
     /** Cambios parciales sobre una categoria: los campos nulos no se tocan. */
     public record CambioCategoria(String nombre, String color, String forma, Double tamanoMapa,
-                                  BigDecimal precioBase) {
+                                  BigDecimal precioBase, Double mapaProporcion, String tamano) {
     }
 
     /** Resultado de ajustar la cantidad: cuantas se crearon o anularon, y cuantas no se pudieron quitar. */
@@ -66,8 +67,9 @@ public class CategoriaMapaService {
         Categoria c = new Categoria();
         c.setNombre(req.nombre());
         c.setColor(req.color());
-        c.setForma(req.forma());
+        c.setForma(formaValida(req.forma()));
         c.setTamanoMapa(req.tamanoMapa() != null ? req.tamanoMapa() : Categoria.TAMANO_MAPA_POR_DEFECTO);
+        c.setMapaProporcion(proporcionValida(req.mapaProporcion()));
         // El precio se fija aqui y no en la base: Hibernate manda la columna con NULL en el
         // INSERT, asi que el DEFAULT 0 de precio_base nunca llegaria a aplicarse.
         c.setPrecioBase(req.precioBase() != null ? req.precioBase() : Categoria.PRECIO_POR_DEFECTO);
@@ -90,8 +92,12 @@ public class CategoriaMapaService {
         if (c == null) return null;
         if (cambio.nombre() != null) c.setNombre(cambio.nombre());
         if (cambio.color() != null) c.setColor(cambio.color());
-        if (cambio.forma() != null) c.setForma(cambio.forma());
+        if (cambio.forma() != null) c.setForma(formaValida(cambio.forma()));
         if (cambio.tamanoMapa() != null) c.setTamanoMapa(cambio.tamanoMapa());
+        if (cambio.mapaProporcion() != null) c.setMapaProporcion(proporcionValida(cambio.mapaProporcion()));
+        if (cambio.tamano() != null && !cambio.tamano().isBlank()) {
+            puestoDao.actualizarTamanoDeCategoria(id, cambio.tamano().trim());
+        }
         // Cambiar el precio NO altera las ventas ya hechas: el costo se copia a
         // inscripcion_puesto en el momento de vender, precisamente para eso.
         if (cambio.precioBase() != null) c.setPrecioBase(cambio.precioBase());
@@ -210,5 +216,15 @@ public class CategoriaMapaService {
 
     private static int maxCodigoNumerico(List<Puesto> casetas) {
         return casetas.stream().mapToInt(CategoriaMapaService::codigoNumerico).max().orElse(0);
+    }
+
+    private static String formaValida(String forma) {
+        String f = forma == null ? "" : forma.trim().toLowerCase();
+        return Categoria.FORMAS.contains(f) ? f : "cuadrado";
+    }
+
+    private static double proporcionValida(Double proporcion) {
+        if (proporcion == null || proporcion.isNaN() || proporcion <= 0) return 1.0;
+        return Math.min(Categoria.PROPORCION_MAX, Math.max(Categoria.PROPORCION_MIN, proporcion));
     }
 }

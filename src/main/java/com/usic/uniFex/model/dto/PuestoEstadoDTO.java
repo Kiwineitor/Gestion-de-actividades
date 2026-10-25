@@ -59,6 +59,8 @@ public record PuestoEstadoDTO(
         boolean precioPropio,
         /** Donde esta, en palabras ("frente a la puerta 3"). Lo lee el vendedor en la ficha. */
         String referencia,
+        Double mapaProporcion,
+        String observacion,
         boolean activo) {         // false = anulada; el cliente debe quitarla del mapa
 
     /** Marca de anulacion compartida por las tablas del sistema (ver AuditoriaConfig._estado). */
@@ -99,6 +101,8 @@ public record PuestoEstadoDTO(
                 precioDe(p, c),
                 p.getPrecio() != null,
                 p.getReferencia(),
+                (c != null && c.getMapaProporcion() != null) ? c.getMapaProporcion() : 1.0,
+                p.getObservacion(),
                 !ANULADO.equals(p.getEstado()));
     }
 }

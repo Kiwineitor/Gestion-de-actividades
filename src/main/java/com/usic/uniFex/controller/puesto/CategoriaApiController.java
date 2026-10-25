@@ -77,6 +77,9 @@ public class CategoriaApiController {
                     m.put("color", c.getColor());
                     m.put("forma", c.getForma());
                     m.put("tamanoMapa", c.getTamanoMapa());
+                    m.put("mapaProporcion", c.getMapaProporcion() != null ? c.getMapaProporcion() : 1.0);
+                    m.put("cantidad", puestoDao.idsActivosDeCategoria(c.getId()).size());
+                    m.put("tamano", puestoDao.tamanosDeCategoria(c.getId()).stream().findFirst().orElse(null));
                     m.put("precioBase", c.getPrecioBase());
                     m.put("opciones", porCategoria.getOrDefault(c.getId(), List.of()).stream()
                             .map(CategoriaApiController::opcionComoMapa).toList());

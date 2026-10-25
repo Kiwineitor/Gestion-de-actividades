@@ -96,6 +96,53 @@ public class PuestoMapaService {
      * un unico valor y no dos.
      * @return true si se guardo; false si la caseta no existe o esta anulada.
      */
+    public record CambioFicha(String tamano, String observacion, String referencia) {
+    }
+
+    public record VentaDePuesto(Long inscripcionId, String expositor, String actividad,
+                                String representante, String celular, boolean pagado,
+                                boolean contado, java.time.LocalDateTime fecha,
+                                String vendedor, java.math.BigDecimal costo) {
+    }
+
+    @Transactional
+    public boolean actualizarFicha(Long puestoId, CambioFicha cambio, Long usuarioId) {
+        Puesto p = puestoDao.findById(puestoId).orElse(null);
+        if (p == null) return false;
+        String tamano = recortar(cambio.tamano(), 40);
+        return puestoDao.actualizarFicha(puestoId,
+                tamano != null ? tamano : p.getTamano(),
+                recortar(cambio.observacion(), 500),
+                recortar(cambio.referencia(), 200),
+                usuarioId) > 0;
+    }
+
+    @Transactional(readOnly = true)
+    public VentaDePuesto ventaVigente(Long puestoId) {
+        List<Object[]> filas = puestoDao.findVentaVigenteDePuesto(puestoId);
+        if (filas.isEmpty()) return null;
+        Object[] f = filas.get(0);
+        String vendedor = java.util.stream.Stream.of(f[8], f[9], f[10])
+                .filter(Objects::nonNull).map(Object::toString).filter(s -> !s.isBlank())
+                .collect(Collectors.joining(" "));
+        Object fecha = f[7];
+        return new VentaDePuesto(
+                f[0] == null ? null : ((Number) f[0]).longValue(),
+                (String) f[1], (String) f[2], (String) f[3], (String) f[4],
+                f[5] != null && !f[5].toString().isBlank(),
+                Boolean.TRUE.equals(f[6]),
+                fecha instanceof java.sql.Timestamp ts ? ts.toLocalDateTime()
+                        : fecha instanceof java.time.LocalDateTime ldt ? ldt : null,
+                vendedor.isBlank() ? null : vendedor,
+                f[11] == null ? null : new java.math.BigDecimal(f[11].toString()));
+    }
+
+    private static String recortar(String valor, int max) {
+        if (valor == null || valor.isBlank()) return null;
+        String limpio = valor.trim();
+        return limpio.length() > max ? limpio.substring(0, max) : limpio;
+    }
+
     @Transactional
     public boolean cambiarReferencia(Long puestoId, String referencia, Long usuarioId) {
         String limpia = (referencia == null || referencia.isBlank()) ? null : referencia.trim();

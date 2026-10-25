@@ -66,7 +66,15 @@ export function estiloPin(p) {
     top: `${p.mapaY * 100}%`,
     '--pin': `calc(var(--mundo, 1200) * ${tamanoDe(p)})`,
     '--giro': `${p.mapaRotacion || 0}deg`,
+    '--alto': `${100 * (p.mapaProporcion ?? 1)}px`,
   };
+}
+
+export function medidaLegible(tamano) {
+  const t = String(tamano ?? '').trim();
+  if (!t) return 'Sin medida';
+  const m = t.match(/^(\d+(?:[.,]\d+)?)\s*[xX×*]\s*(\d+(?:[.,]\d+)?)\s*(m)?$/);
+  return m ? `${m[1]} × ${m[2]} m` : t;
 }
 
 /**

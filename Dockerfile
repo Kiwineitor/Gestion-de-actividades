@@ -23,7 +23,7 @@ COPY pom.xml ./
 RUN mvn -B -q dependency:go-offline || true
 COPY src ./src
 COPY --from=frontend /frontend/dist ./src/main/resources/static/app
-# Sin tests: necesitan una base PostgreSQL viva (ver CLAUDE.md).
+# Sin tests: necesitan una base PostgreSQL viva.
 RUN mvn -B -q -DskipTests package && cp target/*.jar /build/app.jar
 
 # ---- 3. Imagen final (solo JRE) -----------------------------------------------

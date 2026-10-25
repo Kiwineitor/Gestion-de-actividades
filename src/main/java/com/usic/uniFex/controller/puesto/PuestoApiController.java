@@ -334,6 +334,27 @@ public class PuestoApiController {
         return respuesta(ok, ok ? "Referencia guardada" : "La caseta no existe o esta anulada");
     }
 
+    @GetMapping("/{id}/venta")
+    @PreAuthorize(Roles.EDITA_PLANO)
+    public ResponseEntity<Map<String, Object>> venta(@PathVariable Long id) {
+        PuestoMapaService.VentaDePuesto v = mapaService.ventaVigente(id);
+        Map<String, Object> cuerpo = new java.util.LinkedHashMap<>();
+        cuerpo.put("ok", true);
+        cuerpo.put("venta", v);
+        return ResponseEntity.ok(cuerpo);
+    }
+
+    @PatchMapping("/{id}/ficha")
+    @PreAuthorize(Roles.EDITA_PLANO)
+    public ResponseEntity<Map<String, Object>> ficha(
+            @PathVariable Long id, @RequestBody PuestoMapaService.CambioFicha req) {
+        Long usuarioId = usuarioActual();
+        if (usuarioId == null) return noAutenticado();
+        boolean ok = mapaService.actualizarFicha(id, req, usuarioId);
+        if (ok) publisher.publicar(id);
+        return respuesta(ok, ok ? "Caseta actualizada" : "La caseta no existe o esta anulada");
+    }
+
     @PostMapping("/{id}/confirmar")
     public ResponseEntity<Map<String, Object>> confirmar(@PathVariable Long id) {
         Long usuarioId = usuarioActual();

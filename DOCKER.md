@@ -124,7 +124,7 @@ Conviene tener dos navegadores (o una ventana normal y otra privada) para ver el
 
 ### Entorno aislado para las mejoras de actividades
 
-El trabajo de `PLAN_MEJORAS_ACTIVIDADES.md` se prueba sobre `unifex_mejoras`, una copia de la base local `unifex` dentro del mismo PostgreSQL de Docker. La aplicación de revisión usa el puerto **7677** y volúmenes propios para archivos y logs. La base original `unifex` no recibe las migraciones ni las escrituras de esa aplicación.
+Las mejoras se prueban sobre `unifex_mejoras`, una copia de la base local `unifex` dentro del mismo PostgreSQL de Docker. La aplicación de revisión usa el puerto **7677** y volúmenes propios para archivos y logs. La base original `unifex` no recibe las migraciones ni las escrituras de esa aplicación.
 
 En una instalación local nueva, iniciar primero solo PostgreSQL y crear la copia mientras no haya conexiones a `unifex`:
 

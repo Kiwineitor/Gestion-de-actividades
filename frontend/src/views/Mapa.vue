@@ -568,7 +568,7 @@ onUnmounted(() => {
    despues, asi que el centro cae exacto en las coordenadas guardadas y el lado final mide
    justo `--pin`. Dentro de la caja ya se puede medir en px normales: 100 px es la unidad. */
 .pin {
-  position: absolute; width: 100px; height: 100px;
+  position: absolute; width: 100px; height: var(--alto, 100px);
   transform-origin: 0 0;
   /* El `rotate` va ENTRE el scale y el translate, y ese orden no es casual: el translate
      centra la caja de 100 px sobre su punto del plano ANTES de girarla, asi que el giro sale
@@ -650,6 +650,8 @@ onUnmounted(() => {
 .forma-cuadrado { border-radius: 10%; }
 .forma-circulo { border-radius: 50%; }
 .forma-triangulo { clip-path: polygon(50% 0%, 100% 100%, 0% 100%); border: none; }
+.forma-rectangulo { border-radius: 6%; }
+.forma-hexagono { clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); border: none; }
 
 /* ---- número de la caseta ----
    El rótulo NO se mide con el font-size del pin, y esa es toda la historia: con casetas de

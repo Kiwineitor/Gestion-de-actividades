@@ -38,7 +38,7 @@ const contorno = (color, g) => {
     :style="{
       left: `calc(${(texto.mapaX ?? 0.5) * 100}% )`,
       top: `calc(${(texto.mapaY ?? 0.5) * 100}% )`,
-      fontSize: `calc(var(--mundo) * ${texto.tamano ?? 0.02})`,
+      fontSize: `calc(var(--mundo, 1200) * ${texto.tamano ?? 0.02} * 1px)`,
       color: texto.color || '#111827',
       textShadow: contorno(texto.colorBorde || '#ffffff', texto.grosorBorde ?? 0.15),
       transform: `translate(-50%, -50%) rotate(${texto.rotacion ?? 0}deg)`,

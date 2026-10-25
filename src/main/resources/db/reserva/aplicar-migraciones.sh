@@ -11,7 +11,7 @@
 # se sabe exactamente lo que se esta haciendo.
 #
 # Por que existe este script en vez de aplicar los V*.sql a mano con psql -f uno por uno:
-# este proyecto no usa Flyway/Liquibase a proposito (ver CLAUDE.md), asi que no hay ningun
+# este proyecto no usa Flyway/Liquibase a proposito, asi que no hay ningun
 # registro de que scripts ya se aplicaron a una base dada. Sin ese registro es facil
 # aplicar un script dos veces, saltarse uno, o aplicarlos fuera de orden -- y varios de
 # estos scripts no son idempotentes (V7, por ejemplo, no tiene guardas IF NOT EXISTS).

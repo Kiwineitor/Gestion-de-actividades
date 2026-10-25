@@ -220,6 +220,41 @@ List<Puesto> findLibresPorCategoriaOrdenados(@Param("estadoPuesto") String estad
                              @Param("referencia") String referencia,
                              @Param("usuarioId") Long usuarioId);
 
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE puesto SET tamano = :tamano, observacion = :observacion, referencia = :referencia, "
+           + "\"_fecha_modificacion\" = now(), \"_modificacion_id_usuario\" = :usuarioId "
+           + "WHERE id = :id AND (\"_estado\" IS NULL OR \"_estado\" <> 'X')", nativeQuery = true)
+    int actualizarFicha(@Param("id") Long id,
+                        @Param("tamano") String tamano,
+                        @Param("observacion") String observacion,
+                        @Param("referencia") String referencia,
+                        @Param("usuarioId") Long usuarioId);
+
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE puesto SET tamano = :tamano "
+           + "WHERE id_categoria = :categoriaId AND estado_puesto IN ('L', 'X') "
+           + "AND (\"_estado\" IS NULL OR \"_estado\" <> 'X')", nativeQuery = true)
+    int actualizarTamanoDeCategoria(@Param("categoriaId") Long categoriaId,
+                                    @Param("tamano") String tamano);
+
+    @Query(value = """
+            SELECT i.id, e.nombre, e.objeto, e.representante_legal, e.celular_representante,
+                   i.img_comprobante, i.pago_contado, i.fecha_compra,
+                   pe.nombre, pe.paterno, pe.materno, ip.costo
+              FROM inscripcion_puesto ip
+              INNER JOIN inscripcion i ON i.id = ip.id_inscripcion
+              LEFT JOIN entidad e ON e.id = i.id_entidad
+              LEFT JOIN usuario u ON u.id = i."_registro_id_usuario"
+              LEFT JOIN persona pe ON pe.id = u.persona_id
+             WHERE ip.id_puesto = :puestoId
+               AND (i."_estado" IS NULL OR i."_estado" <> 'X')
+               AND (ip."_estado" IS NULL OR ip."_estado" <> 'X')
+               AND i.id_edicion = (SELECT ed.id FROM edicion ed WHERE ed.activa LIMIT 1)
+             ORDER BY i.fecha_compra DESC NULLS LAST
+             LIMIT 1
+            """, nativeQuery = true)
+    List<Object[]> findVentaVigenteDePuesto(@Param("puestoId") Long puestoId);
+
     /**
      * Cambia el numero (codigo) que rotula la caseta en el plano.
      *
@@ -276,6 +311,10 @@ List<Puesto> findLibresPorCategoriaOrdenados(@Param("estadoPuesto") String estad
     @Query("SELECT p.id FROM Puesto p WHERE p.categoria.id = :categoriaId " +
            "AND (p.estado IS NULL OR p.estado <> 'X')")
     List<Long> idsActivosDeCategoria(@Param("categoriaId") Long categoriaId);
+
+    @Query("SELECT p.tamano FROM Puesto p WHERE p.categoria.id = :categoriaId " +
+           "AND (p.estado IS NULL OR p.estado <> 'X') AND p.tamano IS NOT NULL ORDER BY p.id")
+    List<String> tamanosDeCategoria(@Param("categoriaId") Long categoriaId);
 
     /** Casetas activas de una categoria (para ajustar la cantidad o eliminar la categoria). */
     @Query("SELECT p FROM Puesto p WHERE p.categoria.id = :categoriaId " +

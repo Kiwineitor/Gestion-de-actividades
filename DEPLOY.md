@@ -1,7 +1,6 @@
 # DEPLOY.md — Puesta en producción (Ubuntu)
 
-> Runbook para levantar UniFex en un servidor Ubuntu. Complementa a `CLAUDE.md` (arquitectura)
-> y `PLAN.md` (qué falta). No reemplaza a ninguno de los dos.
+> Runbook para levantar UniFex en un servidor Ubuntu.
 
 ---
 
@@ -169,7 +168,7 @@ en texto plano, porque lo es.
 
 ## 2. Migraciones de esquema
 
-**No hay Flyway ni Liquibase** (decisión de arquitectura, ver `CLAUDE.md`). El esquema se
+**No hay Flyway ni Liquibase**. El esquema se
 actualiza con los scripts numerados de `src/main/resources/db/reserva/` (`V1` a `V12`),
 aplicados con `psql` en orden.
 
@@ -306,7 +305,7 @@ PASARELA_NOTIFY_URL=https://<tu-dominio>/api/pagos/notificacion
 ```
 
 Y falta conectar el flujo del lado de la SPA (hoy `ventaBoleteria.html` es Thymeleaf legado,
-sin vista en Vue) — eso es trabajo de producto, no solo configuración. Ver PLAN.md, Bloque 8.
+sin vista en Vue) — eso es trabajo de producto, no solo configuración.
 
 ---
 
@@ -360,7 +359,7 @@ como bug a resolver ahora.
 Fonts): **sin internet no genera nada**, y las posiciones que se ajustan a mano no se guardan
 entre sesiones. Es un problema real para un evento con wifi irregular.
 
-No se rehizo (es trabajo de producto, ver PLAN.md Bloque 3), pero la vista ahora muestra un
+No se rehizo (es trabajo de producto), pero la vista ahora muestra un
 aviso visible de "en revisión" explicando esta limitación, para que quien la use en el evento
 sepa que no debe depender de ella a ciegas. Sigue funcionando exactamente igual que antes
 cuando hay internet.
@@ -434,4 +433,4 @@ APK sobre la web) en `frontend/APK.md`.
 - [ ] `mvnw clean package` corrido con JDK 21, `.jar` copiado al servidor
 - [ ] Servicio systemd habilitado y arrancando sin errores (`journalctl -u unifex`)
 - [ ] Probado en el navegador: login, mapa en tiempo real (dos pestañas), venta completa, recibo PDF
-- [ ] Pendiente a propósito, no bloquea el lanzamiento: pasarela de pago (sección 4), reportes Jasper (sección 6), generador de credenciales (sección 7), APK en dispositivo real (sección 8), boletería/control de acceso (ver PLAN.md)
+- [ ] Pendiente a propósito, no bloquea el lanzamiento: pasarela de pago (sección 4), reportes Jasper (sección 6), generador de credenciales (sección 7), APK en dispositivo real (sección 8), boletería/control de acceso

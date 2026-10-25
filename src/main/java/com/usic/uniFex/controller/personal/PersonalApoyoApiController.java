@@ -21,6 +21,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.usic.uniFex.model.dto.PersonalApoyoDTO;
 import com.usic.uniFex.model.entity.Dependencia;
+import com.usic.uniFex.model.entity.PersonalApoyo;
 import com.usic.uniFex.model.service.GestionPersonalApoyoService;
 import com.usic.uniFex.model.service.GestionPersonalApoyoService.Datos;
 import com.usic.uniFex.model.service.GestionPersonalApoyoService.DependenciaDatos;
@@ -48,12 +49,22 @@ public class PersonalApoyoApiController {
     @GetMapping("/dependencias")
     @PreAuthorize(Roles.SOLO_SUPER_USUARIO)
     public List<Map<String, Object>> listarDependencias() {
+        var personal = gestion.listarParaGestion(null);
         return gestion.listarDependencias().stream()
                 .map(d -> {
+                    var suyos = personal.stream()
+                            .filter(p -> p.getDependencia() != null && d.getId().equals(p.getDependencia().getId()))
+                            .toList();
                     Map<String, Object> m = new HashMap<>();
                     m.put("id", d.getId());
                     m.put("nombre", d.getNombre());
                     m.put("descripcion", d.getDescripcion());
+                    m.put("estado", d.getEstado());
+                    m.put("personas", suyos.size());
+                    m.put("activos", suyos.stream().filter(p -> "A".equalsIgnoreCase(p.getEstado())).count());
+                    m.put("responsable", suyos.stream()
+                            .filter(p -> GestionPersonalApoyoService.ROL_RESPONSABLE_DEPENDENCIA.equalsIgnoreCase(p.getRol()))
+                            .map(PersonalApoyo::getNombreCompleto).findFirst().orElse(null));
                     return m;
                 })
                 .toList();
@@ -100,18 +111,13 @@ public class PersonalApoyoApiController {
     @GetMapping
     public List<PersonalApoyoDTO> listar(@RequestParam(required = false) Long dependencia) {
         if (esSuperUsuario()) {
-            if (dependencia != null) {
-                return gestion.listarPorDependencia(dependencia).stream()
-                        .map(PersonalApoyoDTO::de)
-                        .toList();
-            }
-            return gestion.listarPersonal().stream()
+            return gestion.listarParaGestion(dependencia).stream()
                     .map(PersonalApoyoDTO::de)
                     .toList();
         }
         // Sin super: solo la propia, aunque el cliente pida otra en el parametro.
         return gestion.miDependencia(actorId())
-                .map(d -> gestion.listarPorDependencia(d.getId()).stream()
+                .map(d -> gestion.listarParaGestion(d.getId()).stream()
                         .map(PersonalApoyoDTO::de)
                         .toList())
                 .orElse(List.of());
@@ -130,6 +136,14 @@ public class PersonalApoyoApiController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Map<String, Object>> eliminar(@PathVariable Long id) {
         return responder(gestion.eliminarPersonal(id, actorId(), alcance()));
+    }
+
+    public record EstadoReq(Boolean activo) {
+    }
+
+    @PatchMapping("/{id}/estado")
+    public ResponseEntity<Map<String, Object>> cambiarEstado(@PathVariable Long id, @RequestBody EstadoReq req) {
+        return responder(gestion.cambiarEstado(id, req != null && Boolean.TRUE.equals(req.activo()), actorId(), alcance()));
     }
 
     @PostMapping(value = "/{id}/foto",

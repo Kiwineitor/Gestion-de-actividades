@@ -37,13 +37,19 @@ public class GestionPersonalApoyoService {
     public static final String ROL_RESPONSABLE_DEPENDENCIA = "coordinador";
 
     private final IPersonalApoyoService personalApoyoService;
+    private final com.usic.uniFex.model.dao.IPersonalApoyoDao personalApoyoDao;
     private final IDependenciaService dependenciaService;
     private final IUsuarioService usuarioService;
     private final FileStorageService almacen;
 
     public record Datos(Long idDependencia, String nombre, String paterno, String materno,
                         String ci, String correo, String celular, String rol,
-                        String descripcionTarea) {
+                        String descripcionTarea, String turno) {
+
+        public Datos(Long idDependencia, String nombre, String paterno, String materno,
+                     String ci, String correo, String celular, String rol, String descripcionTarea) {
+            this(idDependencia, nombre, paterno, materno, ci, correo, celular, rol, descripcionTarea, null);
+        }
 
         /** Compatibilidad: los clientes que aun no mandan tarea. */
         public Datos(Long idDependencia, String nombre, String paterno, String materno,
@@ -228,7 +234,7 @@ public class GestionPersonalApoyoService {
             return Resultado.error("Solo puedes registrar personal de tu dependencia.");
         }
         Datos efectivo = new Datos(idDep, d.nombre(), d.paterno(), d.materno(),
-                d.ci(), d.correo(), d.celular(), d.rol(), d.descripcionTarea());
+                d.ci(), d.correo(), d.celular(), d.rol(), d.descripcionTarea(), d.turno());
         String falta = validarPersonal(efectivo);
         if (falta != null) return Resultado.error(falta);
 
@@ -269,7 +275,7 @@ public class GestionPersonalApoyoService {
         }
         Long idDep = (idDependenciaAlcance != null) ? idDependenciaAlcance : d.idDependencia();
         Datos efectivo = new Datos(idDep, d.nombre(), d.paterno(), d.materno(),
-                d.ci(), d.correo(), d.celular(), d.rol(), d.descripcionTarea());
+                d.ci(), d.correo(), d.celular(), d.rol(), d.descripcionTarea(), d.turno());
         String falta = validarPersonal(efectivo);
         if (falta != null) return Resultado.error(falta);
 
@@ -406,6 +412,31 @@ public class GestionPersonalApoyoService {
         p.setRol(trim(d.rol()));
         // Igual que correo/celular: si no viene, se conserva (el alta anterior no la pedia).
         if (d.descripcionTarea() != null) p.setDescripcionTarea(trim(d.descripcionTarea()));
+        if (d.turno() != null) p.setTurno(d.turno().isBlank() ? null : trim(d.turno()));
+    }
+
+    public static final String INACTIVO = "I";
+
+    @Transactional(readOnly = true)
+    public List<PersonalApoyo> listarParaGestion(Long idDependencia) {
+        return personalApoyoDao.listarParaGestion().stream()
+                .filter(p -> idDependencia == null
+                        || (p.getDependencia() != null && idDependencia.equals(p.getDependencia().getId())))
+                .toList();
+    }
+
+    @Transactional
+    public Resultado cambiarEstado(Long id, boolean activo, Long actorId, Long idDependenciaAlcance) {
+        PersonalApoyo p = personalApoyoService.findById(id);
+        if (p == null || ELIMINADO.equalsIgnoreCase(p.getEstado())) return Resultado.error("Personal no encontrado.");
+        if (idDependenciaAlcance != null && (p.getDependencia() == null
+                || !idDependenciaAlcance.equals(p.getDependencia().getId()))) {
+            return Resultado.error("Ese registro no es de tu dependencia.");
+        }
+        p.setEstado(activo ? ACTIVO : INACTIVO);
+        p.setModificacion(new Date());
+        p.setModificacionIdUsuario(actorId);
+        return Resultado.exito(activo ? "Personal activado." : "Personal desactivado.", personalApoyoService.save(p));
     }
 
     private String trim(String s) { return s == null ? null : s.trim(); }

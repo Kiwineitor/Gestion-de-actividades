@@ -19,10 +19,63 @@ const router = useRouter();
 const route = useRoute();
 const abierto = ref(false); // sidebar en móvil
 
+const ESPERA_OCULTAR_MS = 6000;
+const contraido = ref(leerSesion('menu.contraido') === '1');
+const ocultoAuto = ref(false);
+const asomado = ref(false);
+let temporizadorMenu = null;
+
+function leerSesion(clave) {
+  try { return sessionStorage.getItem(clave); } catch { return null; }
+}
+
+function guardarSesion(clave, valor) {
+  try { sessionStorage.setItem(clave, valor); } catch { /* sin almacenamiento */ }
+}
+
+function esMovil() {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 820px)').matches;
+}
+
+function alternarMenu() {
+  if (esMovil()) {
+    abierto.value = !abierto.value;
+    return;
+  }
+  const plegado = contraido.value || ocultoAuto.value;
+  contraido.value = !plegado;
+  ocultoAuto.value = false;
+  asomado.value = false;
+  guardarSesion('menu.contraido', contraido.value ? '1' : '0');
+  programarOcultar();
+}
+
+function programarOcultar() {
+  clearTimeout(temporizadorMenu);
+  if (!route.meta.inmersivo || contraido.value || ocultoAuto.value || asomado.value) return;
+  temporizadorMenu = setTimeout(() => { ocultoAuto.value = true; }, ESPERA_OCULTAR_MS);
+}
+
+function entrarMenu() {
+  clearTimeout(temporizadorMenu);
+  asomado.value = true;
+}
+
+function salirMenu() {
+  asomado.value = false;
+  programarOcultar();
+}
+
 // El titulo y el modo inmersivo vienen de la meta de la ruta activa:
 // AppLayout es el unico que renderiza AppShell, y las vistas solo traen su contenido.
 const titulo = computed(() => route.meta.titulo || '');
 const inmersivo = computed(() => Boolean(route.meta.inmersivo));
+const plegado = computed(() => contraido.value || ocultoAuto.value);
+
+watch(() => route.path, () => {
+  ocultoAuto.value = false;
+  programarOcultar();
+}, { immediate: true });
 
 /*
  * El menu entero, en el orden en que se quiere leer. Cada entrada dice a que PANTALLA
@@ -77,15 +130,14 @@ const TODOS = [
   { a: '/puestos', p: 'puestos', g: 'Plano y precios', icono: '🔢', txt: 'Puestos' },
 
   // --- Administracion ---
-  { a: '/direccion', p: 'direccion', g: 'Administracion', icono: '📈', txt: 'Tablero de dirección' },
-  { a: '/reportes', p: 'reportes', g: 'Administracion', icono: '📊', txt: 'Reportes' },
-  { a: '/control-ventas', p: 'control-ventas', g: 'Administracion', icono: '💰', txt: 'Control de ventas' },
+  { a: '/control-ventas', p: 'control-ventas', g: 'Administracion', icono: '💰', txt: 'Ventas' },
+  { a: '/dashboard', p: ['direccion', 'control-ventas', 'reportes'], g: 'Administracion', icono: '📊', txt: 'Dashboard' },
   { a: '/vendedores', p: 'vendedores', g: 'Administracion', icono: '👥', txt: 'Vendedores' },
   { a: '/anuncios', p: 'anuncios', g: 'Administracion', icono: '📣', txt: 'Comunicados' },
   { a: '/responsables-extra', p: 'responsables-extra', g: 'Acreditacion', icono: '🧾', txt: 'Responsables extra' },
   { a: '/usuarios', p: 'usuarios', g: 'Administracion', icono: '👤', txt: 'Usuarios' },
-  { a: '/roles', p: 'roles', g: 'Administracion', icono: '🛡️', txt: 'Roles' },
-  { a: '/permisos', p: 'permisos', g: 'Administracion', icono: '🔐', txt: 'Permisos' },
+  { a: '/roles', p: 'roles', g: 'Administracion', icono: '🛡️', txt: 'Roles y permisos' },
+  { a: '/permisos', p: 'permisos', siNo: 'roles', g: 'Administracion', icono: '🔐', txt: 'Roles y permisos' },
   { a: '/personas', p: 'personas', g: 'Administracion', icono: '🪪', txt: 'Personas' },
   { a: '/personal-apoyo', p: 'personal-apoyo', g: 'Administracion', icono: '👥', txt: 'Personal de apoyo' },
   { a: '/mantenimiento', p: 'mantenimiento', g: 'Sistema', icono: '⚙️', txt: 'Mantenimiento' },
@@ -95,8 +147,8 @@ const TODOS = [
 
 const anuncios = useAnunciosStore();
 
-const enlaces = computed(() => TODOS.filter((e) => e.soloAdministracion
-  ? auth.puedeEditarPlano : permisos.puedeVer(e.p)));
+const enlaces = computed(() => TODOS.filter((e) => (e.soloAdministracion
+  ? auth.puedeEditarPlano : [].concat(e.p).some((p) => permisos.puedeVer(p))) && !(e.siNo && permisos.puedeVer(e.siNo))));
 
 /**
  * El menu ya agrupado, sin los grupos que quedan vacios.
@@ -195,6 +247,7 @@ onMounted(() => {
 // de esperar al siguiente latido.
 watch(() => route.fullPath, () => marcarPantalla(route.meta?.pantalla, route.meta?.titulo));
 onUnmounted(() => {
+  clearTimeout(temporizadorMenu);
   if (quitarOyente) quitarOyente();
   window.removeEventListener('unifex:mantenimiento', alMantenimientoHttp);
   document.removeEventListener('visibilitychange', alVolverAlFrente);
@@ -220,30 +273,32 @@ function salir() {
     <!-- Los anuncios de administracion. Van AQUI, en el armazon, para que salgan en cualquier
          pantalla: el mapa, el registro de una venta, credenciales. No bloquean nada. -->
     <AvisoAnuncios />
-    <aside class="sidebar" :class="{ abierto }">
+    <div v-if="plegado && asomado" class="hueco-menu"></div>
+    <aside class="sidebar" :class="{ abierto, plegado, asomado: plegado && asomado }"
+           @mouseenter="entrarMenu" @mouseleave="salirMenu">
       <div class="marca">
         <span class="logo">UF</span>
-        <strong>UniFex</strong>
+        <strong class="txt-menu">UniFex</strong>
       </div>
       <nav>
         <!-- Un grupo sin enlaces visibles no se pinta (ver `grupos`), así que la cabecera
              nunca aparece sobre un hueco. -->
         <div v-for="g in grupos" :key="g.clave" class="grupo">
           <h3 class="grupo-titulo">{{ g.titulo }}</h3>
-          <router-link v-for="e in g.enlaces" :key="e.a" :to="e.a" class="enlace" @click="abierto = false">
-            <span class="ico">{{ e.icono }}</span>{{ e.txt }}
+          <router-link v-for="e in g.enlaces" :key="e.a" :to="e.a" class="enlace" :title="e.txt" @click="abierto = false">
+            <span class="ico">{{ e.icono }}</span><span class="txt-menu">{{ e.txt }}</span>
           </router-link>
         </div>
       </nav>
       <div class="pie-side">
         <div class="quien">
           <span class="avatar">{{ (auth.usuario || '?').charAt(0).toUpperCase() }}</span>
-          <div class="datos">
+          <div class="datos txt-menu">
             <span class="u">{{ auth.usuario }}</span>
             <span class="r">{{ auth.rol }}</span>
           </div>
         </div>
-        <button class="btn btn-fantasma btn-sm" @click="salir">Salir</button>
+        <button class="btn btn-fantasma btn-sm txt-menu" @click="salir">Salir</button>
       </div>
     </aside>
 
@@ -251,7 +306,8 @@ function salir() {
 
     <div class="area">
       <header class="topbar">
-        <button class="btn btn-fantasma btn-icono menu" @click="abierto = !abierto" aria-label="Menú">☰</button>
+        <button class="btn btn-fantasma btn-icono menu" :aria-expanded="!plegado" @click="alternarMenu"
+                :title="plegado ? 'Mostrar menú' : 'Ocultar menú'" aria-label="Menú">☰</button>
         <h1>{{ titulo }}</h1>
         <div class="crecer"></div>
         <button class="btn btn-fantasma btn-icono" :title="`Tema: ${tema}`" @click="alternarTema">{{ iconoTema }}</button>
@@ -335,7 +391,25 @@ nav { display: flex; flex-direction: column; gap: 2px; padding: 0.4rem 0.6rem; f
   height: var(--safe-top); background: var(--franja-estado);
 }
 .topbar h1 { margin: 0; font-size: 1.15rem; }
-.menu { display: none; }
+.menu { display: inline-flex; }
+.hueco-menu { width: 64px; flex: none; }
+.sidebar { transition: width 0.18s ease; }
+.sidebar.plegado { width: 64px; overflow: hidden; }
+.sidebar.plegado .txt-menu, .sidebar.plegado .grupo-titulo { display: none; }
+.sidebar.plegado .enlace { justify-content: center; padding: 0.6rem 0; }
+.sidebar.plegado .marca { justify-content: center; padding: 1.1rem 0; }
+.sidebar.plegado .pie-side { justify-content: center; padding: 0.8rem 0; }
+.sidebar.plegado nav { padding: 0.4rem 0.4rem; }
+.sidebar.plegado.asomado {
+  width: var(--sidebar-w); position: fixed; left: 0; top: 0; z-index: 45; box-shadow: var(--sombra-md);
+}
+.sidebar.plegado.asomado .txt-menu { display: inline; }
+.sidebar.plegado.asomado .datos { display: flex; }
+.sidebar.plegado.asomado .grupo-titulo { display: block; }
+.sidebar.plegado.asomado .enlace { justify-content: flex-start; padding: 0.6rem 0.7rem; }
+.sidebar.plegado.asomado .marca { justify-content: flex-start; padding: 1.1rem 1rem; }
+.sidebar.plegado.asomado .pie-side { justify-content: space-between; padding: 0.8rem; }
+.sidebar.plegado:not(.asomado) .quien .avatar { margin: 0; }
 /* flex: 1 0 auto — crece para ocupar lo que sobra bajo la cabecera (de eso vive el mapa,
    que se estira hasta la barra inferior en vez de dejar un hueco muerto), pero NO se encoge:
    una vista larga (una tabla de usuarios) conserva su alto natural y la pagina hace scroll
@@ -355,10 +429,14 @@ nav { display: flex; flex-direction: column; gap: 2px; padding: 0.4rem 0.6rem; f
 .tabbar { display: none; }
 
 @media (max-width: 820px) {
-  .sidebar {
+  .sidebar, .sidebar.plegado, .sidebar.plegado.asomado {
     position: fixed; z-index: 60; transform: translateX(-100%); transition: transform 0.2s ease;
+    width: var(--sidebar-w); top: 0; left: 0;
   }
-  .sidebar.abierto { transform: translateX(0); box-shadow: var(--sombra-md); }
+  .hueco-menu { display: none; }
+  .sidebar.plegado .txt-menu, .sidebar.plegado .grupo-titulo { display: revert; }
+  .sidebar.plegado .enlace { justify-content: flex-start; padding: 0.9rem; }
+  .sidebar.abierto, .sidebar.plegado.abierto, .sidebar.plegado.asomado.abierto { transform: translateX(0); box-shadow: var(--sombra-md); }
   .velo { display: block; position: fixed; inset: 0; z-index: 50; background: rgba(2, 6, 23, 0.4); }
 
   /* El cajón lateral sigue existiendo (herramientas de admin, Salir) pero ya no se abre

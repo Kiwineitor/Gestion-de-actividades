@@ -117,7 +117,8 @@ public class PlantillaCredencialApiController {
         PlantillaCredencial p = service.aPlantilla(
                 base == null ? new Datos("VISTA_PREVIA", d.etiqueta(), d.detalle(), d.imagen(), d.requiereFoto(),
                         d.centrado(), d.mayusculas(), d.fotoCircular(), d.multilinea(), d.colorTexto(),
-                        d.tipoTexto(), d.cajas(), d.orden(), d.predeterminada()) : d,
+                        d.tipoTexto(), d.cajas(), d.orden(), d.predeterminada(), d.uso(), d.idEdicion(),
+                        d.idDependencia(), d.imagenReverso()) : d,
                 base);
         CredencialDTO c = req.responsableId() == null ? null
                 : credencialService.porResponsable(req.responsableId()).orElse(null);

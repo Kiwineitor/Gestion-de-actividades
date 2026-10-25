@@ -68,7 +68,8 @@ public record PlantillaCredencial(
         String tipoTexto,
         String colorTexto,
         boolean fotoCircular,
-        boolean multilinea) {
+        boolean multilinea,
+        String imagenReverso) {
 
     /** Un rectangulo dentro de la plantilla, en fracciones de su ancho y su alto. */
     public record Caja(double x, double y, double ancho, double alto) {
@@ -81,7 +82,7 @@ public record PlantillaCredencial(
         this(id, etiqueta, detalle, imagen, requiereFoto, centrado, mayusculas,
                 qr, nombre, empresa, ci, codigo, zona, foto, null, null, null,
                 "EXPOSITOR".equals(id) || "CREDENCIAL_VIRTUAL".equals(id),
-                "EXPOSITOR".equals(id));
+                "EXPOSITOR".equals(id), null);
     }
 
     /**

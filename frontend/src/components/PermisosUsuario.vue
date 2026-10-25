@@ -10,6 +10,7 @@
  * datos en el servidor; quien no es administración ve solo las ventas que registró él.
  */
 import { ref, computed, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { apiFetch, jsonOError } from '../api';
 import { toast } from '../ui/toast';
 import { usePermisosStore } from '../stores/permisos';
@@ -124,7 +125,13 @@ async function guardar() {
   }
 }
 
-onMounted(cargarUsuarios);
+const route = useRoute();
+
+onMounted(async () => {
+  await cargarUsuarios();
+  const pedido = usuarios.value.find((u) => String(u.usuarioId) === String(route.query.usuario));
+  if (pedido) elegir(pedido);
+});
 </script>
 
 <template>

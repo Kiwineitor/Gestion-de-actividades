@@ -75,7 +75,7 @@ public class CredencialPublicaController {
     private ResponseEntity<Map<String, Object>> verApoyo(String codigo) {
         Long apoyoId = codigosApoyo.apoyoDe(codigo);
         PersonalApoyo p = apoyoId == null ? null : apoyo.findById(apoyoId);
-        if (p == null || "X".equalsIgnoreCase(p.getEstado())) {
+        if (p == null || !"A".equalsIgnoreCase(p.getEstado())) {
             log.info("Credencial de apoyo consultada con codigo no valido: {}", codigo);
             return ResponseEntity.status(404).body(Map.of(
                     "valida", false,

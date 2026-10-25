@@ -1,0 +1,8 @@
+BEGIN;
+
+ALTER TABLE plantilla_credencial ADD COLUMN IF NOT EXISTS uso VARCHAR(20) NOT NULL DEFAULT 'EXPOSITOR';
+ALTER TABLE plantilla_credencial ADD COLUMN IF NOT EXISTS id_edicion BIGINT;
+ALTER TABLE plantilla_credencial ADD COLUMN IF NOT EXISTS id_dependencia BIGINT;
+ALTER TABLE plantilla_credencial ADD COLUMN IF NOT EXISTS imagen_reverso VARCHAR(300);
+
+COMMIT;

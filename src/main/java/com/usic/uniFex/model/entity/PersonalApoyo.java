@@ -43,6 +43,9 @@ public class PersonalApoyo extends AuditoriaConfig {
     @Column(name = "descripcion_tarea", length = 200)
     private String descripcionTarea;
 
+    @Column(length = 30)
+    private String turno;
+
     public String getNombreCompleto() {
         String n = nombre != null ? nombre.trim() : "";
         String p = paterno != null ? paterno.trim() : "";

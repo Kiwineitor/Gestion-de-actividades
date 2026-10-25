@@ -13,6 +13,9 @@ public interface IPersonalApoyoDao extends JpaRepository<PersonalApoyo, Long> {
     @Query("SELECT p FROM PersonalApoyo p WHERE p.estado = 'A'")
     List<PersonalApoyo> listarPersonalApoyo();
 
+    @Query("SELECT p FROM PersonalApoyo p WHERE p.estado IN ('A', 'I') ORDER BY p.paterno, p.nombre")
+    List<PersonalApoyo> listarParaGestion();
+
     @Query("SELECT p FROM PersonalApoyo p WHERE p.dependencia.id = ?1 AND p.estado = 'A'")
     List<PersonalApoyo> buscarPorDependencia(Long idDependencia);
 

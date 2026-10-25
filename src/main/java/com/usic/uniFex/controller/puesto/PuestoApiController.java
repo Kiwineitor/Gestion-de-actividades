@@ -344,6 +344,26 @@ public class PuestoApiController {
         return ResponseEntity.ok(cuerpo);
     }
 
+    @GetMapping("/pagados")
+    @PreAuthorize(Roles.EDITA_PLANO)
+    public List<Long> pagados() {
+        return mapaService.pagados();
+    }
+
+    public record CambioCategoria(Long categoriaId) {
+    }
+
+    @PatchMapping("/{id}/categoria")
+    @PreAuthorize(Roles.EDITA_PLANO)
+    public ResponseEntity<Map<String, Object>> cambiarCategoria(
+            @PathVariable Long id, @RequestBody CambioCategoria req) {
+        Long usuarioId = usuarioActual();
+        if (usuarioId == null) return noAutenticado();
+        String error = mapaService.cambiarCategoria(id, req.categoriaId(), usuarioId);
+        if (error == null) publisher.publicar(id);
+        return respuesta(error == null, error == null ? "Categoría cambiada" : error);
+    }
+
     @PatchMapping("/{id}/ficha")
     @PreAuthorize(Roles.EDITA_PLANO)
     public ResponseEntity<Map<String, Object>> ficha(

@@ -20,6 +20,8 @@ import com.itextpdf.text.pdf.BarcodeQRCode;
 import com.itextpdf.text.pdf.PdfContentByte;
 import com.itextpdf.text.pdf.PdfWriter;
 import com.usic.uniFex.model.dto.ApoyoCredencialDTO;
+import com.usic.uniFex.model.dto.CredencialDTO;
+import com.usic.uniFex.model.dto.PlantillaCredencial;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -121,6 +123,27 @@ public class ApoyoCredencialPdfService {
 
     private final Map<String, byte[]> cache = new ConcurrentHashMap<>();
 
+    private final PlantillaCredencialService plantillas;
+    private final CredencialPdfService credencialPdf;
+    private final CredencialCodigoService codigosCredencial;
+
+    private PlantillaCredencial plantillaDe(ApoyoCredencialDTO c) {
+        return plantillas.paraApoyo(c.idDependencia());
+    }
+
+    private static CredencialDTO comoCredencial(ApoyoCredencialDTO c) {
+        boolean conFoto = c.fotoUrl() != null && !c.fotoUrl().isBlank();
+        return new CredencialDTO(c.id(), c.codigo(), c.nombreCompleto(), c.ci(), c.fotoUrl(), false,
+                c.dependenciaNombre(), c.descripcionTarea(), null, null, null, null, true, conFoto,
+                false, null, null, true, c.rol());
+    }
+
+    private Image reversoDe(ApoyoCredencialDTO c, Image porDefecto) throws Exception {
+        PlantillaCredencial p = plantillaDe(c);
+        return p == null || p.imagenReverso() == null ? porDefecto
+                : Image.getInstance(credencialPdf.imagen(p.imagenReverso()));
+    }
+
     /** Donde viven las fotos subidas. Es la misma raiz que sirve /files/**. */
     @Value("${app.upload-root:uploads}")
     private String uploadRoot;
@@ -152,7 +175,7 @@ public class ApoyoCredencialPdfService {
                 // El reverso: segunda pagina de la misma credencial, para imprimir
                 // frente y reverso (duplex o dos caras a pegar).
                 doc.newPage();
-                pintarReverso(lienzo, fondoReverso);
+                pintarReverso(lienzo, reversoDe(credenciales.get(i), fondoReverso));
             }
             doc.close();
             log.info("Credenciales de apoyo impresas: {}", credenciales.size());
@@ -174,6 +197,18 @@ public class ApoyoCredencialPdfService {
     private void pintar(PdfContentByte lienzo, BaseFont fuente,
                         ApoyoCredencialDTO c, String urlBase, ApoyoCodigoService codigos)
             throws Exception {
+        PlantillaCredencial propia = plantillaDe(c);
+        if (propia != null) {
+            Image muestra = Image.getInstance(bytes(PLANTILLA));
+            float hoja = ANCHO * muestra.getHeight() / muestra.getWidth();
+            float alto = (float) (ANCHO * credencialPdf.proporcion(propia));
+            float escala = Math.min(1f, hoja / alto);
+            float w = ANCHO * escala;
+            float h = alto * escala;
+            credencialPdf.pintarFrente(lienzo, propia, comoCredencial(c), (ANCHO - w) / 2f, (hoja - h) / 2f,
+                    w, h, urlBase, codigosCredencial);
+            return;
+        }
         Disposicion d = disposicionDe(c);
         Image fondoOriginal = Image.getInstance(bytes(d.fondo()));
         float w = ANCHO;
@@ -433,17 +468,22 @@ public class ApoyoCredencialPdfService {
                 // ---- PAGINA DE FRENTES ----
                 // Crear plantilla frente para cada credencial del grupo (pueden tener distinto fondo)
                 com.itextpdf.text.pdf.PdfTemplate[] tplsFrente = new com.itextpdf.text.pdf.PdfTemplate[grupo.size()];
+                com.itextpdf.text.pdf.PdfTemplate[] tplsReverso = new com.itextpdf.text.pdf.PdfTemplate[grupo.size()];
                 for (int i = 0; i < grupo.size(); i++) {
-                    Disposicion d = disposicionDe(grupo.get(i));
-                    Image frenteImg = Image.getInstance(bytes(d.fondo()));
+                    PlantillaCredencial propia = plantillaDe(grupo.get(i));
+                    Image frenteImg = propia != null
+                            ? Image.getInstance(credencialPdf.imagen(propia.imagen()))
+                            : Image.getInstance(bytes(disposicionDe(grupo.get(i)).fondo()));
                     tplsFrente[i] = plantillaFrente(lienzo, frenteImg, w, h);
+                    tplsReverso[i] = propia == null || propia.imagenReverso() == null ? tplReverso
+                            : plantillaReverso(lienzo, Image.getInstance(credencialPdf.imagen(propia.imagenReverso())), w, h);
                 }
 
                 pintarGrupoFrentes(lienzo, fuente, tplsFrente, grupo, x0, y0, w, h, urlBase, codigos);
                 doc.newPage();
 
                 // ---- PAGINA DE REVERSOS (espejados en X) ----
-                pintarGrupoReversos(lienzo, tplReverso, grupo.size(), x0, y0, w, h);
+                pintarGrupoReversos(lienzo, tplsReverso, x0, y0, w, h);
             }
             doc.close();
             log.info("Credenciales de apoyo duplex 2x2: {}, hojas: {}", credenciales.size(), 2 * totalGrupos);
@@ -517,7 +557,13 @@ public class ApoyoCredencialPdfService {
             lienzo.addTemplate(tplsFrente[i], x, y);
 
             // Contenido (nombre, QR, etc.) sobre el fondo
-            pintarContenidoEnHueco(lienzo, fuente, grupo.get(i), x, y, w, h, urlBase, codigos);
+            PlantillaCredencial propia = plantillaDe(grupo.get(i));
+            if (propia != null) {
+                credencialPdf.pintarSoloContenido(lienzo, propia, comoCredencial(grupo.get(i)), x, y, w, h,
+                        urlBase, codigosCredencial);
+            } else {
+                pintarContenidoEnHueco(lienzo, fuente, grupo.get(i), x, y, w, h, urlBase, codigos);
+            }
 
             marcasDeCorte(lienzo, x, y, w, h);
         }
@@ -531,9 +577,10 @@ public class ApoyoCredencialPdfService {
      * Columna 0 <-> 1 para que al voltear por borde largo queden detras de su frente.
      */
     private void pintarGrupoReversos(PdfContentByte lienzo,
-                                     com.itextpdf.text.pdf.PdfTemplate tplReverso,
-                                     int cantidad, float x0, float y0, float w, float h) throws Exception {
-        for (int i = 0; i < cantidad; i++) {
+                                     com.itextpdf.text.pdf.PdfTemplate[] tplsReverso,
+                                     float x0, float y0, float w, float h) throws Exception {
+        for (int i = 0; i < tplsReverso.length; i++) {
+            com.itextpdf.text.pdf.PdfTemplate tplReverso = tplsReverso[i];
             // ESPEJADO EN X: columna contraria
             int col = 1 - (i % 2);
             boolean arriba = i < 2;

@@ -1,6 +1,8 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 import UiModal from '../components/UiModal.vue';
+import MenuAcciones from '../components/MenuAcciones.vue';
+import { useRouter } from 'vue-router';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
 import { useAcademicoStore } from '../stores/academico';
@@ -41,13 +43,17 @@ const usuariosFiltrados = computed(() => {
     && (!filtroEstado.value || (u.estado === 'ACTIVO' ? 'activo' : 'inactivo') === filtroEstado.value));
 });
 
-function ejecutarAccion(evento, usuario) {
-  const accion = evento.target.value;
-  evento.target.value = '';
-  if (accion === 'editar') abrirEditar(usuario);
-  if (accion === 'password') abrirPassword(usuario);
-  if (accion === 'estado') alternarEstado(usuario);
-  if (accion === 'eliminar') eliminar(usuario);
+const router = useRouter();
+
+function accionesDe(u) {
+  return [
+    { txt: 'Editar usuario', accion: () => abrirEditar(u) },
+    { txt: 'Cambiar contraseña', accion: () => abrirPassword(u) },
+    { txt: 'Ver permisos', accion: () => router.push({ path: '/permisos', query: { usuario: u.id } }) },
+    { txt: u.estado === 'ACTIVO' ? 'Desactivar' : 'Activar', accion: () => alternarEstado(u) },
+    { separador: true },
+    { txt: 'Eliminar usuario', peligro: true, accion: () => eliminar(u) },
+  ];
 }
 
 const rolElegido = computed(() => roles.value.find((r) => r.id === modal.rolId) || null);
@@ -317,14 +323,7 @@ onMounted(() => {
               </span>
             </td>
             <td class="acciones">
-              <select class="control menu-acciones" :disabled="ocupado" :aria-label="`Acciones de ${u.username}`"
-                      @change="ejecutarAccion($event, u)">
-                <option value="">Acciones…</option>
-                <option value="editar">Editar usuario</option>
-                <option value="password">Cambiar contraseña</option>
-                <option value="estado">{{ u.estado === 'ACTIVO' ? 'Desactivar' : 'Activar' }}</option>
-                <option value="eliminar">Eliminar usuario</option>
-              </select>
+              <MenuAcciones :acciones="accionesDe(u)" :deshabilitado="ocupado" :etiqueta="`Acciones de ${u.username}`" />
             </td>
           </tr>
         </tbody>

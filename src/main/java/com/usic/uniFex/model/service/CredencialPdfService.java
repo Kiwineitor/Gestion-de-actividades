@@ -528,7 +528,7 @@ public class CredencialPdfService {
             PdfContentByte lienzo = writer.getDirectContent();
             BaseFont fuente = BaseFont.createFont(BaseFont.HELVETICA_BOLD, BaseFont.CP1252, BaseFont.NOT_EMBEDDED);
             com.itextpdf.text.pdf.PdfTemplate tplFrente = plantillaFrente(lienzo, frente, w, h);
-            com.itextpdf.text.pdf.PdfTemplate tplReverso = plantillaReverso(lienzo, w, h);
+            com.itextpdf.text.pdf.PdfTemplate tplReverso = plantillaReverso(lienzo, w, h, plantilla);
 
             pintarGrupo(lienzo, fuente, tplFrente, tplReverso, grupo, plantilla,
                     x0, y0, w, h, urlBase, codigos, false);
@@ -572,7 +572,7 @@ public class CredencialPdfService {
             PdfContentByte lienzo = writer.getDirectContent();
             BaseFont fuente = BaseFont.createFont(BaseFont.HELVETICA_BOLD, BaseFont.CP1252, BaseFont.NOT_EMBEDDED);
             com.itextpdf.text.pdf.PdfTemplate tplFrente = plantillaFrente(lienzo, frente, w, h);
-            com.itextpdf.text.pdf.PdfTemplate tplReverso = plantillaReverso(lienzo, w, h);
+            com.itextpdf.text.pdf.PdfTemplate tplReverso = plantillaReverso(lienzo, w, h, plantilla);
 
             int total = (credenciales.size() + GRUPO_DUPLEX - 1) / GRUPO_DUPLEX;
             for (int lote = 0; lote < total; lote++) {
@@ -673,9 +673,32 @@ public class CredencialPdfService {
      * en modo cover —lo justo para cubrir los 10x15— y se recorta lo que sobre por los
      * lados, centrando el logo y el texto.
      */
+    public static final String REVERSO_POR_DEFECTO = "static/assets/CREDENCIAL_REVERSO.png";
+
+    public byte[] imagen(String recurso) {
+        return bytes(recurso);
+    }
+
+    public void pintarFrente(PdfContentByte lienzo, PlantillaCredencial p, CredencialDTO c,
+                             float x, float y, float w, float h, String urlBase,
+                             CredencialCodigoService codigos) throws Exception {
+        pintarCredencial(lienzo, fuente(), Image.getInstance(bytes(p.imagen())), p, c, x, y, w, h, urlBase, codigos);
+    }
+
+    public void pintarSoloContenido(PdfContentByte lienzo, PlantillaCredencial p, CredencialDTO c,
+                                    float x, float y, float w, float h, String urlBase,
+                                    CredencialCodigoService codigos) throws Exception {
+        pintarContenido(lienzo, fuente(), p, c, x, y, w, h, urlBase, codigos);
+    }
+
+    private static BaseFont fuente() throws Exception {
+        return BaseFont.createFont(BaseFont.HELVETICA_BOLD, BaseFont.CP1252, BaseFont.NOT_EMBEDDED);
+    }
+
     private com.itextpdf.text.pdf.PdfTemplate plantillaReverso(
-            PdfContentByte lienzo, float w, float h) throws Exception {
-        Image base = Image.getInstance(bytes("static/assets/CREDENCIAL_REVERSO.png"));
+            PdfContentByte lienzo, float w, float h, PlantillaCredencial plantilla) throws Exception {
+        String reverso = plantilla.imagenReverso() != null ? plantilla.imagenReverso() : REVERSO_POR_DEFECTO;
+        Image base = Image.getInstance(bytes(reverso));
         float escala = Math.max(w / base.getWidth(), h / base.getHeight());
         float ancho = base.getWidth() * escala;
         float alto = base.getHeight() * escala;

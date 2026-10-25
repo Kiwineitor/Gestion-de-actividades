@@ -50,15 +50,16 @@ const router = createRouter({
         { path: 'anuncios', component: () => import('./views/Anuncios.vue'), meta: { titulo: 'Anuncios', requiereAuth: true, pantalla: 'anuncios'} },
         { path: 'responsables-extra', component: () => import('./views/ResponsablesExtra.vue'), meta: { titulo: 'Responsables extra', requiereAuth: true, pantalla: 'responsables-extra'} },
         { path: 'usuarios', component: () => import('./views/Usuarios.vue'), meta: { titulo: 'Usuarios', requiereAuth: true, pantalla: 'usuarios'} },
-        { path: 'roles', component: () => import('./views/Roles.vue'), meta: { titulo: 'Roles', requiereAuth: true, pantalla: 'roles'} },
+        { path: 'roles', component: () => import('./views/RolesPermisos.vue'), meta: { titulo: 'Roles y permisos', requiereAuth: true, pantalla: 'roles'} },
         { path: 'mantenimiento', component: () => import('./views/Mantenimiento.vue'), meta: { titulo: 'Mantenimiento', requiereAuth: true, pantalla: 'mantenimiento'} },
         { path: 'errores', component: () => import('./views/Errores.vue'), meta: { titulo: 'Registro de errores', requiereAuth: true, soloAdministracion: true } },
         { path: 'whatsapp', component: () => import('./views/WhatsApp.vue'), meta: { titulo: 'Instancias de WhatsApp', requiereAuth: true, soloAdministracion: true } },
         { path: 'personas', component: () => import('./views/Personas.vue'), meta: { titulo: 'Personas', requiereAuth: true, pantalla: 'personas'} },
         { path: 'personal-apoyo', component: () => import('./views/PersonalApoyo.vue'), meta: { titulo: 'Personal de apoyo', requiereAuth: true, pantalla: 'personal-apoyo' } },
-        { path: 'direccion', component: () => import('./views/Direccion.vue'), meta: { titulo: 'Tablero de dirección', requiereAuth: true, pantalla: 'direccion'} },
-        { path: 'reportes', component: () => import('./views/Reportes.vue'), meta: { titulo: 'Reportes', requiereAuth: true, pantalla: 'reportes'} },
-        { path: 'control-ventas', component: () => import('./views/ControlVentas.vue'), meta: { titulo: 'Control de ventas', requiereAuth: true, pantalla: 'control-ventas'} },
+        { path: 'dashboard', component: () => import('./views/Dashboard.vue'), meta: { titulo: 'Dashboard', requiereAuth: true, pantallas: ['direccion', 'control-ventas', 'reportes'] } },
+        { path: 'direccion', redirect: { path: '/dashboard', query: { tab: 'resumen' } } },
+        { path: 'reportes', redirect: { path: '/dashboard', query: { tab: 'reportes' } } },
+        { path: 'control-ventas', component: () => import('./views/ControlVentas.vue'), meta: { titulo: 'Ventas', requiereAuth: true, pantalla: 'control-ventas'} },
         { path: 'reporte-responsables', component: () => import('./views/ReporteResponsables.vue'), meta: { titulo: 'Reporte de Responsables', requiereAuth: true, pantalla: 'reporte-responsables'} },
         { path: 'inscripciones', component: () => import('./views/Inscripciones.vue'), meta: { titulo: 'Inscripciones', requiereAuth: true, pantalla: 'inscripciones'} },
         { path: 'interesados', component: () => import('./views/Interesados.vue'), meta: { titulo: 'Interesados en exponer', requiereAuth: true, pantalla: 'interesados' } },
@@ -70,7 +71,7 @@ const router = createRouter({
         { path: 'impresion-masiva', component: () => import('./views/ImpresionMasiva.vue'), meta: { titulo: 'Impresión Masiva', requiereAuth: true, pantalla: 'impresion-masiva' } },
         { path: 'escaner', component: () => import('./views/Escaner.vue'), meta: { titulo: 'Escanear credencial', requiereAuth: true, pantalla: 'escaner' } },
         { path: 'control-acceso', component: () => import('./views/ControlAcceso.vue'), meta: { titulo: 'Control de acceso', requiereAuth: true, pantalla: 'control-acceso' } },
-        { path: 'permisos', component: () => import('./views/Permisos.vue'), meta: { titulo: 'Permisos', requiereAuth: true, pantalla: 'permisos' } },
+        { path: 'permisos', component: () => import('./views/RolesPermisos.vue'), meta: { titulo: 'Roles y permisos', requiereAuth: true, pantalla: 'permisos' } },
       ],
     },
   ],
@@ -103,6 +104,11 @@ router.beforeEach(async (to) => {
    * respuesta. `asegurar()` es idempotente y comparte la petición en vuelo, así que esto no
    * añade una llamada por navegación.
    */
+  if (to.meta.pantallas) {
+    const permisos = usePermisosStore();
+    await permisos.asegurar();
+    if (!to.meta.pantallas.some((p) => permisos.puedeVer(p))) return '/';
+  }
   if (to.meta.pantalla) {
     const permisos = usePermisosStore();
     await permisos.asegurar();

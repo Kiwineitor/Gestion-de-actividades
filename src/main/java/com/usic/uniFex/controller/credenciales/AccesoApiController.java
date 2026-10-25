@@ -149,7 +149,7 @@ public class AccesoApiController {
             String codigo, String sentido, String origen) {
         Long apoyoId = codigosApoyo.apoyoDe(codigo);
         PersonalApoyo p = apoyoId == null ? null : apoyo.findById(apoyoId);
-        if (p == null || "X".equalsIgnoreCase(p.getEstado())) {
+        if (p == null || !"A".equalsIgnoreCase(p.getEstado())) {
             log.info("Acceso de apoyo rechazado, codigo no valido: {}", codigo);
             return ResponseEntity.status(404).body(Map.of(
                     "ok", false, "valida", false, "mensaje", "Esta credencial no es válida"));

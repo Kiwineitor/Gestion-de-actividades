@@ -1,0 +1,5 @@
+BEGIN;
+
+ALTER TABLE personal_apoyo ADD COLUMN IF NOT EXISTS turno VARCHAR(30);
+
+COMMIT;

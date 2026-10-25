@@ -22,11 +22,10 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { apiFetch, jsonOError } from '../api';
 import { toast } from '../ui/toast';
 import { descargarArchivo, nombreSeguro } from '../ui/descargas';
-import TableroVentas from '../components/control-ventas/TableroVentas.vue';
 import FichaVenta from '../components/control-ventas/FichaVenta.vue';
 import { bs, ent, pct, fecha, ESTADOS } from '../components/control-ventas/formato';
 
-const pestana = ref('tablero'); // tablero | ventas | vendedores | categorias
+const pestana = ref('ventas');
 const cargando = ref(true);
 const recargando = ref(false);
 const error = ref('');
@@ -228,7 +227,6 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
 
     <nav class="pestanas" role="tablist">
       <button v-for="p in [
-                { k: 'tablero', t: 'Tablero' },
                 { k: 'ventas', t: `Ventas (${ventas.length})` },
                 { k: 'vendedores', t: 'Por vendedor' },
                 { k: 'categorias', t: 'Por categoría' },
@@ -244,10 +242,7 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
 
     <template v-else-if="tablero">
       <!-- ============================================================ TABLERO -->
-      <TableroVentas v-if="pestana === 'tablero'" :tablero="tablero" />
-
-      <!-- ============================================================ VENTAS -->
-      <section v-else-if="pestana === 'ventas'" class="card bloque">
+      <section v-if="pestana === 'ventas'" class="card bloque">
         <header class="cab">
           <div>
             <h3>Registro de ventas</h3>

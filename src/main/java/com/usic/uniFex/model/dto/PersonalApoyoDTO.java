@@ -16,7 +16,9 @@ public record PersonalApoyoDTO(
         String rol,
         String descripcionTarea,
         String foto,
-        String nombreCompleto) {
+        String nombreCompleto,
+        String turno,
+        String estado) {
 
     public static PersonalApoyoDTO de(PersonalApoyo p) {
         return new PersonalApoyoDTO(
@@ -32,7 +34,9 @@ public record PersonalApoyoDTO(
                 p.getRol(),
                 p.getDescripcionTarea(),
                 fotoUrl(p.getFoto()),
-                p.getNombreCompleto());
+                p.getNombreCompleto(),
+                p.getTurno(),
+                p.getEstado());
     }
 
     /** La ruta de disco a URL servida en /files/**. */

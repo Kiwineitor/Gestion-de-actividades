@@ -118,6 +118,37 @@ public class PuestoMapaService {
     }
 
     @Transactional(readOnly = true)
+    public List<Long> pagados() {
+        return puestoDao.findPuestosPagados();
+    }
+
+    @Transactional
+    public String cambiarCategoria(Long puestoId, Long categoriaId, Long usuarioId) {
+        Puesto p = puestoDao.findById(puestoId).orElse(null);
+        if (p == null || Puesto.REGISTRO_ANULADO.equals(p.getEstado())) return "El puesto no existe";
+        Categoria destino = categoriaId == null ? null : categoriaService.findById(categoriaId);
+        if (destino == null || Puesto.REGISTRO_ANULADO.equals(destino.getEstado())) return "La categoría no existe";
+        if (p.getCategoria() != null && destino.getId().equals(p.getCategoria().getId())) return null;
+        Set<String> usados = puestoDao.activosDeCategoria(destino.getId()).stream()
+                .map(Puesto::getCodigo).filter(Objects::nonNull).map(String::trim).collect(Collectors.toSet());
+        String codigo = p.getCodigo() == null ? "" : p.getCodigo().trim();
+        if (codigo.isEmpty() || usados.contains(codigo)) {
+            int mayor = usados.stream().mapToInt(c -> {
+                try {
+                    return Integer.parseInt(c);
+                } catch (NumberFormatException e) {
+                    return 0;
+                }
+            }).max().orElse(0);
+            codigo = String.valueOf(mayor + 1);
+        }
+        boolean ok = puestoDao.cambiarCategoriaSiLibre(puestoId, destino.getId(), codigo, usuarioId) > 0;
+        log.info("Cambio de categoria puesto={} -> categoria={} usuario={} -> {}", puestoId, destino.getId(),
+                usuarioId, ok ? "OK" : "RECHAZADO");
+        return ok ? null : "Solo se cambia de categoría un puesto libre o bloqueado";
+    }
+
+    @Transactional(readOnly = true)
     public VentaDePuesto ventaVigente(Long puestoId) {
         List<Object[]> filas = puestoDao.findVentaVigenteDePuesto(puestoId);
         if (filas.isEmpty()) return null;

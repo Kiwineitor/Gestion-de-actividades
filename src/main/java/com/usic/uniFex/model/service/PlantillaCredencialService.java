@@ -11,6 +11,7 @@ import javax.imageio.ImageIO;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -33,8 +34,12 @@ public class PlantillaCredencialService {
 
     private static final String COLUMNAS = """
             id, codigo, etiqueta, detalle, imagen, requiere_foto, centrado, mayusculas,
-            foto_circular, multilinea, color_texto, tipo_texto, cajas, orden, predeterminada
+            foto_circular, multilinea, color_texto, tipo_texto, cajas, orden, predeterminada,
+            uso, id_edicion, id_dependencia, imagen_reverso
             """;
+
+    public static final String USO_EXPOSITOR = "EXPOSITOR";
+    public static final String USO_APOYO = "APOYO";
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
@@ -45,11 +50,18 @@ public class PlantillaCredencialService {
                         Boolean requiereFoto, Boolean centrado, Boolean mayusculas,
                         Boolean fotoCircular, Boolean multilinea, String colorTexto,
                         String tipoTexto, Map<String, Caja> cajas, Integer orden,
-                        Boolean predeterminada) {
+                        Boolean predeterminada, String uso, Long idEdicion, Long idDependencia,
+                        String imagenReverso) {
     }
 
-    public record Fila(Long id, PlantillaCredencial plantilla, int orden, boolean predeterminada) {
+    public record Fila(Long id, PlantillaCredencial plantilla, int orden, boolean predeterminada,
+                       String uso, Long idEdicion, Long idDependencia) {
+        public boolean deApoyo() {
+            return USO_APOYO.equals(uso);
+        }
     }
+
+    private volatile List<Fila> vigentes = List.of();
 
     public static class PlantillaInvalida extends RuntimeException {
         public PlantillaInvalida(String mensaje) {
@@ -71,16 +83,45 @@ public class PlantillaCredencialService {
     private void sembrar() {
         int orden = 0;
         for (PlantillaCredencial p : PlantillaCredencial.CATALOGO) {
-            insertar(p, orden++, p.id().equals(PlantillaCredencial.POR_DEFECTO.id()), null);
+            insertar(p, orden++, p.id().equals(PlantillaCredencial.POR_DEFECTO.id()), USO_EXPOSITOR, null, null, null);
         }
         log.info("Plantillas de credencial iniciales cargadas: {}", PlantillaCredencial.CATALOGO.size());
     }
 
     public synchronized void recargar() {
-        List<Fila> filas = listar();
-        String porDefecto = filas.stream().filter(Fila::predeterminada)
+        Long edicion = edicionActiva();
+        List<Fila> filas = listar().stream()
+                .filter(f -> f.idEdicion() == null || f.idEdicion().equals(edicion))
+                .toList();
+        vigentes = filas;
+        List<Fila> expositores = filas.stream().filter(f -> !f.deApoyo()).toList();
+        String porDefecto = expositores.stream().filter(Fila::predeterminada)
                 .map(f -> f.plantilla().id()).findFirst().orElse(null);
-        PlantillaCredencial.registrar(filas.stream().map(Fila::plantilla).toList(), porDefecto);
+        PlantillaCredencial.registrar(expositores.stream().map(Fila::plantilla).toList(), porDefecto);
+    }
+
+    @Scheduled(initialDelay = 300_000, fixedDelay = 300_000)
+    public void refrescar() {
+        try {
+            recargar();
+        } catch (RuntimeException e) {
+            log.debug("Plantillas de credencial sin refrescar: {}", e.getMessage());
+        }
+    }
+
+    public PlantillaCredencial paraApoyo(Long idDependencia) {
+        List<Fila> apoyo = vigentes.stream().filter(Fila::deApoyo).toList();
+        return apoyo.stream()
+                .filter(f -> idDependencia != null && idDependencia.equals(f.idDependencia()))
+                .findFirst()
+                .or(() -> apoyo.stream().filter(f -> f.idDependencia() == null).findFirst())
+                .map(Fila::plantilla)
+                .orElse(null);
+    }
+
+    private Long edicionActiva() {
+        List<Long> ids = jdbc.queryForList("SELECT id FROM edicion WHERE activa ORDER BY id DESC LIMIT 1", Long.class);
+        return ids.isEmpty() ? null : ids.get(0);
     }
 
     public List<Fila> listar() {
@@ -96,9 +137,13 @@ public class PlantillaCredencialService {
                         c.get("qr"), c.get("nombre"), c.get("empresa"), c.get("ci"),
                         c.get("codigo"), c.get("zona"), c.get("foto"), c.get("tipo"),
                         rs.getString("tipo_texto"), rs.getString("color_texto"),
-                        rs.getBoolean("foto_circular"), rs.getBoolean("multilinea")),
+                        rs.getBoolean("foto_circular"), rs.getBoolean("multilinea"),
+                        rs.getString("imagen_reverso")),
                 rs.getInt("orden"),
-                rs.getBoolean("predeterminada"));
+                rs.getBoolean("predeterminada"),
+                rs.getString("uso"),
+                rs.getObject("id_edicion", Long.class),
+                rs.getObject("id_dependencia", Long.class));
         });
     }
 
@@ -112,9 +157,11 @@ public class PlantillaCredencialService {
         Integer existe = jdbc.queryForObject(
                 "SELECT count(*) FROM plantilla_credencial WHERE codigo = ?", Integer.class, p.id());
         if (existe != null && existe > 0) throw new PlantillaInvalida("Ya existe una plantilla con el código " + p.id());
-        boolean predeterminada = Boolean.TRUE.equals(d.predeterminada());
+        String uso = usoValido(d.uso());
+        boolean predeterminada = Boolean.TRUE.equals(d.predeterminada()) && USO_EXPOSITOR.equals(uso);
         if (predeterminada) quitarPredeterminada();
-        Long id = insertar(p, d.orden() == null ? siguienteOrden() : d.orden(), predeterminada, usuarioId);
+        Long id = insertar(p, d.orden() == null ? siguienteOrden() : d.orden(), predeterminada, uso,
+                predeterminada ? null : d.idEdicion(), USO_APOYO.equals(uso) ? d.idDependencia() : null, usuarioId);
         recargar();
         return buscar(id);
     }
@@ -124,7 +171,14 @@ public class PlantillaCredencialService {
         Fila actual = buscar(id);
         if (actual == null) return null;
         PlantillaCredencial p = aPlantilla(d, actual.plantilla());
+        String uso = d.uso() == null ? actual.uso() : usoValido(d.uso());
         boolean predeterminada = d.predeterminada() == null ? actual.predeterminada() : d.predeterminada();
+        if (predeterminada && USO_APOYO.equals(uso)) {
+            throw new PlantillaInvalida("Una plantilla de personal de apoyo no puede ser la predeterminada");
+        }
+        if (predeterminada && d.idEdicion() != null) {
+            throw new PlantillaInvalida("La plantilla predeterminada debe estar disponible en todas las actividades");
+        }
         if (actual.predeterminada() && !predeterminada) {
             throw new PlantillaInvalida("Elige otra plantilla como predeterminada antes de quitarle la marca a esta");
         }
@@ -133,13 +187,16 @@ public class PlantillaCredencialService {
                 UPDATE plantilla_credencial
                    SET etiqueta = ?, detalle = ?, imagen = ?, requiere_foto = ?, centrado = ?,
                        mayusculas = ?, foto_circular = ?, multilinea = ?, color_texto = ?,
-                       tipo_texto = ?, cajas = ?, orden = ?, predeterminada = ?,
+                       tipo_texto = ?, cajas = ?, orden = ?, predeterminada = ?, uso = ?,
+                       id_edicion = ?, id_dependencia = ?, imagen_reverso = ?,
                        "_fecha_modificacion" = now(), "_modificacion_id_usuario" = ?
                  WHERE id = ? AND "_estado" = 'A'
                 """,
                 p.etiqueta(), p.detalle(), p.imagen(), p.requiereFoto(), p.centrado(), p.mayusculas(),
                 p.fotoCircular(), p.multilinea(), p.colorTexto(), p.tipoTexto(), cajasJson(p),
-                d.orden() == null ? actual.orden() : d.orden(), predeterminada, usuarioId, id);
+                d.orden() == null ? actual.orden() : d.orden(), predeterminada, uso,
+                d.idEdicion(), USO_APOYO.equals(uso) ? d.idDependencia() : null, p.imagenReverso(),
+                usuarioId, id);
         recargar();
         return buscar(id);
     }
@@ -153,8 +210,9 @@ public class PlantillaCredencialService {
         PlantillaCredencial copia = new PlantillaCredencial(codigo, recortar(o.etiqueta() + " (copia)", 80),
                 o.detalle(), o.imagen(), o.requiereFoto(), o.centrado(), o.mayusculas(), o.qr(), o.nombre(),
                 o.empresa(), o.ci(), o.codigo(), o.zona(), o.foto(), o.tipo(), o.tipoTexto(), o.colorTexto(),
-                o.fotoCircular(), o.multilinea());
-        Long nuevo = insertar(copia, siguienteOrden(), false, usuarioId);
+                o.fotoCircular(), o.multilinea(), o.imagenReverso());
+        Long nuevo = insertar(copia, siguienteOrden(), false, origen.uso(), origen.idEdicion(),
+                origen.idDependencia(), usuarioId);
         recargar();
         return buscar(nuevo);
     }
@@ -164,7 +222,9 @@ public class PlantillaCredencialService {
         Fila f = buscar(id);
         if (f == null) return false;
         if (f.predeterminada()) throw new PlantillaInvalida("No se puede quitar la plantilla predeterminada");
-        if (listar().size() <= 1) throw new PlantillaInvalida("Debe quedar al menos una plantilla");
+        if (!f.deApoyo() && listar().stream().filter(x -> !x.deApoyo()).count() <= 1) {
+            throw new PlantillaInvalida("Debe quedar al menos una plantilla de expositores");
+        }
         jdbc.update("UPDATE plantilla_credencial SET \"_estado\" = 'X', \"_fecha_modificacion\" = now(), "
                 + "\"_modificacion_id_usuario\" = ? WHERE id = ?", usuarioId, id);
         recargar();
@@ -195,6 +255,11 @@ public class PlantillaCredencialService {
             throw new PlantillaInvalida("Imagen de fondo no válida");
         }
         if (!imagenes.existe(imagen)) throw new PlantillaInvalida("No se encuentra la imagen de fondo");
+        String reverso = d.imagenReverso() == null || d.imagenReverso().isBlank() ? null : d.imagenReverso().trim();
+        boolean reversoValido = reverso == null
+                || (reverso.startsWith("static/") || reverso.startsWith(ImagenPlantillaCredencial.PREFIJO_SUBIDA))
+                && imagenes.existe(reverso);
+        if (!reversoValido) throw new PlantillaInvalida("No se encuentra la imagen del reverso");
         Map<String, Caja> cajas = d.cajas() == null ? Map.of() : d.cajas();
         for (String clave : cajas.keySet()) {
             if (!CAMPOS.contains(clave)) throw new PlantillaInvalida("Campo desconocido: " + clave);
@@ -210,7 +275,13 @@ public class PlantillaCredencialService {
                 validar(cajas.get("ci"), "C.I."), validar(cajas.get("codigo"), "puesto"),
                 validar(cajas.get("zona"), "zona"), validar(cajas.get("foto"), "foto"),
                 validar(cajas.get("tipo"), "cargo"), recortar(d.tipoTexto(), 40), color,
-                Boolean.TRUE.equals(d.fotoCircular()), Boolean.TRUE.equals(d.multilinea()));
+                Boolean.TRUE.equals(d.fotoCircular()), Boolean.TRUE.equals(d.multilinea()), reverso);
+    }
+
+    private static String usoValido(String uso) {
+        String u = uso == null || uso.isBlank() ? USO_EXPOSITOR : uso.trim().toUpperCase();
+        if (!USO_EXPOSITOR.equals(u) && !USO_APOYO.equals(u)) throw new PlantillaInvalida("Uso de plantilla no válido");
+        return u;
     }
 
     public Map<String, Object> aMapa(Fila f) {
@@ -231,6 +302,10 @@ public class PlantillaCredencialService {
         m.put("cajas", cajas(p));
         m.put("orden", f.orden());
         m.put("predeterminada", f.predeterminada());
+        m.put("uso", f.uso());
+        m.put("idEdicion", f.idEdicion());
+        m.put("idDependencia", f.idDependencia());
+        m.put("imagenReverso", p.imagenReverso());
         return m;
     }
 
@@ -242,18 +317,21 @@ public class PlantillaCredencialService {
         return c;
     }
 
-    private Long insertar(PlantillaCredencial p, int orden, boolean predeterminada, Long usuarioId) {
+    private Long insertar(PlantillaCredencial p, int orden, boolean predeterminada, String uso,
+                          Long idEdicion, Long idDependencia, Long usuarioId) {
         return jdbc.queryForObject("""
                 INSERT INTO plantilla_credencial
                        (codigo, etiqueta, detalle, imagen, requiere_foto, centrado, mayusculas,
                         foto_circular, multilinea, color_texto, tipo_texto, cajas, orden,
-                        predeterminada, "_registro_id_usuario")
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        predeterminada, uso, id_edicion, id_dependencia, imagen_reverso,
+                        "_registro_id_usuario")
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 RETURNING id
                 """, Long.class,
                 p.id(), p.etiqueta(), p.detalle(), p.imagen(), p.requiereFoto(), p.centrado(),
                 p.mayusculas(), p.fotoCircular(), p.multilinea(), p.colorTexto(), p.tipoTexto(),
-                cajasJson(p), orden, predeterminada, usuarioId);
+                cajasJson(p), orden, predeterminada, uso, idEdicion, idDependencia, p.imagenReverso(),
+                usuarioId);
     }
 
     private void quitarPredeterminada() {

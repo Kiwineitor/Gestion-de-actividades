@@ -97,6 +97,32 @@ async function cargarVendedores() {
 
 
 
+const barra = ref({ categoria: '', texto: '' });
+const barraMasiva = ref({ categoria: '', texto: '' });
+
+function aplicarBarra(marcar) {
+  const g = grupos.value.find((x) => String(x.id) === String(barra.value.categoria));
+  if (!g) { toast('Elige la categoría del rango', 'error'); return; }
+  rangos.value = { ...rangos.value, [g.id]: barra.value.texto };
+  aplicarRango(g, marcar);
+  barra.value = { ...barra.value, texto: '' };
+}
+
+function aplicarBarraMasiva(marcar) {
+  const g = gruposMasivos.value.find((x) => String(x.id) === String(barraMasiva.value.categoria));
+  if (!g) { toast('Elige la categoría del rango', 'error'); return; }
+  rangosMasivos.value = { ...rangosMasivos.value, [g.id]: barraMasiva.value.texto };
+  aplicarRangoMasivo(g, marcar);
+  barraMasiva.value = { ...barraMasiva.value, texto: '' };
+}
+
+function plegarTodo(masivo, plegar) {
+  const lista = masivo ? gruposMasivos.value : grupos.value;
+  const ids = plegar ? new Set(lista.map((g) => g.id)) : new Set();
+  if (masivo) colapsadasMasiva.value = ids;
+  else colapsadas.value = ids;
+}
+
 function abrirPuestos(v) {
   vendedorSel.value = v;
   cargarCatalogo(v.id);
@@ -121,6 +147,7 @@ async function cargarCatalogo(vendedorId) {
       catalogo.value.filter((p) => laLleva(p, vendedorId)).map((p) => p.id),
     );
     originales.value = new Set(seleccion.value);
+    colapsadas.value = new Set(catalogo.value.map((p) => p.categoriaId));
   } catch (e) {
     toast(e.message, 'error');
   } finally {
@@ -305,6 +332,7 @@ async function prepararMasivo(forzar = false) {
     const r = await apiFetch('/api/app/vendedores/puestos-asignables');
     if (!r.ok) { toast('No se pudo cargar el catálogo de casetas', 'error'); return; }
     catalogo.value = await r.json();
+    colapsadasMasiva.value = new Set(catalogo.value.map((p) => p.categoriaId));
   } catch (e) {
     toast(e.message, 'error');
   } finally {
@@ -521,6 +549,25 @@ const esAdmin = computed(() => auth.puedeEditarPlano);
         <div><span>Asignaciones posibles</span><strong>{{ seleccionMasiva.size * vendedoresDelAreaMasiva.length }}</strong></div>
       </div>
 
+      <div class="barra-rango">
+        <select v-model="barraMasiva.categoria" class="control">
+          <option value="">Categoría…</option>
+          <option v-for="g in gruposMasivos" :key="g.id" :value="g.id">{{ g.nombre }}</option>
+        </select>
+        <input v-model="barraMasiva.texto" class="control control-rango" placeholder="1-20, 25" @keyup.enter="aplicarBarraMasiva(true)" />
+        <button class="btn btn-sm btn-primario" @click="aplicarBarraMasiva(true)">Elegir rango</button>
+        <button class="btn btn-sm" @click="aplicarBarraMasiva(false)">Quitar rango</button>
+        <span class="crecer"></span>
+        <button class="btn btn-sm btn-fantasma" @click="plegarTodo(true, false)">Desplegar todo</button>
+        <button class="btn btn-sm btn-fantasma" @click="plegarTodo(true, true)">Plegar todo</button>
+      </div>
+      <div class="leyenda-casetas">
+        <span><i class="m-libre"></i>Libre</span>
+        <span><i class="m-elegida"></i>Seleccionada</span>
+        <span><i class="m-otro"></i>Ya la lleva otro</span>
+        <span><i class="m-vendida"></i>Vendida</span>
+      </div>
+
       <div v-if="cargandoCatalogo" class="vacio">Cargando casetas…</div>
       <div v-else-if="!gruposMasivos.length" class="vacio">No hay casetas que mostrar.</div>
       <div v-else class="grupos">
@@ -528,17 +575,17 @@ const esAdmin = computed(() => auth.puedeEditarPlano);
           <header class="cab-grupo" @click="alternarColapsoMasivo(g.id)">
             <span class="flecha">{{ colapsadasMasiva.has(g.id) ? '▸' : '▾' }}</span>
             <strong>{{ g.nombre }}</strong>
-            <span class="badge" :class="g.elegidas ? 'badge-ok' : 'badge-muted'">{{ g.elegidas }} / {{ g.casetas.length }}</span>
-            <span v-if="g.vendidas" class="badge badge-vendida">{{ g.vendidas }} vendida{{ g.vendidas > 1 ? 's' : '' }}</span>
-            <span v-if="g.compartidas" class="muted de-otros">{{ g.compartidas }} ya asignada{{ g.compartidas > 1 ? 's' : '' }}</span>
-            <span class="crecer"></span>
-            <span class="acciones-grupo" @click.stop>
-              <input v-model="rangosMasivos[g.id]" class="control control-rango" placeholder="1-20" @keyup.enter="aplicarRangoMasivo(g, true)" />
-              <button class="btn btn-sm btn-primario" title="Asignar ese rango" @click="aplicarRangoMasivo(g, true)">＋</button>
-              <button class="btn btn-sm btn-fantasma" title="Quitar ese rango" @click="aplicarRangoMasivo(g, false)">−</button>
-              <button class="btn btn-sm btn-fantasma" title="Todas" @click="marcarGrupoMasivo(g, true)">Todas</button>
-              <button class="btn btn-sm btn-fantasma" title="Ninguna" @click="marcarGrupoMasivo(g, false)">Ninguna</button>
+            <span class="resumen-grupo">
+              <span class="r-sel" :class="{ cero: !g.elegidas }">{{ g.elegidas }} sel.</span>
+              <span class="r-total">de {{ g.casetas.length }}</span>
+              <span v-if="g.compartidas" class="r-otro">{{ g.compartidas }} de otros</span>
+              <span v-if="g.vendidas" class="r-vendida">{{ g.vendidas }} vendida{{ g.vendidas > 1 ? 's' : '' }}</span>
             </span>
+            <span class="barra-avance"><i :style="{ width: `${(g.elegidas / g.casetas.length) * 100}%` }"></i></span>
+            <span class="crecer"></span>
+            <button class="btn btn-sm btn-fantasma" @click.stop="marcarGrupoMasivo(g, g.elegidas < g.casetas.length)">
+              {{ g.elegidas < g.casetas.length ? 'Elegir todas' : 'Quitar todas' }}
+            </button>
           </header>
 
           <div v-if="!colapsadasMasiva.has(g.id)" class="rejilla">
@@ -575,13 +622,24 @@ const esAdmin = computed(() => auth.puedeEditarPlano);
         </label>
       </div>
 
-      <p class="muted ayuda">
-        Escribe un rango por categoría, por ejemplo <strong>1-20</strong> o <strong>3, 7, 12-15</strong>,
-        y pulsa <strong>+</strong> para asignarlas o <strong>−</strong> para quitarlas.
-        Una caseta puede llevarla <strong>más de un vendedor</strong>: la vende quien la reserve
-        primero, y al resto les sale ocupada. Las <strong>vendidas</strong> también se habilitan:
-        quien la vendió necesita seguir viéndola en su mapa.
-      </p>
+      <div class="barra-rango">
+        <select v-model="barra.categoria" class="control">
+          <option value="">Categoría…</option>
+          <option v-for="g in grupos" :key="g.id" :value="g.id">{{ g.nombre }}</option>
+        </select>
+        <input v-model="barra.texto" class="control control-rango" placeholder="1-20, 25" @keyup.enter="aplicarBarra(true)" />
+        <button class="btn btn-sm btn-primario" @click="aplicarBarra(true)">Asignar rango</button>
+        <button class="btn btn-sm" @click="aplicarBarra(false)">Quitar rango</button>
+        <span class="crecer"></span>
+        <button class="btn btn-sm btn-fantasma" @click="plegarTodo(false, false)">Desplegar todo</button>
+        <button class="btn btn-sm btn-fantasma" @click="plegarTodo(false, true)">Plegar todo</button>
+      </div>
+      <div class="leyenda-casetas">
+        <span><i class="m-libre"></i>Libre</span>
+        <span><i class="m-elegida"></i>Asignada a este vendedor</span>
+        <span><i class="m-otro"></i>También la lleva otro</span>
+        <span><i class="m-vendida"></i>Vendida</span>
+      </div>
 
       <div v-if="cargandoCatalogo" class="vacio">Cargando casetas…</div>
       <div v-else-if="!grupos.length" class="vacio">No hay casetas que mostrar.</div>
@@ -591,23 +649,17 @@ const esAdmin = computed(() => auth.puedeEditarPlano);
           <header class="cab-grupo" @click="alternarColapso(g.id)">
             <span class="flecha">{{ colapsadas.has(g.id) ? '▸' : '▾' }}</span>
             <strong>{{ g.nombre }}</strong>
-            <span class="badge" :class="g.elegidas ? 'badge-ok' : 'badge-muted'">
-              {{ g.elegidas }} / {{ g.casetas.length }}
+            <span class="resumen-grupo">
+              <span class="r-sel" :class="{ cero: !g.elegidas }">{{ g.elegidas }} asignadas</span>
+              <span class="r-total">de {{ g.casetas.length }}</span>
+              <span v-if="g.deOtros" class="r-otro">{{ g.deOtros }} compartidas</span>
+              <span v-if="g.vendidas" class="r-vendida">{{ g.vendidas }} vendida{{ g.vendidas > 1 ? 's' : '' }}</span>
             </span>
-            <span v-if="g.vendidas" class="badge badge-vendida">{{ g.vendidas }} vendida{{ g.vendidas > 1 ? 's' : '' }}</span>
-            <span v-if="g.deOtros" class="muted de-otros">{{ g.deOtros }} compartida{{ g.deOtros > 1 ? 's' : '' }}</span>
+            <span class="barra-avance"><i :style="{ width: `${(g.elegidas / g.casetas.length) * 100}%` }"></i></span>
             <span class="crecer"></span>
-            <span class="acciones-grupo" @click.stop>
-              <input
-                v-model="rangos[g.id]"
-                class="control control-rango"
-                placeholder="1-20"
-                @keyup.enter="aplicarRango(g, true)" />
-              <button class="btn btn-sm btn-primario" title="Asignar ese rango" @click="aplicarRango(g, true)">＋</button>
-              <button class="btn btn-sm btn-fantasma" title="Quitar ese rango" @click="aplicarRango(g, false)">−</button>
-              <button class="btn btn-sm btn-fantasma" title="Todas" @click="marcarGrupo(g, true)">Todas</button>
-              <button class="btn btn-sm btn-fantasma" title="Ninguna" @click="marcarGrupo(g, false)">Ninguna</button>
-            </span>
+            <button class="btn btn-sm btn-fantasma" @click.stop="marcarGrupo(g, g.elegidas < g.casetas.length)">
+              {{ g.elegidas < g.casetas.length ? 'Asignar todas' : 'Quitar todas' }}
+            </button>
           </header>
 
           <div v-if="!colapsadas.has(g.id)" class="rejilla">
@@ -655,12 +707,33 @@ const esAdmin = computed(() => auth.puedeEditarPlano);
 .vendedores-vista { display: flex; flex-direction: column; gap: 1rem; }
 .cabecera-vista { display: flex; align-items: center; justify-content: space-between; }
 .tabs-vendedores { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; padding: 0.35rem; border: 1px solid var(--border); border-radius: var(--radio); background: linear-gradient(135deg, var(--panel-2), var(--panel)); box-shadow: var(--sombra); }
-.tab-vendedor { border: 0; border-radius: calc(var(--radio) - 0.25rem); padding: 0.9rem 1rem; background: transparent; color: var(--texto); text-align: left; cursor: pointer; transition: 0.18s ease; }
+.tab-vendedor { border: 0; border-radius: calc(var(--radio) - 0.25rem); padding: 0.9rem 1rem; background: transparent; color: var(--text); text-align: left; cursor: pointer; transition: 0.18s ease; }
 .tab-vendedor span { display: block; font-weight: 900; }
 .tab-vendedor small { display: block; margin-top: 0.2rem; color: var(--muted); font-weight: 700; }
 .tab-vendedor:hover { background: color-mix(in srgb, var(--acento) 10%, transparent); }
-.tab-vendedor.activo { background: linear-gradient(135deg, var(--acento), var(--acento-2)); color: #1d4ed8; box-shadow: 0 12px 28px color-mix(in srgb, var(--acento) 30%, transparent); }
-.tab-vendedor.activo small { color: #1d4ed8; }
+.tab-vendedor.activo { background: var(--acento); color: var(--acento-texto); box-shadow: 0 8px 20px color-mix(in srgb, var(--acento) 25%, transparent); }
+.tab-vendedor.activo small { color: var(--acento-texto); opacity: 0.85; }
+.barra-rango {
+  display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; position: sticky; top: 0; z-index: 2;
+  padding: 0.55rem 0.6rem; margin: 0.6rem 0; border: 1px solid var(--border); border-radius: var(--radio-sm);
+  background: var(--panel);
+}
+.barra-rango select { width: auto; min-width: 170px; padding: 0.4rem 0.5rem; }
+.leyenda-casetas { display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.6rem; }
+.leyenda-casetas span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.leyenda-casetas i { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--border); display: inline-block; }
+.m-libre { background: var(--panel); }
+.m-elegida { background: var(--acento); border-color: var(--acento) !important; }
+.m-otro { background: var(--panel); box-shadow: inset -4px -4px 0 #d08700; }
+.m-vendida { background: transparent; border: 1.5px dashed var(--ocupado) !important; }
+.resumen-grupo { display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.8rem; flex-wrap: wrap; }
+.r-sel { font-weight: 800; color: var(--acento); }
+.r-sel.cero { color: var(--muted); }
+.r-total { color: var(--muted); }
+.r-otro { color: #d08700; font-weight: 600; }
+.r-vendida { color: var(--ocupado); font-weight: 600; }
+.barra-avance { width: 90px; height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.barra-avance i { display: block; height: 100%; background: var(--acento); }
 .barra-filtros { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 .select-area { min-width: 200px; }
 .busca { flex: 1; min-width: 220px; }
@@ -675,26 +748,26 @@ const esAdmin = computed(() => auth.puedeEditarPlano);
 .acciones { display: flex; gap: 0.35rem; }
 .badge { padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.68rem; font-weight: 700; }
 .badge-info { background: var(--acento-suave); color: var(--acento); }
-.badge-ok { background: var(--ok-suave); color: var(--ok); }
-.badge-muted { background: var(--muted-suave); color: var(--muted); }
+.badge-ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.badge-muted { background: color-mix(in srgb, var(--muted) 18%, transparent); color: var(--muted); }
 .badge-danger { background: var(--danger-suave); color: var(--danger); }
 .chip-cat { display: inline-flex; align-items: center; gap: 0.2rem; background: var(--acento-suave); color: var(--acento); padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; margin: 0.15rem; }
 .lista-cats { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-.chip-cat-asignada { display: inline-flex; align-items: center; gap: 0.3rem; background: var(--ok-suave); color: var(--ok); padding: 0.2rem 0.5rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
+.chip-cat-asignada { display: inline-flex; align-items: center; gap: 0.3rem; background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); padding: 0.2rem 0.5rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
 .btn-quitar { background: none; border: none; color: var(--ok); cursor: pointer; padding: 0; font-size: 0.7rem; line-height: 1; }
 .btn-quitar:hover { color: var(--danger); }
 .seccion { margin-bottom: 1.2rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
 .seccion:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
 .seccion h4 { margin: 0 0 0.6rem; font-size: 0.9rem; }
 .fila-select { display: flex; gap: 0.5rem; align-items: center; }
-.select-cat { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 0.4rem 0.6rem; background: #fff; }
+.select-cat { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 0.4rem 0.6rem; background: var(--panel); color: var(--text); }
 .lista-puestos { max-height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem; padding-right: 0.5rem; }
 .item-puesto { display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.8rem; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); transition: background 0.15s; }
 .item-puesto:hover { background: var(--panel-2); }
-.item-puesto.seleccionado { border-color: var(--ok); background: var(--ok-suave); }
+.item-puesto.seleccionado { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }
 .info-puesto { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
 .info-puesto .muted { font-size: 0.75rem; }
-.input-busqueda { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.8rem; background: #fff; }
+.input-busqueda { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.8rem; background: var(--panel); color: var(--text); }
 .fila-busqueda { margin-bottom: 0.8rem; }
 .cuerpo-modal { max-height: 60vh; overflow-y: auto; }
 
@@ -731,7 +804,7 @@ const esAdmin = computed(() => auth.puedeEditarPlano);
   grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
   gap: 0.5rem; 
   padding: 1rem;
-  background: var(--fondo);
+  background: var(--bg);
 }
 
 .caseta {

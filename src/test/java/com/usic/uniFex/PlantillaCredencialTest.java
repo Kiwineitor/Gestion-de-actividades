@@ -29,7 +29,7 @@ class PlantillaCredencialTest {
     void elRegistroReemplazaYConservaElPorDefecto() {
         PlantillaCredencial editada = new PlantillaCredencial("EXPOSITOR", "Expositor 2027", null,
                 PlantillaCredencial.EXPOSITOR.imagen(), true, false, true, PlantillaCredencial.EXPOSITOR.qr(),
-                null, null, null, null, null, null, null, "STAFF", "#112233", false, false);
+                null, null, null, null, null, null, null, "STAFF", "#112233", false, false, null);
         PlantillaCredencial.registrar(List.of(PlantillaCredencial.QR_GRANDE, editada), "EXPOSITOR");
 
         assertThat(PlantillaCredencial.actual(PlantillaCredencial.EXPOSITOR).etiqueta()).isEqualTo("Expositor 2027");

@@ -26,7 +26,22 @@ const OPCIONES = [
 const ANCHO_CM = 10;
 
 const plantillas = ref([]);
+const ediciones = ref([]);
+const dependencias = ref([]);
 const cargando = ref(true);
+const grupos = computed(() => [
+  { uso: 'EXPOSITOR', titulo: 'Expositores', items: plantillas.value.filter((p) => p.uso !== 'APOYO') },
+  { uso: 'APOYO', titulo: 'Personal de apoyo', items: plantillas.value.filter((p) => p.uso === 'APOYO') },
+]);
+const nombreEdicion = (id) => ediciones.value.find((e) => e.id === id)?.nombre;
+
+async function cargarCatalogos() {
+  try {
+    const [e, d] = await Promise.all([apiFetch('/api/app/ediciones'), apiFetch('/api/app/personal-apoyo/dependencias')]);
+    if (e.ok) ediciones.value = await e.json();
+    if (d.ok) dependencias.value = await d.json();
+  } catch { /* sin catalogos: los selectores quedan con la opcion general */ }
+}
 const selId = ref(null);
 const borrador = ref(null);
 const original = ref('');
@@ -67,7 +82,10 @@ function elegir(id, forzar = false) {
   borrador.value = p ? copia(p) : null;
   original.value = borrador.value ? JSON.stringify(borrador.value) : '';
   campoSel.value = null;
-  if (p) asegurarFondo(p.imagen);
+  if (p) {
+    asegurarFondo(p.imagen);
+    asegurarFondo(p.imagenReverso);
+  }
 }
 
 async function asegurarFondo(imagen) {
@@ -162,6 +180,9 @@ function datosParaGuardar() {
     fotoCircular: b.fotoCircular, multilinea: b.multilinea,
     colorTexto: b.colorTexto || null, tipoTexto: b.tipoTexto || null,
     cajas: b.cajas, orden: b.orden, predeterminada: b.predeterminada,
+    uso: b.uso || 'EXPOSITOR', idEdicion: b.idEdicion ?? null,
+    idDependencia: b.uso === 'APOYO' ? b.idDependencia ?? null : null,
+    imagenReverso: b.imagenReverso || null,
   };
 }
 
@@ -242,7 +263,17 @@ async function cambiarFondo(evento) {
   toast('Fondo cargado. Revisa la posición de los campos y guarda.', 'info');
 }
 
-const nueva = reactive({ abierta: false, etiqueta: '', archivo: null, creando: false });
+async function cambiarReverso(evento) {
+  const archivo = evento.target.files?.[0];
+  evento.target.value = '';
+  if (!archivo || !borrador.value) return;
+  const imagen = await subirImagen(archivo);
+  if (!imagen) return;
+  fondos[imagen] = URL.createObjectURL(archivo);
+  borrador.value.imagenReverso = imagen;
+}
+
+const nueva = reactive({ abierta: false, etiqueta: '', archivo: null, creando: false, uso: 'EXPOSITOR' });
 
 async function crear() {
   if (!nueva.etiqueta.trim() || !nueva.archivo) { toast('Pon un nombre y elige la imagen de fondo', 'advertencia'); return; }
@@ -256,7 +287,7 @@ async function crear() {
     const r = await apiFetch('/api/app/plantillas-credencial', {
       method: 'POST',
       body: JSON.stringify({
-        codigo, etiqueta: nueva.etiqueta.trim(), imagen, requiereFoto: false, mayusculas: true,
+        codigo, etiqueta: nueva.etiqueta.trim(), imagen, requiereFoto: false, mayusculas: true, uso: nueva.uso,
         cajas: { qr: { x: 0.35, y: 0.05, ancho: 0.3, alto: Math.round((0.3 / prop) * 10000) / 10000 } },
       }),
     });
@@ -264,7 +295,7 @@ async function crear() {
     if (!r.ok) { toast(d.mensaje || 'No se pudo crear', 'error'); return; }
     fondos[imagen] = URL.createObjectURL(nueva.archivo);
     plantillas.value.push(d);
-    Object.assign(nueva, { abierta: false, etiqueta: '', archivo: null });
+    Object.assign(nueva, { abierta: false, etiqueta: '', archivo: null, uso: 'EXPOSITOR' });
     elegir(d.id, true);
   } finally {
     nueva.creando = false;
@@ -352,7 +383,10 @@ function avisar(e) {
   e.returnValue = '';
 }
 
-onMounted(() => cargar());
+onMounted(() => {
+  cargarCatalogos();
+  cargar();
+});
 onActivated(() => {
   window.addEventListener('keydown', onTecla);
   window.addEventListener('beforeunload', avisar);
@@ -376,14 +410,19 @@ onUnmounted(() => {
         <button class="btn btn-sm btn-primario" @click="nueva.abierta = true">＋ Nueva</button>
       </div>
       <p v-if="cargando" class="muted">Cargando…</p>
-      <ul>
-        <li v-for="p in plantillas" :key="p.id">
-          <button :class="{ on: p.id === selId }" @click="elegir(p.id)">
-            <span class="nom">{{ p.etiqueta }}</span>
-            <span v-if="p.predeterminada" class="badge badge-ok">por defecto</span>
-          </button>
-        </li>
-      </ul>
+      <template v-for="g in grupos" :key="g.uso">
+        <h5 class="grupo-tit">{{ g.titulo }}</h5>
+        <p v-if="!g.items.length" class="muted chico">{{ g.uso === 'APOYO' ? 'Sin plantillas: se usa el diseño de siempre.' : 'Sin plantillas.' }}</p>
+        <ul>
+          <li v-for="p in g.items" :key="p.id">
+            <button :class="{ on: p.id === selId }" @click="elegir(p.id)">
+              <span class="nom">{{ p.etiqueta }}</span>
+              <span v-if="p.predeterminada" class="badge badge-ok">por defecto</span>
+              <span v-else-if="p.idEdicion" class="badge badge-muted">{{ nombreEdicion(p.idEdicion) || 'actividad' }}</span>
+            </button>
+          </li>
+        </ul>
+      </template>
     </aside>
 
     <section v-if="borrador" class="centro">
@@ -426,11 +465,41 @@ onUnmounted(() => {
         <label class="campo"><span>Color del texto</span><input :value="borrador.colorTexto || '#000000'" type="color" class="control control-color"
                  @input="borrador.colorTexto = $event.target.value" /></label>
       </div>
+      <div class="dos">
+        <label class="campo"><span>Uso</span>
+          <select v-model="borrador.uso" class="control" :disabled="seleccionada?.predeterminada">
+            <option value="EXPOSITOR">Expositores</option>
+            <option value="APOYO">Personal de apoyo</option>
+          </select>
+        </label>
+        <label class="campo"><span>Actividad</span>
+          <select v-model="borrador.idEdicion" class="control" :disabled="borrador.predeterminada">
+            <option :value="null">Todas</option>
+            <option v-for="e in ediciones" :key="e.id" :value="e.id">{{ e.nombre }}{{ e.activa ? ' (actual)' : '' }}</option>
+          </select>
+        </label>
+      </div>
+      <label v-if="borrador.uso === 'APOYO'" class="campo"><span>Dependencia</span>
+        <select v-model="borrador.idDependencia" class="control">
+          <option :value="null">Todas las dependencias</option>
+          <option v-for="d in dependencias" :key="d.id" :value="d.id">{{ d.nombre }}</option>
+        </select>
+      </label>
       <label v-for="o in OPCIONES" :key="o.id" class="check"><input v-model="borrador[o.id]" type="checkbox" /> {{ o.txt }}</label>
-      <label class="check"><input v-model="borrador.predeterminada" type="checkbox" :disabled="seleccionada?.predeterminada" /> Plantilla por defecto</label>
+      <label v-if="borrador.uso !== 'APOYO'" class="check">
+        <input v-model="borrador.predeterminada" type="checkbox" :disabled="seleccionada?.predeterminada || borrador.idEdicion != null" /> Plantilla por defecto
+      </label>
       <label class="btn btn-sm">Cambiar imagen de fondo
         <input type="file" accept="image/png,image/jpeg" class="oculto" @change="cambiarFondo" />
       </label>
+      <div class="reverso">
+        <img v-if="borrador.imagenReverso && fondos[borrador.imagenReverso]" :src="fondos[borrador.imagenReverso]" alt="Reverso" />
+        <span class="muted chico">{{ borrador.imagenReverso ? 'Reverso propio' : 'Reverso general' }}</span>
+        <label class="btn btn-sm">{{ borrador.imagenReverso ? 'Cambiar' : 'Subir reverso' }}
+          <input type="file" accept="image/png,image/jpeg" class="oculto" @change="cambiarReverso" />
+        </label>
+        <button v-if="borrador.imagenReverso" class="btn btn-sm btn-fantasma" @click="borrador.imagenReverso = null">Quitar</button>
+      </div>
 
       <h4>Campos</h4>
       <ul class="campos">
@@ -462,6 +531,12 @@ onUnmounted(() => {
     <UiModal v-if="nueva.abierta" titulo="Nueva plantilla" @cerrar="!nueva.creando && (nueva.abierta = false)">
       <div class="formulario">
         <label class="campo"><span>Nombre</span><input v-model="nueva.etiqueta" class="control" maxlength="80" placeholder="Credencial staff" /></label>
+        <label class="campo"><span>Uso</span>
+          <select v-model="nueva.uso" class="control">
+            <option value="EXPOSITOR">Expositores</option>
+            <option value="APOYO">Personal de apoyo</option>
+          </select>
+        </label>
         <label class="campo"><span>Imagen de fondo (PNG o JPG)</span>
           <input type="file" accept="image/png,image/jpeg" class="control" @change="nueva.archivo = $event.target.files?.[0] || null" />
         </label>
@@ -508,6 +583,9 @@ onUnmounted(() => {
 .lista li button:hover { background: var(--bg); }
 .lista li button.on { background: var(--acento-suave); border-color: var(--acento); }
 .nom { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grupo-tit { margin: 0.7rem 0 0.25rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.reverso { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.reverso img { width: 44px; height: 56px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); }
 
 .centro { display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
 .barra { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }

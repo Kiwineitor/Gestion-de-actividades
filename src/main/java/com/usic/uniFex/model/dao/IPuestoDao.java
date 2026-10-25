@@ -255,6 +255,29 @@ List<Puesto> findLibresPorCategoriaOrdenados(@Param("estadoPuesto") String estad
             """, nativeQuery = true)
     List<Object[]> findVentaVigenteDePuesto(@Param("puestoId") Long puestoId);
 
+    @Query(value = """
+            SELECT DISTINCT ip.id_puesto
+              FROM inscripcion_puesto ip
+              INNER JOIN inscripcion i ON i.id = ip.id_inscripcion
+              INNER JOIN puesto pu ON pu.id = ip.id_puesto AND pu.estado_puesto = 'O'
+             WHERE ip.id_puesto IS NOT NULL
+               AND i.img_comprobante IS NOT NULL AND btrim(i.img_comprobante) <> ''
+               AND (i."_estado" IS NULL OR i."_estado" <> 'X')
+               AND (ip."_estado" IS NULL OR ip."_estado" <> 'X')
+               AND i.id_edicion = (SELECT ed.id FROM edicion ed WHERE ed.activa LIMIT 1)
+            """, nativeQuery = true)
+    List<Long> findPuestosPagados();
+
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE puesto SET id_categoria = :categoriaId, codigo = :codigo, version = version + 1, "
+           + "\"_fecha_modificacion\" = now(), \"_modificacion_id_usuario\" = :usuarioId "
+           + "WHERE id = :id AND estado_puesto IN ('L', 'X') "
+           + "AND (\"_estado\" IS NULL OR \"_estado\" <> 'X')", nativeQuery = true)
+    int cambiarCategoriaSiLibre(@Param("id") Long id,
+                                @Param("categoriaId") Long categoriaId,
+                                @Param("codigo") String codigo,
+                                @Param("usuarioId") Long usuarioId);
+
     /**
      * Cambia el numero (codigo) que rotula la caseta en el plano.
      *

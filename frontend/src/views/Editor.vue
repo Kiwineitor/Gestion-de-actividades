@@ -159,6 +159,46 @@ const principal = computed(() => {
 });
 const fichaPuesto = computed(() => (seleccion.value.size === 1 ? principal.value : null));
 
+const pagados = ref(new Set());
+let temporizadorPagados = null;
+
+async function cargarPagados() {
+  if (!puedeDisenar.value) return;
+  try {
+    const r = await apiFetch('/api/app/puestos/pagados');
+    if (r.ok) pagados.value = new Set(await r.json());
+  } catch {
+    pagados.value = new Set(pagados.value);
+  }
+}
+
+watch(
+  () => puestos.value.reduce((n, p) => n + (p.estado === 'O' ? 1 : 0), 0),
+  () => {
+    clearTimeout(temporizadorPagados);
+    temporizadorPagados = setTimeout(cargarPagados, 800);
+  },
+);
+
+async function cambiarCategoria(evento) {
+  const p = fichaPuesto.value;
+  const categoriaId = Number(evento.target.value);
+  if (!p || !categoriaId || categoriaId === p.categoriaId) return;
+  const destino = categorias.value.find((c) => c.id === categoriaId);
+  if (!confirm(`¿Pasar el puesto ${p.codigo} a ${destino?.nombre ?? 'otra categoría'}? Toma su color, forma y precio.`)) {
+    evento.target.value = p.categoriaId;
+    return;
+  }
+  const r = await apiFetch(`/api/app/puestos/${p.id}/categoria`, { method: 'PATCH', body: JSON.stringify({ categoriaId }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.ok) {
+    evento.target.value = p.categoriaId;
+    toast(d.mensaje || 'No se pudo cambiar la categoría', 'error');
+    return;
+  }
+  toast('Categoría cambiada ✓', 'ok', 1600);
+}
+
 const textoSelId = ref(null);
 const textoSel = computed(() => textosTienda.textos.find((t) => t.id === textoSelId.value) || null);
 
@@ -1019,6 +1059,7 @@ onMounted(async () => {
   if (catSel.value == null && categorias.value.length) catSel.value = categorias.value[0].id;
 });
 onActivated(() => {
+  cargarPagados();
   window.addEventListener('keydown', onTecla);
   window.addEventListener('beforeunload', avisarSinGuardar);
 });
@@ -1030,6 +1071,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onTecla);
   window.removeEventListener('beforeunload', avisarSinGuardar);
   clearTimeout(temporizadorTexto);
+  clearTimeout(temporizadorPagados);
   if (pendientesTexto.size) enviarTextos();
   if (quitarGuardia) quitarGuardia();
 });
@@ -1097,7 +1139,7 @@ onUnmounted(() => {
 
           <div v-for="p in colocadas" :key="p.id"
                :ref="(el) => (el ? pinEls.set(p.id, el) : pinEls.delete(p.id))"
-               class="pin" :class="[`forma-${p.forma || 'cuadrado'}`, `est-${p.estado}`, { sel: seleccion.has(p.id) }]"
+               class="pin" :class="[`forma-${p.forma || 'cuadrado'}`, `est-${p.estado}`, { sel: seleccion.has(p.id), pagado: p.estado === 'O' && pagados.has(p.id) }]"
                :style="{ ...estiloPin(p), background: p.color || '#94a3b8' }"
                :title="`${p.categoria} ${p.codigo} · ${ETIQUETA_ESTADO[p.estado] || ''}`"
                @pointerdown="onPinDown($event, p)">
@@ -1145,6 +1187,7 @@ onUnmounted(() => {
         <span v-for="e in ESTADOS" :key="e.id" class="item">
           <i class="punto" :class="`p-${e.clase}`"></i>{{ ETIQUETA_ESTADO[e.id] }}
         </span>
+        <span v-if="puedeDisenar" class="item"><i class="punto p-pagado"></i>Pagado</span>
       </div>
 
       <div v-if="enDiseno && seleccion.size" class="flotante barra-seleccion">
@@ -1223,7 +1266,11 @@ onUnmounted(() => {
         <div class="cuerpo-ficha">
           <div class="dato-categoria">
             <span class="muestra" :class="`forma-${fichaPuesto.forma || 'cuadrado'}`" :style="{ background: fichaPuesto.color || '#94a3b8' }"></span>
-            <span>{{ fichaPuesto.categoria }}</span>
+            <select v-if="enDiseno && (fichaPuesto.estado === 'L' || fichaPuesto.estado === 'X')" class="control control-cat"
+                    :value="fichaPuesto.categoriaId" title="Cambiar de categoría" @change="cambiarCategoria">
+              <option v-for="c in categorias" :key="c.id" :value="c.id">{{ c.nombre }}</option>
+            </select>
+            <span v-else>{{ fichaPuesto.categoria }}</span>
           </div>
 
           <div v-if="fichaPuesto.estado === 'O' || fichaPuesto.estado === 'T'" class="bloque-venta">
@@ -1363,6 +1410,7 @@ onUnmounted(() => {
 .p-tramite { background: var(--tramite); }
 .p-ocupado { background: var(--ocupado); }
 .p-bloqueado { background: var(--bloqueado); }
+.p-pagado { background: var(--ok); box-shadow: inset 0 0 0 2px var(--ocupado); }
 
 .barra-seleccion {
   left: 50%; bottom: 0.6rem; transform: translateX(-50%);
@@ -1424,6 +1472,7 @@ onUnmounted(() => {
 .cuerpo-ficha fieldset { border: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
 .dos { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 .dato-categoria { display: flex; align-items: center; gap: 0.45rem; font-weight: 600; font-size: 0.9rem; }
+.control-cat { padding: 0.3rem 0.5rem; font-weight: 600; }
 .badge-estado { display: inline-block; font-size: 0.7rem; font-weight: 700; padding: 0.12rem 0.5rem; border-radius: 999px; vertical-align: middle; margin-right: 0.25rem; }
 .b-L { background: color-mix(in srgb, var(--libre) 18%, transparent); color: var(--libre); }
 .b-T { background: color-mix(in srgb, var(--tramite) 18%, transparent); color: var(--tramite); }
@@ -1477,6 +1526,7 @@ onUnmounted(() => {
 }
 .est-T .marca-estado { background: var(--tramite); }
 .est-O .marca-estado { background: var(--ocupado); }
+.pin.pagado .marca-estado { background: var(--ok); border-color: var(--ocupado); }
 .est-X .marca-estado { background: #475569; }
 .forma-cuadrado { border-radius: 10%; }
 .forma-rectangulo { border-radius: 6%; }

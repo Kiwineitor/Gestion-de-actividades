@@ -39,7 +39,6 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Map;
 
-import java.io.File;
 import java.nio.file.Files;
 import java.util.UUID;
 
@@ -47,8 +46,7 @@ import javax.sql.DataSource;
 
 @Service
 public class UtilidadesServiceImpl implements UtilidadesService {
-  String secretKey = "Lanza12310099812"; // La clave debe tener 16, 24 o 32 caracteres para AES-128, AES-192 o
-  // AES-256 respectivamente
+  String secretKey = "Lanza12310099812";
   private final Logger log = LoggerFactory.getLogger(getClass());
 
   @Autowired
@@ -78,7 +76,6 @@ public class UtilidadesServiceImpl implements UtilidadesService {
       throws IOException, JRException, SQLException {
     Connection con = null;
 
-    // return stream;
     ByteArrayOutputStream stream = new ByteArrayOutputStream();
 
     Path rootPath = Paths.get("").toAbsolutePath();
@@ -116,7 +113,6 @@ public class UtilidadesServiceImpl implements UtilidadesService {
       JasperReport jasperReport = JasperCompileManager.compileReport(reportStream);
       JasperPrint jasperPrint = JasperFillManager.fillReport(jasperReport, params, con);
 
-      // Exportar a Excel
       JRXlsxExporter exporter = new JRXlsxExporter();
       exporter.setExporterInput(new SimpleExporterInput(jasperPrint));
       exporter.setExporterOutput(new SimpleOutputStreamExporterOutput(stream));
@@ -151,7 +147,6 @@ public class UtilidadesServiceImpl implements UtilidadesService {
       JasperReport jasperReport = JasperCompileManager.compileReport(reportStream);
       JasperPrint jasperPrint = JasperFillManager.fillReport(jasperReport, params, con);
 
-      // Exportar a RTF
       JRDocxExporter exporter = new JRDocxExporter();
       exporter.setExporterInput(new SimpleExporterInput(jasperPrint));
       exporter.setExporterOutput(new SimpleOutputStreamExporterOutput(stream));
@@ -181,25 +176,20 @@ public class UtilidadesServiceImpl implements UtilidadesService {
     String ruta = directorio.toString();
 
     try (InputStream reportStream = new FileInputStream(ruta)) {
-      // Si se necesita una conexión de base de datos
       if (dataSource == null) {
-        con = this.dataSource.getConnection(); // Aquí asumo que tienes un dataSource para conexiones a DB
-        // Llenar el reporte usando la conexión
+        con = this.dataSource.getConnection();
         JasperReport jasperReport = JasperCompileManager.compileReport(reportStream);
         JasperPrint jasperPrint = JasperFillManager.fillReport(jasperReport, params, con);
 
-        // Exportar a Excel
         JRXlsxExporter exporter = new JRXlsxExporter();
         exporter.setExporterInput(new SimpleExporterInput(jasperPrint));
         exporter.setExporterOutput(new SimpleOutputStreamExporterOutput(stream));
 
         exporter.exportReport();
       } else {
-        // Llenar el reporte usando el JRDataSource
         JasperReport jasperReport = JasperCompileManager.compileReport(reportStream);
         JasperPrint jasperPrint = JasperFillManager.fillReport(jasperReport, params, dataSource);
 
-        // Exportar a Excel
         JRXlsxExporter exporter = new JRXlsxExporter();
         exporter.setExporterInput(new SimpleExporterInput(jasperPrint));
         exporter.setExporterOutput(new SimpleOutputStreamExporterOutput(stream));
@@ -223,7 +213,6 @@ public class UtilidadesServiceImpl implements UtilidadesService {
   public String guardarArchivo(MultipartFile archivo) {
     String uniqueFilename = UUID.randomUUID().toString() + "_" + archivo.getOriginalFilename();
 
-		
     Path rootPath = Paths.get("uploads/").resolve(uniqueFilename);
 		Path rootAbsolutPath = rootPath.toAbsolutePath();
 

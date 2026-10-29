@@ -21,7 +21,7 @@ function ir(k) {
 }
 
 watch(visibles, (v) => {
-  if (route.path === '/dashboard' && v.length && !v.some((p) => p.k === route.query.tab)) ir(v[0].k);
+  if (route.query.m === 'dashboard' && v.length && !v.some((p) => p.k === route.query.tab)) ir(v[0].k);
 }, { immediate: true });
 </script>
 

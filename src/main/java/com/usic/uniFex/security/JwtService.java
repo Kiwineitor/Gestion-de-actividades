@@ -14,7 +14,6 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 
-/** Genera y valida los JWT del API movil/SPA (Fase 2). Firma HMAC-SHA con el secreto configurado. */
 @Service
 public class JwtService {
 
@@ -27,7 +26,6 @@ public class JwtService {
         this.expirationMs = expirationMs;
     }
 
-    /** Emite un token para el usuario con su id, username (subject) y rol. */
     public String generar(Usuario u) {
         Date ahora = new Date();
         String rol = (u.getRol() != null) ? u.getRol().getNombre() : null;
@@ -41,7 +39,6 @@ public class JwtService {
                 .compact();
     }
 
-    /** Valida la firma y expiracion; devuelve el principal. Lanza excepcion si el token no es valido. */
     public JwtUser validar(String token) {
         Claims c = Jwts.parser().verifyWith(key).build()
                 .parseSignedClaims(token).getPayload();

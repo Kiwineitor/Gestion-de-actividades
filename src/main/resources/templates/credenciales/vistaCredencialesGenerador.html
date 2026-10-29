@@ -16,9 +16,9 @@
       margin: 20px auto;
       background-size: cover;
       background-position: center;
-      width: 816px;   /* ancho carta */
-      height: 1056px; /* alto carta */
-      page-break-after: always; /* importante para impresión */
+      width: 816px;
+      height: 1056px;
+      page-break-after: always;
     }
 
     .editable-text {
@@ -41,21 +41,21 @@
 
     .foto-circular {
       position: absolute;
-      width: 300px;   /* ajusta tamaño */
+      width: 300px;
       height: 300px;
       border-radius: 50%;
       overflow: hidden;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #fff; /* opcional: fondo blanco */
+      background: #fff;
       box-shadow: 0 0 10px rgba(0,0,0,0.3);
     }
 
     .foto-circular img {
       width: 100%;
       height: 100%;
-      object-fit: cover; /* recorta para que no se deforme */
+      object-fit: cover;
     }
 
     #controls {
@@ -90,12 +90,8 @@
 
   <label class="form-label" for="formValidationInscripcionesDisponibles">SELECCIONAR LA INSCRIPCION: </label>
   <select name="InscripcionesSeleccionados" id="formValidationInscripcionesDisponibles">
-    <!-- Se cargan dinámicamente con JS -->
   </select>
 
-  <!-- Imagen oculta solo para obtener el tamaño -->
-  
-  <!-- Botón exportar -->
   <div id="controls">
       <button id="exportPdf">Exportar a PDF</button>
       <span id="loadingText" style="display:none; margin-left:10px; font-weight:bold; color:red;">
@@ -106,33 +102,26 @@
   <div id="modalContent">
       
   </div>
-  
-  
-  <!-- Librerías -->
+
   <script src="../../assets/vendor/libs/jquery/jquery.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
    <script th:inline="javascript">
-    /*<![CDATA[*/
-    // Thymeleaf inyecta todos los Inscripciones en un array JS
     let InscripcionesCategoria = /*[[${InscripcionesCategoria}]]*/[];
 
-    // convertir cada puesto en objeto limpio
     InscripcionesCategoria = InscripcionesCategoria.map(insc => ({
       id_categoria: insc.id_categoria,
       id_inscripcion: insc.id_inscripcion,
       nombre_entidad: insc.nombre_entidad,
       representante_legal: insc.representante_legal,
     }));
-    /*]]>*/
   </script>
   <script>
     $(document).ready(function () {
       let $InscripcionesSelect = $('#formValidationInscripcionesDisponibles');
 
-      // cuando cambia la categoría
       $('#formValidationCategoria').on('change', function () {
         let categoriaId = $(this).val();
         $InscripcionesSelect.empty();
@@ -146,23 +135,21 @@
           });
         }
 
-        $InscripcionesSelect.trigger('change'); // refrescar
+        $InscripcionesSelect.trigger('change');
       });
 
-      // cuando se selecciona una inscripción
       $InscripcionesSelect.on('change', function () {
         let inscripcionId = $(this).val();
 
         if (inscripcionId) {
 
           $.ajax({
-            url: '/vistaGenerarCredenciales/credenciales/' + inscripcionId,  // <-- usa el ID seleccionado
+            url: '/vistaGenerarCredenciales/credenciales/' + inscripcionId,
             type: 'GET',
             success: function (data) {
 
               $("#modalContent").html(data);
 
-              // Una vez que el contenido se inserta, re-inicializa los QR y drag & drop
               inicializarCredenciales();
             },
             error: function (xhr, status, error) {
@@ -176,7 +163,6 @@
   </script>
 
   <script>
-    // Hacer arrastrables
     function makeDraggable(el) {
       let offsetX, offsetY, isDragging = false;
       el.addEventListener("mousedown", (e) => {
@@ -199,35 +185,31 @@
           const qrInput = container.querySelector(".qr-value"); 
 
           if (qrDiv && qrInput) {
-            // Generar QR
             qrDiv.innerHTML = "";
             new QRCode(qrDiv, {
               text: qrInput.value,
               width: 200,
               height: 200,
-              correctLevel: QRCode.CorrectLevel.L, // usar nivel más bajo (más capacidad)
-              version: 10 // podés subir hasta 40 según necesidad
+              correctLevel: QRCode.CorrectLevel.L,
+              version: 10
             });
 
-            // Actualizar QR si cambia input oculto
             qrInput.addEventListener("change", (e) => {
               qrDiv.innerHTML = "";
               new QRCode(qrDiv, {
                 text: qrInput.value,
                 width: 200,
                 height: 200,
-                correctLevel: QRCode.CorrectLevel.L, // usar nivel más bajo (más capacidad)
-                version: 10 // podés subir hasta 40 según necesidad
+                correctLevel: QRCode.CorrectLevel.L,
+                version: 10
               });
             });
           }
 
-          // Hacer arrastrables los textos y el QR
           container.querySelectorAll(".editable-text, .qr-code").forEach(el => {
             makeDraggable(el);
           });
         });
-        // Delegación de evento: escucha clicks en botones dentro de #modalContent
         $(document).off('click', '#exportPdf').on('click', '#exportPdf', async function () {
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF('p', 'pt', 'letter');
@@ -237,15 +219,14 @@
 
             const containers = document.querySelectorAll('.editorContainer');
 
-            // renderizar todos los contenedores en paralelo
             const canvases = await Promise.all(
                 Array.from(containers).map(c =>
-                    html2canvas(c, { scale: 1.5, useCORS: true, willReadFrequently: true }) // scale más bajo mejora velocidad
+                    html2canvas(c, { scale: 1.5, useCORS: true, willReadFrequently: true })
                 )
             );
 
             canvases.forEach((canvas, i) => {
-                const imgData = canvas.toDataURL('image/jpeg', 0.85); // JPEG = más liviano
+                const imgData = canvas.toDataURL('image/jpeg', 0.85);
                 if (i > 0) pdf.addPage();
                 pdf.addImage(imgData, 'JPEG', 0, 0, 612, 792);
             });
@@ -256,36 +237,27 @@
             $('#exportPdf').prop('disabled', false);
         });
 
-
-        
         function ajustarFuente(element, maxFont = 40, minFont = 20) {
-            let fontSize = maxFont; // tamaño inicial máximo
+            let fontSize = maxFont;
             element.style.fontSize = fontSize + 'px';
 
-            // Reducir tamaño hasta que el contenido quepa
             while ((element.scrollWidth > element.clientWidth || element.scrollHeight > element.clientHeight) && fontSize > minFont) {
                 fontSize--;
                 element.style.fontSize = fontSize + 'px';
             }
 
-            // Aumentar tamaño si hay mucho espacio disponible
             while ((element.scrollWidth < element.clientWidth && element.scrollHeight < element.clientHeight) && fontSize < maxFont) {
                 fontSize++;
                 element.style.fontSize = fontSize + 'px';
             }
         }
 
-        // Aplicar a todos los elementos con la clase "nombre-entidad"
         document.querySelectorAll('.nombre-entidad').forEach(el => ajustarFuente(el));
         document.querySelectorAll('.nombre-responsable').forEach(el => ajustarFuente(el));
 
     }
-    
 
-    // Inicializar al cargar la página (si ya hay contenido)
     inicializarCredenciales();
-
-
 
   </script>
 </body>

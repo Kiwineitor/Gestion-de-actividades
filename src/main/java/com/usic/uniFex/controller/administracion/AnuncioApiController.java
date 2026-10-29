@@ -22,12 +22,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Anuncios para todos los usuarios.
- *
- * LOS VIGENTES los lee cualquier autenticado —son para el—; publicar y retirar es de
- * administracion, porque un anuncio sale en la pantalla de los 35 vendedores a la vez.
- */
 @RestController
 @RequestMapping("/api/app/anuncios")
 @RequiredArgsConstructor
@@ -35,14 +29,12 @@ public class AnuncioApiController {
 
     private final AnuncioService service;
 
-    /** Los que hay que enseñar ahora. Lo pide la aplicacion al entrar. */
     @GetMapping
     @PreAuthorize("isAuthenticated()")
     public List<AnuncioDTO> vigentes() {
         return service.vigentes();
     }
 
-    /** Todo lo publicado, incluido lo retirado y lo vencido. Para la pantalla que los gestiona. */
     @GetMapping("/historial")
     @PreAuthorize(Roles.ADMINISTRA)
     public List<AnuncioDTO> historial() {

@@ -1,7 +1,6 @@
 package com.usic.uniFex.controller.admin;
 
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -302,15 +301,9 @@ public class AdminController {
             }
             inscripcionService.save(inscripcion);
 
-            // ===== PUESTOS =====
             List<Long> ocupados = new ArrayList<>();
             if (puestosSeleccionados != null) {
                 for (Long puestoId : puestosSeleccionados) {
-                    // Ocupacion atomica: solo procede si la caseta sigue disponible
-                    // (LIBRE, o EN_TRAMITE reservada por este mismo usuario). Esto es
-                    // lo que impide la doble venta cuando dos registros eligen la
-                    // misma caseta casi al mismo tiempo. Al estar dentro de la
-                    // transaccion del metodo, si algo falla despues se revierte todo.
                     boolean ocupadoOk = reservaService.ocupar(puestoId, usuario.getId());
                     if (!ocupadoOk) {
                         throw new IllegalStateException(
@@ -330,12 +323,6 @@ public class AdminController {
                     ip.setModificacionIdUsuario(usuario.getId());
                     ip.setEstado("ACTIVO");
 
-                    // El precio sale siempre de la categoria (via la stored function, que
-                    // consulta categoria.precio_base). Aqui habia un caso especial cableado
-                    // para la categoria con id 25, con precios fijos por rango de codigo
-                    // (200/300/100). Se quito porque los ids de categoria no son estables:
-                    // tras reiniciar la gestion, el 25 pasa a ser una categoria cualquiera y
-                    // esa regla le aplicaria precios ajenos sin que nadie se entere.
                     ip.setCosto(funcionesInscripcion.obtenerCostoPuesto(
                             entidad.getTipoEntidad().getId(),
                             puesto.getTamano(),
@@ -345,8 +332,6 @@ public class AdminController {
                 }
             }
 
-            // Difunde el nuevo estado (OCUPADO) al mapa en vivo, pero solo si la
-            // transaccion se confirma (asi no se avisa de casetas que luego se revierten).
             if (!ocupados.isEmpty() && TransactionSynchronizationManager.isSynchronizationActive()) {
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override
@@ -356,14 +341,12 @@ public class AdminController {
                 });
             }
 
-            // ★ Mensaje de éxito + anexar warnings
             messages.add(new UiMessage("success", "Registro completado",
                     "La inscripción se registró correctamente."));
             if (!warnings.isEmpty()) {
                 warnings.forEach(w -> messages.add(new UiMessage("warning", "Atención", w)));
             }
 
-            // ★ Pasar datos por flash
             flash.addFlashAttribute("messages", messages);
             flash.addAttribute("inscripcionId", inscripcion.getId());
             return "redirect:/vistaR";
@@ -393,7 +376,6 @@ public class AdminController {
         }
     }
 
-
     @ValidarUsuarioAutenticado
     @GetMapping("/ver/inscripcion/{id}/recibo.pdf")
     public void verRecibo(
@@ -406,7 +388,6 @@ public class AdminController {
         response.flushBuffer();
     }
 
-    // Helpers
     private boolean notBlank(String s) {
         return s != null && !s.trim().isEmpty();
     }
@@ -423,7 +404,6 @@ public class AdminController {
             @RequestParam String contrasena,
             HttpServletRequest request, RedirectAttributes flash) {
 
-        // los dos parametros de usuario, contraseña vienen del formulario html
         Usuario usuario_ = IusuarioService.findByUsername(usuario).orElse(null);
         if (usuario_ == null || !passwordEncoder.matches(contrasena, usuario_.getPassword())) {
             return ResponseEntity.ok("Usuario o contraseña incorrectos!");
@@ -444,12 +424,9 @@ public class AdminController {
         session.setAttribute("nombre_rol", usuario_.getRol().getNombre());
         flash.addAttribute("success", usuario_.getPersona().getNombre());
 
-        // 4) Respuesta según rol
         String respuesta;
         if ("ADMINISTRATIVO".equals(rol)) {
             respuesta = "Inicio Responsable";
-        } else if ("VENDEDOR".equals(rol)) {
-            respuesta = "inicio vendedor";
         } else {
             respuesta = "Iniciando Session";
         }

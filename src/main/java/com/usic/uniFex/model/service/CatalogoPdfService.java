@@ -27,7 +27,6 @@ import com.itextpdf.text.pdf.PdfWriter;
 import com.usic.uniFex.model.entity.Categoria;
 import com.usic.uniFex.model.entity.CategoriaOpcion;
 
-/** Reporte PDF del catalogo de precios de casetas. */
 @Service
 public class CatalogoPdfService {
 

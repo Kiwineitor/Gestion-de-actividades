@@ -2,20 +2,8 @@
 import { computed } from 'vue';
 import { useAuthStore } from '../stores/auth';
 import { usePermisosStore } from '../stores/permisos';
+import { destinoAntiguo } from '../modulos';
 
-/*
- * Los accesos rapidos salen de los PERMISOS, no de un rol escrito aqui.
- *
- * Antes esta pantalla daba "Mapa de ventas" y "Mis ventas" a todo el mundo y solo preguntaba
- * por `puedeEditarPlano` para añadir lo de administracion. El efecto era que un VERIFICADOR o
- * alguien de CONTROL entraba y se encontraba dos tarjetas grandes invitandole a un mapa de
- * ventas que no le toca: el menu lateral ya lo escondia, pero el inicio lo ofrecia igual, que
- * es peor que no esconderlo en ningun sitio — dice dos cosas distintas a la vez.
- *
- * Ahora la lista se filtra con `puedeVer`, la misma funcion que arma el menu, asi que las dos
- * cosas no se pueden contradecir. Y cuando alguien no tiene ninguna de estas pantallas, lo que
- * queda no es una rejilla vacia: es una bienvenida que le dice para que entro.
- */
 const auth = useAuthStore();
 const permisos = usePermisosStore();
 permisos.asegurar();
@@ -45,7 +33,6 @@ const TODOS = [
 
 const accesos = computed(() => TODOS.filter((x) => permisos.puedeVer(x.p)));
 
-/** Que decir bajo el saludo. Sale del rol, que es lo que la persona reconoce de si misma. */
 const subtitulo = computed(() => {
   if (auth.puedeEditarPlano) return 'Panel de administración';
   if (auth.esVendedor) return 'Panel del vendedor';
@@ -60,15 +47,13 @@ const subtitulo = computed(() => {
     </header>
 
     <div v-if="accesos.length" class="grid">
-      <router-link v-for="a in accesos" :key="a.a" :to="a.a" class="acceso card" :style="{ '--c': a.color }">
+      <router-link v-for="a in accesos" :key="a.a" :to="destinoAntiguo(a.a, {})" class="acceso card" :style="{ '--c': a.color }">
         <span class="icono">{{ a.icono }}</span>
         <h3>{{ a.titulo }}</h3>
         <p class="muted">{{ a.desc }}</p>
       </router-link>
     </div>
 
-    <!-- Sin accesos, una bienvenida y no una rejilla vacia: quien entra aqui tiene su trabajo
-         en otra pantalla, y una pagina en blanco parece que la aplicacion se rompio. -->
     <section v-else class="bienvenida card">
       <span class="icono-grande" aria-hidden="true">🎪</span>
       <h3>Bienvenido al sistema de actividades</h3>
@@ -102,8 +87,6 @@ const subtitulo = computed(() => {
 .acceso p { margin: 0; line-height: 1.5; }
 @media (prefers-reduced-motion: reduce) { .acceso { transition: none; } .acceso:hover { transform: none; } }
 
-/* En móvil cada acceso es una tarjeta grande de una sola columna: es lo que se toca con
-   el pulgar para empezar a vender, así que gana tamaño sobre densidad. */
 @media (max-width: 640px) {
   .hola h2 { font-size: 1.7rem; }
   .hola .muted { font-size: 1rem; }

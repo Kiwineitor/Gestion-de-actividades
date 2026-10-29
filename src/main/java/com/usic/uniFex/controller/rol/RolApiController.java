@@ -25,14 +25,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Gestion de roles para la SPA. Solo administracion: un rol decide lo que puede hacer cada
- * usuario, asi que crear uno es tan sensible como crear un login.
- *
- * Los cinco roles del sistema (ver {@code security.RolesSistema}) se listan igual que los demas
- * pero llegan marcados con {@code sistema: true}: no se renombran ni se eliminan. La comprobacion
- * real esta en {@link GestionRolService}; la marca solo permite a la interfaz apagar los botones.
- */
 @RestController
 @RequestMapping("/api/app/roles")
 @RequiredArgsConstructor
@@ -61,7 +53,6 @@ public class RolApiController {
         return responder(gestion.eliminar(id, actorId()));
     }
 
-    /** 200 si la operacion valio, 400 si la rechazo una validacion; el motivo va en el mensaje. */
     private ResponseEntity<Map<String, Object>> responder(Resultado r) {
         Map<String, Object> cuerpo = (r.rol() != null)
                 ? Map.of("ok", r.ok(), "mensaje", r.mensaje(), "rol", RolDTO.de(r.rol(), 0L))

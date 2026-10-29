@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue';
+import { ref, reactive, computed, onMounted } from 'vue';
 import UiModal from '../components/UiModal.vue';
 import AutocompleteSelect from '../components/AutocompleteSelect.vue';
 import MenuAcciones from '../components/MenuAcciones.vue';
@@ -9,16 +9,12 @@ import { toast } from '../ui/toast';
 import { useAuthStore } from '../stores/auth';
 
 const auth = useAuthStore();
-/** Solo para pintar; el recorte real lo hace el servidor (ver mi-dependencia). */
 const esSuper = computed(() => (auth.rol || '').toUpperCase().replace(/ /g, '_') === 'SUPER_USUARIO');
 
-/** Lo que el servidor dice de mi: si no soy super, mi dependencia (si mi CI tiene ficha). */
 const miDependencia = ref({ id: null, nombre: '' });
 
-/** Aviso bloqueante cuando un no-super entra sin dependencia asignada. */
 const avisoSinDependencia = ref(false);
 
-// Roles predefinidos para el select de rol
 const ROLES_PREDEFINIDOS = [
   { value: 'fotógrafo', label: '📸 Fotógrafo' },
   { value: 'azafata', label: '👩‍✈️ Azafata' },
@@ -32,7 +28,6 @@ const ROLES_PREDEFINIDOS = [
   { value: 'otro', label: '➕ Otro' },
 ];
 
-/** Opciones de rol + el actual si es personalizado (sin mutar la lista base). */
 const rolesParaSelect = computed(() => {
   const actual = (modalPersonal.rol || '').trim();
   if (!actual) return ROLES_PREDEFINIDOS;
@@ -40,20 +35,17 @@ const rolesParaSelect = computed(() => {
   return [{ value: actual, label: actual }, ...ROLES_PREDEFINIDOS];
 });
 
-const modo = ref('personal'); // 'personal' | 'dependencias'
+const modo = ref('personal');
 const cargando = ref(true);
 const filtro = ref('');
 const guardando = ref(false);
 const guardandoDep = ref(false);
 const ocupado = ref(false);
 
-// Dependencias para el selector
 const dependencias = ref([]);
 
-// Personal
 const personal = ref([]);
 
-// Modal personal (sin correo ni celular: ya no se piden)
 const modalPersonal = reactive({
   abierto: false,
   editando: null,
@@ -66,7 +58,7 @@ const modalPersonal = reactive({
   descripcionTarea: '',
   turno: '',
   celular: '',
-  foto: ''   // URL actual (/files/...) o '' si no tiene
+  foto: ''
 });
 
 const TURNOS = ['Mañana', 'Tarde', 'Noche', 'Completo'];
@@ -77,7 +69,6 @@ const detalle = ref(null);
 const cambioDep = reactive({ abierto: false, persona: null, idDependencia: '', guardando: false });
 const turnosUsados = computed(() => [...new Set([...TURNOS, ...personal.value.map((p) => p.turno).filter(Boolean)])]);
 const nombreDependencia = (id) => dependencias.value.find((d) => String(d.id) === String(id))?.nombre ?? '';
-/** Archivo elegido en el modal, aun sin subir. Se sube al guardar. */
 const archivoFoto = ref(null);
 const vistaPreviaFoto = ref('');
 
@@ -94,7 +85,6 @@ function limpiarFotoPendiente() {
   vistaPreviaFoto.value = '';
 }
 
-// Modal dependencia
 const modalDependencia = reactive({
   abierto: false,
   editando: null,
@@ -203,7 +193,6 @@ async function cargarDependencias() {
 async function cargarPersonal() {
   cargando.value = true;
   try {
-    // Sin super solo pido mi dependencia; el servidor ignora cualquier otro id.
     const qs = (!esSuper.value && miDependencia.value.id) ? `?dependencia=${miDependencia.value.id}` : '';
     const r = await apiFetch(`/api/app/personal-apoyo${qs}`);
     personal.value = await r.json();
@@ -224,16 +213,13 @@ async function cargarTodo() {
   } catch (e) {
     toast(e.message, 'error');
   }
-  // Las dependencias solo las ve el super (el endpoint da 403 al resto).
   if (esSuper.value) await cargarDependencias();
   await cargarPersonal();
-  // Sin dependencia no hay nada que operar: se avisa una vez al entrar.
   if (!esSuper.value && !miDependencia.value.id) avisoSinDependencia.value = true;
 }
 
 function cambiarModo(nuevo) {
   if (modo.value === nuevo) return;
-  // La pestaña de dependencias no existe para quien no es super (ni se pinta).
   if (nuevo === 'dependencias' && !esSuper.value) return;
   modo.value = nuevo;
   filtro.value = '';
@@ -243,7 +229,6 @@ function abrirCrearPersonal() {
   limpiarFotoPendiente();
   Object.assign(modalPersonal, {
     abierto: true, editando: null,
-    // Sin super la dependencia va fija: es la suya (el servidor la vuelve a forzar).
     idDependencia: (!esSuper.value && miDependencia.value.id) ? String(miDependencia.value.id) : '',
     nombre: '', paterno: '', materno: '',
     ci: '', rol: '', descripcionTarea: '', turno: '', celular: '', foto: ''
@@ -262,8 +247,6 @@ function abrirEditarPersonal(p) {
 }
 
 function abrirCrearDependencia() {
-  // Defensa en profundidad: la pestaña ya no se pinta sin super, pero si algun
-  // navegador con JS viejo muestra el boton, el modal tampoco se abre (y el servidor da 403).
   if (!esSuper.value) return;
   Object.assign(modalDependencia, { abierto: true, editando: null, nombre: '', descripcion: '' });
 }
@@ -294,7 +277,6 @@ async function guardarPersonal() {
     const r = await apiFetch(url, { method: metodo, body: JSON.stringify(body) });
     const d = await r.json();
     if (!d.ok) return toast(d.mensaje || 'No se pudo guardar.', 'error');
-    // La foto va aparte (multipart): primero la ficha, luego la imagen.
     if (archivoFoto.value && d.personal?.id) {
       console.log('[APOYO-FOTO] subiendo', archivoFoto.value.name,
         archivoFoto.value.size, 'bytes a ficha', d.personal.id);
@@ -333,7 +315,7 @@ async function guardarDependencia() {
     toast(d.mensaje, 'ok');
     modalDependencia.abierto = false;
     await cargarDependencias();
-    await cargarPersonal(); // refrescar nombres de dependencia
+    await cargarPersonal();
   } catch (e) {
     toast(e.message, 'error');
   } finally {
@@ -459,7 +441,6 @@ onMounted(cargarTodo);
     <div v-else-if="modo === 'personal' && personalFiltrado.length === 0" class="vacio">No hay personal que mostrar.</div>
     <div v-else-if="modo === 'dependencias' && dependenciasFiltradas.length === 0" class="vacio">No hay dependencias que mostrar.</div>
 
-    <!-- Tabla Personal (sin correo ni celular) -->
     <div v-else-if="modo === 'personal'" class="tabla-scroll">
       <table class="tabla">
         <thead>
@@ -536,7 +517,6 @@ onMounted(cargarTodo);
     </template>
   </UiModal>
 
-  <!-- Modal Personal -->
   <UiModal v-if="modalPersonal.abierto" :titulo="modalPersonal.editando ? 'Editar personal' : 'Nuevo personal de apoyo'"
            @cerrar="modalPersonal.abierto = false" ancho="600px">
     <div class="grid2">
@@ -596,7 +576,6 @@ onMounted(cargarTodo);
     </template>
   </UiModal>
 
-  <!-- Aviso cuando el usuario no tiene dependencia asignada -->
   <UiModal v-if="avisoSinDependencia" titulo="⚠️ Sin dependencia asignada"
            @cerrar="avisoSinDependencia = false" ancho="480px">
     <p>No tienes ninguna dependencia asignada.</p>
@@ -607,7 +586,6 @@ onMounted(cargarTodo);
     </template>
   </UiModal>
 
-  <!-- Modal Dependencia -->
   <UiModal v-if="modalDependencia.abierto" :titulo="modalDependencia.editando ? 'Editar dependencia' : 'Nueva dependencia'"
            @cerrar="modalDependencia.abierto = false" ancho="540px">
     <div class="grid2">

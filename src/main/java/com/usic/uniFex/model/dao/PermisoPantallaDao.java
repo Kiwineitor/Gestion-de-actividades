@@ -9,13 +9,6 @@ import jakarta.persistence.Query;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Las pantallas que ve cada rol y cada usuario. Consultas nativas sobre {@code rol_pantalla} y
- * {@code usuario_pantalla} (V49).
- *
- * Sin entidad JPA a proposito: son tablas de dos columnas que solo se leen enteras o se
- * reemplazan enteras, y mapearlas a entidades solo añadiria ceremonia.
- */
 @Repository
 public class PermisoPantallaDao implements IPermisoPantallaDao {
 
@@ -43,7 +36,6 @@ public class PermisoPantallaDao implements IPermisoPantallaDao {
         return q.getResultList();
     }
 
-    /** Las de su rol MAS las suyas propias (V49), sin repetir. */
     @Override
     @SuppressWarnings("unchecked")
     public List<String> pantallasDeUsuario(Long usuarioId) {
@@ -84,7 +76,6 @@ public class PermisoPantallaDao implements IPermisoPantallaDao {
         return q.getResultList();
     }
 
-    /** Nombre legible: su persona, o el login si no tiene. */
     private static final String NOMBRE =
             "coalesce(nullif(btrim(concat_ws(' ', p.nombre, p.paterno, p.materno)), ''), u.username)";
 
@@ -118,8 +109,6 @@ public class PermisoPantallaDao implements IPermisoPantallaDao {
     @Override
     @Transactional
     public void reemplazar(Long rolId, List<String> pantallas, Long adminId) {
-        // Se borra y se vuelve a insertar: la pantalla manda la seleccion final, no un delta.
-        // Dos consultas pase lo que pase, en vez de una por casilla marcada o desmarcada.
         em.createNativeQuery("DELETE FROM rol_pantalla WHERE id_rol = :rol")
                 .setParameter("rol", rolId).executeUpdate();
         for (String p : pantallas) {
@@ -138,7 +127,6 @@ public class PermisoPantallaDao implements IPermisoPantallaDao {
     @Override
     @Transactional
     public void reemplazarDeUsuario(Long usuarioId, List<String> pantallas, Long adminId) {
-        // Igual que por rol: la seleccion final, no un delta.
         em.createNativeQuery("DELETE FROM usuario_pantalla WHERE id_usuario = :usuario")
                 .setParameter("usuario", usuarioId).executeUpdate();
         for (String p : pantallas) {

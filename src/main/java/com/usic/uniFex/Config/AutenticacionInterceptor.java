@@ -9,13 +9,6 @@ import com.usic.uniFex.anotacion.ValidarUsuarioAutenticado;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-/**
- * Hace que la anotacion {@link ValidarUsuarioAutenticado} finalmente proteja algo:
- * si un metodo de controlador la lleva y no hay usuario en sesion, redirige al
- * inicio (login) en vez de dejar que el controlador falle con NullPointerException.
- *
- * Solo afecta al sitio web (sesion). El API movil usa JWT (otra cadena de seguridad).
- */
 @Component
 public class AutenticacionInterceptor implements HandlerInterceptor {
 

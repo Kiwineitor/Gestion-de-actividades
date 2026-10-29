@@ -1,25 +1,9 @@
-/**
- * Convierte un PNG RGBA de colores planos (un plano CAD) a PNG indexado de 256 colores.
- *
- * Por que esto y no WebP ni JPEG:
- *  - JPEG destroza el texto diminuto y las lineas finas del plano, y ademas no habria
- *    ganancia real: el 88,5% de la imagen es blanco puro, que PNG comprime casi gratis.
- *  - En esta maquina no hay ningun codificador WebP (ni cwebp, ni magick, ni .NET).
- *  - El alfa del original es 100% opaco: sobra un canal entero.
- *
- * La imagen conserva su resolucion (1836x2376) porque el plano tiene rotulos de ~8px
- * que se volverian ilegibles al reducir. Lo que se recorta es la profundidad de color:
- * los ~69.000 tonos son antialias alrededor de una treintena de colores reales.
- *
- * Uso: node indexar-png.mjs <entrada.png> <salida.png> [nColores]
- */
 import zlib from 'node:zlib';
 import fs from 'node:fs';
 
 const [entrada, salida, nColoresArg] = process.argv.slice(2);
 const N_COLORES = Number(nColoresArg) || 256;
 
-// ---------------------------------------------------------------- decodificar
 function decodificar(buf) {
   let o = 8, idat = [], W = 0, H = 0, depth = 0, color = 0;
   while (o < buf.length) {
@@ -62,7 +46,6 @@ function decodificar(buf) {
   return { W, H, px, bpp };
 }
 
-// ------------------------------------------------------------------ histograma
 function histograma(px, bpp) {
   const h = new Map();
   for (let i = 0; i < px.length; i += bpp) {
@@ -72,10 +55,6 @@ function histograma(px, bpp) {
   return h;
 }
 
-// ------------------------------------------------------- median cut ponderado
-// Divide repetidamente la caja con mayor volumen*poblacion por su eje mas largo,
-// partiendo por la MEDIANA ponderada (no por el punto medio), que es lo que hace
-// que los tonos raros no se coman entradas de paleta.
 function medianCut(hist, n) {
   const entradas = [...hist.entries()].map(([k, cuenta]) => ({
     r: (k >> 16) & 255, g: (k >> 8) & 255, b: k & 255, cuenta,
@@ -95,7 +74,6 @@ function medianCut(hist, n) {
   let cajas = [{ items: entradas, ...limites(entradas) }];
 
   while (cajas.length < n) {
-    // Elegir la caja mas "cara": rango de color x poblacion.
     let mejor = -1, idx = -1;
     for (let i = 0; i < cajas.length; i++) {
       const c = cajas[i];
@@ -111,9 +89,6 @@ function medianCut(hist, n) {
     const eje = dr >= dg && dr >= db ? 'r' : (dg >= db ? 'g' : 'b');
     c.items.sort((a, b) => a[eje] - b[eje]);
 
-    // Corte por la mediana ponderada. `corte` se restringe a [0, len-2] para que
-    // ambos lados queden no vacios; si la mediana cae en el ultimo item (todos los
-    // colores de la caja pesan casi lo mismo), se parte por la mitad de la lista.
     const mitad = c.pobl / 2;
     let acc = 0, corte = -1;
     for (let i = 0; i < c.items.length - 1; i++) {
@@ -129,7 +104,6 @@ function medianCut(hist, n) {
       { items: der, ...limites(der) });
   }
 
-  // Representante de cada caja: media ponderada por poblacion.
   return cajas.map((c) => {
     let r = 0, g = 0, b = 0, t = 0;
     for (const it of c.items) { r += it.r * it.cuenta; g += it.g * it.cuenta; b += it.b * it.cuenta; t += it.cuenta; }
@@ -137,7 +111,6 @@ function medianCut(hist, n) {
   });
 }
 
-// ------------------------------------------------------------------- codificar
 function trozo(tipo, datos) {
   const len = Buffer.alloc(4); len.writeUInt32BE(datos.length);
   const cuerpo = Buffer.concat([Buffer.from(tipo, 'ascii'), datos]);
@@ -160,7 +133,6 @@ function crc32(buf) {
   return c ^ -1;
 }
 
-// ------------------------------------------------------------------------ main
 const original = fs.readFileSync(entrada);
 const { W, H, px, bpp } = decodificar(original);
 const hist = histograma(px, bpp);
@@ -168,8 +140,6 @@ console.log(`  entrada: ${W}x${H}, ${hist.size.toLocaleString()} colores unicos`
 
 const paleta = medianCut(hist, N_COLORES);
 
-// El color dominante (blanco puro, 88,5%) debe quedar EXACTO: si la media ponderada
-// lo desplaza a #fefefe, todo el fondo del plano cambia de tono de forma visible.
 const dominante = [...hist.entries()].sort((a, b) => b[1] - a[1])[0][0];
 const dom = [(dominante >> 16) & 255, (dominante >> 8) & 255, dominante & 255];
 let iCerca = 0, dCerca = Infinity;
@@ -179,8 +149,6 @@ for (let i = 0; i < paleta.length; i++) {
 }
 paleta[iCerca] = dom;
 
-// Mapear pixeles al indice mas cercano, con cache por color unico.
-// De paso se acumula el error para poder juzgar la calidad con un numero y no a ojo.
 const cache = new Map();
 const indices = Buffer.alloc(W * H);
 let sumaError = 0, errorMax = 0;
@@ -206,8 +174,6 @@ for (let i = 0, j = 0; i < px.length; i += bpp, j++) {
 const rmse = Math.sqrt(sumaError / (W * H * 3));
 console.log(`  error: RMSE ${rmse.toFixed(2)} / 255 · peor pixel ${Math.sqrt(errorMax / 3).toFixed(1)}`);
 
-// Scanlines con filtro por linea: en imagenes indexadas los indices no son
-// numericamente continuos, asi que Ninguno (0) y Sub (1) son los unicos que ayudan.
 function empaquetar(filtro) {
   const out = Buffer.alloc(H * (W + 1));
   for (let y = 0; y < H; y++) {
@@ -227,8 +193,6 @@ ihdr[8] = 8; ihdr[9] = 3; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
 const plte = Buffer.alloc(paleta.length * 3);
 paleta.forEach((c, i) => { plte[i * 3] = c[0]; plte[i * 3 + 1] = c[1]; plte[i * 3 + 2] = c[2]; });
 
-// Se prueban las combinaciones de filtro y estrategia de deflate y se queda la mejor.
-// Z_RLE suele ganar aqui: con 88,5% de blanco la imagen son tiradas largas del mismo indice.
 const ESTRATEGIAS = [
   ['defecto', zlib.constants.Z_DEFAULT_STRATEGY],
   ['filtered', zlib.constants.Z_FILTERED],

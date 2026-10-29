@@ -7,13 +7,6 @@ import java.util.List;
 
 import org.springframework.stereotype.Component;
 
-/**
- * Selecciona el texto de bienvenida enviado después de registrar una venta.
- *
- * <p>Trabaja por rondas: mezcla las diez versiones y usa cada una una sola vez. Cuando
- * comienza otra ronda, evita que la primera sea igual a la última de la ronda anterior.
- * El acceso sincronizado impide repeticiones aunque se registren varias ventas a la vez.</p>
- */
 @Component
 public class MensajesWhatsAppVenta {
 

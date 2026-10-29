@@ -5,12 +5,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * Detalle completo de una inscripcion (venta) para el modulo de Inscripciones:
- * los datos de la entidad, sus responsables, las casetas con su costo congelado,
- * la situacion de pago, los datos de cancelacion (si la hay) y la traza de
- * auditoria del ciclo de vida completo (quien/cuando/desde donde).
- */
 public record InscripcionDetalleDTO(
     Long id,
     String entidad,
@@ -40,34 +34,17 @@ public record InscripcionDetalleDTO(
     List<AuditoriaDetalle> auditoria
 ) {
 
-    /** Un responsable de la entidad. El primero (esTitular) es el dueño de la caseta. */
     public record ResponsableDetalle(String nombreCompleto, String ci, String correo,
                                      String celular, boolean esTitular,
-                                     /**
-                                      * Ruta servida en /files/**, o null si todavia no tiene
-                                      * foto. La necesita quien acredita: mirar la venta sin
-                                      * poder ver lo adjuntado obliga a abrir otra pantalla
-                                      * para comprobar justo lo que se viene a comprobar.
-                                      */
                                      String fotoUrl,
-                                     /**
-                                      * true si esta POR ENCIMA de los dos responsables por
-                                      * caseta: se le cobro aparte (V34). Sin esto, en la ficha
-                                      * no habia forma de distinguir a quien pago de quien
-                                      * entraba por derecho, y el cobro quedaba invisible.
-                                      */
                                      boolean esExtra,
-                                     /** Bs cobrados, congelados el dia del cobro. Null si no es extra. */
                                      BigDecimal montoExtra,
-                                     /** Ruta en /files/** del comprobante de ESE cobro, o null. */
                                      String comprobanteExtraUrl) {
     }
 
-    /** Una caseta vendida, con el precio que se congelo el dia de la venta. */
     public record PuestoDetalle(String codigo, String categoria, BigDecimal costo) {
     }
 
-    /** Un evento de la traza: quien lo hizo, cuando y desde donde. */
     public record AuditoriaDetalle(String accion, String detalle, String usuarioNombre,
                                    String origen, LocalDateTime fecha) {
     }

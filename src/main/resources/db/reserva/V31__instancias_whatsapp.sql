@@ -1,5 +1,3 @@
--- Requiere el esquema base. Aplicar antes de iniciar la nueva version.
--- La configuracion anterior se importa una sola vez al arrancar, si estaba habilitada.
 BEGIN;
 CREATE TABLE IF NOT EXISTS instancia_whatsapp (
     id BIGSERIAL PRIMARY KEY,

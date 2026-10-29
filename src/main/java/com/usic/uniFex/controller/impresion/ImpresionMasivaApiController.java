@@ -1,7 +1,6 @@
 package com.usic.uniFex.controller.impresion;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,23 +21,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * API para impresión masiva de credenciales EXPOSITOR.
- *
- * <h2>Diferencias con /api/app/credenciales</h2>
- * <ul>
- *   <li>Usa plantilla EXPOSITOR (CREDENCIAL_EXPOSITOR.png): foto izq, QR der, tarjetas blancas.</li>
- *   <li>No exige comprobante ni foto: imprime TODOS los expositores de la edición activa.</li>
- *   <li>No filtra por vendedor (salvo si se pasa vendedorId): imprime TODOS.</li>
- * </ul>
- *
- * <h2>Endpoints</h2>
- * <ul>
- *   <li>GET /impresion-masiva          -> lista todas las credenciales de expositores</li>
- *   <li>GET /impresion-masiva/vendedor?{vendedorId} -> filtrado por vendedor</li>
- *   <li>POST /impresion-masiva/pdf    -> PDF duplex 2x2 (4 por hoja oficio, frentes + reversos)</li>
- * </ul>
- */
 @RestController
 @RequestMapping("/api/app/impresion-masiva")
 @RequiredArgsConstructor
@@ -49,7 +31,6 @@ public class ImpresionMasivaApiController {
     private final CredencialPdfService pdfService;
     private final CredencialService credencialService;
 
-    /** Lista todas las credenciales de expositores de la edición activa. */
     @GetMapping
     public List<CredencialDTO> listar(@RequestParam(required = false) Long vendedorId) {
         if (vendedorId != null) {
@@ -58,14 +39,6 @@ public class ImpresionMasivaApiController {
         return impresion.listarTodas();
     }
 
-    /**
-     * PDF duplex con las credenciales en lotes de 4 (10x13 cm, hoja A4 2x2).
-     *
-     * Cada lote ocupa 2 paginas seguidas: los frentes en cuadricula 2x2 y sus reversos
-     * espejados para impresora doble cara por borde largo. Para imprimir de a pocos se
-     * eligen rangos de paginas (cada lote son 2 paginas seguidas); el boton "marcadas"
-     * genera solo esos ids.
-     */
     @PostMapping(value = "/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> pdf(
             @RequestBody(required = false) PeticionPdf req) {
@@ -81,7 +54,6 @@ public class ImpresionMasivaApiController {
                             .getBytes(java.nio.charset.StandardCharsets.UTF_8));
         }
 
-        // Genera codigo QR para cada credencial (usa el mismo servicio que las credenciales normales)
         var conCodigo = credenciales.stream().map(c -> {
             String codigo = credencialService.codigos().codigoDe(c.responsableId());
             return new CredencialDTO(
@@ -94,10 +66,10 @@ public class ImpresionMasivaApiController {
         byte[] pdf = pdfService.generarDuplex4(
                 conCodigo,
                 PlantillaCredencial.actual(PlantillaCredencial.EXPOSITOR),
-                CredencialPdfService.CRED_ANCHO_CM, // 10 cm de ancho
-                CredencialPdfService.CRED_ALTO_CM, // 14,85 cm de alto (llena la A4 a lo alto)
-                "https://fexpo-uapv2.uap.edu.bo/app", // URL base para QR
-                credencialService.codigos()); // CredencialCodigoService para QR
+                CredencialPdfService.CRED_ANCHO_CM,
+                CredencialPdfService.CRED_ALTO_CM,
+                "https://fexpo-uapv2.uap.edu.bo/app",
+                credencialService.codigos());
 
         String nombre = "credenciales-duplex-a4-" + credenciales.size() + ".pdf";
 

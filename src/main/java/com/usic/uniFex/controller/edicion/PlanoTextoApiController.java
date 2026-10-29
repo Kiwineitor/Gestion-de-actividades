@@ -23,13 +23,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Rotulos libres del plano: "ENTRADA", "TARIMA", "ZONA A".
- *
- * LEER lo puede cualquier usuario autenticado —el mapa de un vendedor los tiene que pintar—;
- * ESCRIBIR es del mismo grupo que edita el plano, porque un rotulo mal puesto desorienta a
- * todos los vendedores a la vez.
- */
 @RestController
 @RequestMapping("/api/app/plano-textos")
 @RequiredArgsConstructor

@@ -1,22 +1,15 @@
 HELP.md
 /logs/
 
-# Variables de docker compose con secretos reales (la plantilla es .env.example)
 .env
-# Perfil dev con claves reales (la plantilla es application-dev.properties.example)
 src/main/resources/application-dev.properties
 target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 
-# app.upload-root de application-dev.properties era una ruta Windows ("C:/uniFex/dev/...")
-# que en este equipo Linux se interpretaba como relativa: cualquier subida de archivo creaba
-# un directorio literal "C:" en la raiz del repo. Ya se movio a una ruta Linux real, pero se
-# deja esto como red de seguridad si alguien vuelve a apuntar la propiedad a una ruta con ":".
 C:/
 
-### STS ###
 .apt_generated
 .classpath
 .factorypath
@@ -25,13 +18,11 @@ C:/
 .springBeans
 .sts4-cache
 
-### IntelliJ IDEA ###
 .idea
 *.iws
 *.iml
 *.ipr
 
-### NetBeans ###
 /nbproject/private/
 /nbbuild/
 /dist/
@@ -41,10 +32,8 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
-### VS Code ###
 .vscode/
 
-### Notas de trabajo locales ###
 CLAUDE.md
 AGENTS.md
 PLAN.md

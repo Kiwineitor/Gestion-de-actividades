@@ -19,20 +19,6 @@ import com.usic.uniFex.model.entity.Responsable;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Las fotos de los responsables de una venta: lo que despues va impreso en su credencial.
- *
- * <h2>Por que no hubo que tocar el esquema</h2>
- *
- * La columna {@code persona.foto} ya existe y ya la usa el registro Thymeleaf ({@code /guardar}),
- * que sube las fotos de los dos responsables al bucket {@code responsables/} y guarda la ruta
- * relativa. Lo que faltaba no era donde guardarla, sino poder <b>reunirla despues</b>: en la
- * feria muchas veces no se tiene la foto en el momento de vender —el cliente vuelve con ella,
- * o cambia el ayudante—, y hasta ahora la unica forma de agregarla era rehacer el registro.
- *
- * La foto vive en {@code persona} y no en {@code responsable} porque es la cara de alguien:
- * si esa persona vuelve el anio siguiente o responde por otra entidad, sirve la misma.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -46,7 +32,6 @@ public class ResponsableFotoService {
     public record Resultado(boolean ok, String mensaje, ResponsableFotoDTO responsable) {
     }
 
-    /** Los responsables de la venta, con el estado de su foto. */
     @Transactional(readOnly = true)
     public List<ResponsableFotoDTO> listar(Long inscripcionId) {
         Inscripcion ins = inscripcionDao.findById(inscripcionId).orElse(null);
@@ -56,20 +41,12 @@ public class ResponsableFotoService {
                 .toList();
     }
 
-    /** ¿Estan todas las fotos? Es lo que decide si se puede emitir la credencial. */
     @Transactional(readOnly = true)
     public boolean fotosCompletas(Long inscripcionId) {
         List<ResponsableFotoDTO> rs = listar(inscripcionId);
         return !rs.isEmpty() && rs.stream().allMatch(ResponsableFotoDTO::tieneFoto);
     }
 
-    /**
-     * Guarda o reemplaza la foto de un responsable de esta venta.
-     *
-     * Se exige que el responsable pertenezca a la entidad de la inscripcion indicada: sin esa
-     * comprobacion, cualquiera con una venta propia podria cambiarle la foto al responsable de
-     * otro vendedor pasando su id, porque el permiso se valida sobre la inscripcion.
-     */
     @Transactional
     public Resultado guardar(Long inscripcionId, Long responsableId, MultipartFile archivo, Long usuarioId) {
         if (archivo == null || archivo.isEmpty()) {
@@ -98,11 +75,7 @@ public class ResponsableFotoService {
             return new Resultado(false, "No se pudo guardar la imagen: " + e.getMessage(), null);
         }
 
-        // La anterior NO se borra: si la nueva sale mal (movida, a contraluz), la vieja sigue
-        // en disco. Pesan poco y son una por persona.
         p.setFoto(ruta);
-        // La auditoria de JPA esta apagada en este proyecto: hay que sellar a mano o queda
-        // sin rastro de quien cambio la foto.
         p.setModificacion(new Date());
         p.setModificacionIdUsuario(usuarioId);
         personaDao.save(p);
@@ -112,7 +85,6 @@ public class ResponsableFotoService {
         return new Resultado(true, "Foto guardada", ResponsableFotoDTO.de(r));
     }
 
-    /** Quita la foto. No borra el archivo: solo deja de referenciarlo. */
     @Transactional
     public Resultado quitar(Long inscripcionId, Long responsableId, Long usuarioId) {
         Inscripcion ins = inscripcionDao.findById(inscripcionId).orElse(null);

@@ -113,14 +113,14 @@ onMounted(cargar);
     <UiModal v-if="modal" :titulo="formulario.id ? 'Editar instancia' : 'Nueva instancia'" ancho="580px" @cerrar="cerrar">
       <form id="instancia-whatsapp" class="formulario" @submit.prevent="guardar">
         <label class="campo">Nombre descriptivo
-          <input v-model="formulario.nombre" class="control" required maxlength="120" placeholder="WhatsApp FEXPO" :disabled="guardando" />
+          <input v-model="formulario.nombre" class="control" required maxlength="120" placeholder="WhatsApp principal" :disabled="guardando" />
         </label>
         <label class="campo">URL de la API
           <input v-model="formulario.urlApi" class="control" type="url" required maxlength="500" placeholder="https://servidor/message/" :disabled="guardando" />
           <small class="muted">Dirección base de mensajes, sin sendText ni sendMedia.</small>
         </label>
         <label class="campo">Nombre de instancia en el proveedor
-          <input v-model="formulario.instancia" class="control" required maxlength="200" placeholder="FEXPO UAP V2" :disabled="guardando" />
+          <input v-model="formulario.instancia" class="control" required maxlength="200" placeholder="mi-instancia" :disabled="guardando" />
         </label>
         <label class="campo">Clave API
           <input v-model="formulario.claveApi" class="control" type="password" autocomplete="new-password" :required="!formulario.id" maxlength="500" :disabled="guardando" />

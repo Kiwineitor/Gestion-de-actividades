@@ -1,11 +1,4 @@
 <script setup>
-/**
- * El tablero de Control de ventas: las cifras de la rendición de cuentas y los gráficos.
- *
- * Todos los gráficos son de UNA serie (el acento), como el tablero de dirección: una magnitud
- * por fila no necesita paleta categórica ni leyenda de colores, y así nadie tiene que distinguir
- * dos tonos vecinos. El detalle de cada gráfico está en su pestaña, en tabla.
- */
 import { computed } from 'vue';
 import BarrasHorizontales from '../BarrasHorizontales.vue';
 import BarraProgreso from '../BarraProgreso.vue';
@@ -22,8 +15,6 @@ const n = (v) => Number(v || 0);
 const pctRecaudado = computed(() => (n(r.value.totalVendido) > 0
   ? (n(r.value.totalRecaudado) * 100) / n(r.value.totalVendido) : 0));
 
-/* Lo RECAUDADO por los puestos que vendió cada uno: la pregunta de dirección. Ordenado por lo
-   recaudado, no por lo vendido; vendido y extras están en «Por vendedor». */
 const barrasVendedor = computed(() => (props.tablero.vendedores || [])
   .map((v) => ({ label: v.vendedor || '(sin usuario)', valor: n(v.recaudadoPuestos) }))
   .sort((a, b) => b.valor - a.valor)
@@ -33,7 +24,6 @@ const barrasCategoria = computed(() => (props.tablero.categorias || [])
   .filter((c) => Number(c.vendidoBs) > 0)
   .map((c) => ({ label: `${c.categoria} (${pct(c.porcentajeIngresos)})`, valor: n(c.vendidoBs) })));
 
-/* Rendición y credenciales: cada fila es "cuánto se lleva de lo que corresponde". */
 const rendicionBs = computed(() => [{
   etiqueta: 'Recaudado con comprobante',
   valor: Math.round(n(r.value.totalRecaudado)),
@@ -71,8 +61,6 @@ const puntosAvance = computed(() => (props.tablero.avance || []).map((d) => ({
 
 <template>
   <div class="tablero">
-    <!-- Cifras de cabecera: números sueltos, no gráficos. La primera pesa más porque es la
-         que se busca primero. -->
     <section class="kpis">
       <div class="card kpi principal">
         <span class="rotulo">Total vendido</span>
@@ -158,7 +146,6 @@ const puntosAvance = computed(() => (props.tablero.avance || []).map((d) => ({
 .muted { color: var(--muted); }
 .chico { font-size: 0.82rem; }
 
-/* 160 px: las cinco caben en una fila en un portátil. */
 .kpis { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); }
 .kpi { padding: 1rem; display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
 .rotulo { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
@@ -166,11 +153,8 @@ const puntosAvance = computed(() => (props.tablero.avance || []).map((d) => ({
 .kpi.principal strong.grande { font-size: 1.7rem; color: var(--acento); }
 .moneda { font-size: 0.85rem; font-weight: 600; color: var(--muted); }
 .pie { font-size: 0.78rem; color: var(--muted); }
-/* Ámbar y no rojo: falta un comprobante, no hay una avería. */
 .kpi.alerta { border-left: 3px solid var(--tramite); }
 
-/* 420 px: dos columnas en escritorio, así los cuatro bloques forman un 2x2 sin huecos.
-   Ver Direccion.vue: min(…, 100%) y min-width: 0 evitan que una pista empuje la página de lado. */
 .rejilla { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); }
 .bloque { padding: 1rem; display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
 .bloque.ancho { grid-column: 1 / -1; }

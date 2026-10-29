@@ -4,7 +4,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
-/** Cuerpo del POST público "Quiero exponer" (ver InteresadoStandController). */
 public record InteresadoStandRequest(
         @NotBlank(message = "El nombre completo es obligatorio")
         @Size(max = 200, message = "El nombre completo es demasiado largo")

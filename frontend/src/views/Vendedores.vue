@@ -5,25 +5,17 @@ import { useAuthStore } from '../stores/auth';
 import { toast } from '../ui/toast';
 import UiModal from '../components/UiModal.vue';
 import { useAcademicoStore } from '../stores/academico';
+import { aModulo } from '../modulos';
 
 const auth = useAuthStore();
 const academico = useAcademicoStore();
 const vendedores = ref([]);
 const cargando = ref(false);
-const seccion = ref('vendedores'); // vendedores | facultad
+const seccion = ref('vendedores');
 
-// Filtros de la tabla. El área es el que se pidió ("¿quiénes son los de ACYT?"); el texto
-// acompaña porque una vez recortado a un área siguen siendo doce nombres.
-const filtroArea = ref('');   // '' = todas · 'sin' = los que aún no tienen carrera
+const filtroArea = ref('');
 const filtroTexto = ref('');
 
-/**
- * Los vendedores que se ven, tras el área y el texto.
- *
- * "Sin carrera" es una opción del filtro y no un olvido: al aplicar V35 NADIE tiene carrera
- * todavía, y sin esa opción la única forma de encontrar a quien falta por asignar sería
- * recorrer la lista entera a ojo.
- */
 const vendedoresFiltrados = computed(() => {
   const q = filtroTexto.value.trim().toLowerCase();
   return vendedores.value.filter((v) => {
@@ -35,7 +27,6 @@ const vendedoresFiltrados = computed(() => {
   });
 });
 
-/** Cuántos vendedores hay en cada área, para poder decirlo en el propio filtro. */
 const conteoPorArea = computed(() => {
   const m = new Map();
   for (const v of vendedores.value) {
@@ -45,24 +36,20 @@ const conteoPorArea = computed(() => {
   return m;
 });
 
-// Modales
 const modalPuestos = ref(null);
 const vendedorSel = ref(null);
 const buscando = ref(false);
 
-
-// Puestos: el modal trabaja sobre una copia en memoria y guarda una sola vez.
 const busquedaPuesto = ref('');
-const catalogo = ref([]);           // todas las casetas vivas, con categoria y dueño
-const seleccion = ref(new Set());   // lo que quedara asignado a este vendedor
-const originales = ref(new Set());  // lo que tenia al abrir, para saber que cambio
-const colapsadas = ref(new Set());  // categorias plegadas
-const rangos = ref({});             // texto del cuadro de rango, por categoria
-const soloLibres = ref(false);      // ocultar las que ya lleva algun otro vendedor
+const catalogo = ref([]);
+const seleccion = ref(new Set());
+const originales = ref(new Set());
+const colapsadas = ref(new Set());
+const rangos = ref({});
+const soloLibres = ref(false);
 const cargandoCatalogo = ref(false);
 const guardando = ref(false);
 
-// Asignación masiva por facultad/área: suma casetas a todos los vendedores del área.
 const areaMasiva = ref('');
 const busquedaMasiva = ref('');
 const seleccionMasiva = ref(new Set());
@@ -82,20 +69,6 @@ async function cargarVendedores() {
     cargando.value = false;
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 const barra = ref({ categoria: '', texto: '' });
 const barraMasiva = ref({ categoria: '', texto: '' });
@@ -129,11 +102,6 @@ function abrirPuestos(v) {
   modalPuestos.value = true;
 }
 
-/**
- * Catalogo completo en UNA peticion: cada caseta con su categoria y su dueño actual.
- * Agrupar, filtrar y marcar se hace aqui, en memoria, para que tocar una casilla no cueste
- * un viaje al servidor.
- */
 async function cargarCatalogo(vendedorId) {
   cargandoCatalogo.value = true;
   colapsadas.value = new Set();
@@ -142,7 +110,6 @@ async function cargarCatalogo(vendedorId) {
     const r = await apiFetch('/api/app/vendedores/puestos-asignables');
     if (!r.ok) { toast('No se pudo cargar el catálogo de casetas', 'error'); return; }
     catalogo.value = await r.json();
-    // La seleccion arranca en lo que ya tiene, y a partir de ahi se edita en local.
     seleccion.value = new Set(
       catalogo.value.filter((p) => laLleva(p, vendedorId)).map((p) => p.id),
     );
@@ -155,28 +122,15 @@ async function cargarCatalogo(vendedorId) {
   }
 }
 
-/** ¿La lleva este vendedor? */
 const laLleva = (p, vid) => (p.habilitados || []).some((h) => h.id === vid);
 
-/** Los OTROS vendedores que ya la llevan. Vacio = la lleva solo este, o nadie. */
 const otrosQueLlevan = (p, vid) => (p.habilitados || []).filter((h) => h.id !== vid);
 
-/**
- * Las casetas que no lleva ningun otro vendedor.
- *
- * Es solo un filtro de pantalla para repartir territorios sin pisarse. NO es una restriccion:
- * una caseta que ya lleva otro se puede habilitar igual, y es lo normal cuando varios atienden
- * el mismo sector.
- */
 const sinOtroVendedor = computed(() => {
   const vid = vendedorSel.value?.id;
   return catalogo.value.filter((p) => otrosQueLlevan(p, vid).length === 0);
 });
 
-/**
- * Agrupadas por categoria, que es como se piensan ("dame las PYMES de la 1 a la 20"), no como
- * una lista plana de 119 elementos donde hay que buscar a ojo.
- */
 const grupos = computed(() => {
   const q = busquedaPuesto.value.trim().toLowerCase();
   const vid = vendedorSel.value?.id;
@@ -194,11 +148,7 @@ const grupos = computed(() => {
   return [...porCategoria.values()].map((g) => ({
     ...g,
     elegidas: g.casetas.filter((p) => seleccion.value.has(p.id)).length,
-    // Cuantas de esta categoria lleva ademas otro vendedor. Es informacion, no un impedimento:
-    // se pueden habilitar igual. Sirve para ver de un vistazo donde se esta compartiendo.
     deOtros: catalogo.value.filter((p) => p.categoriaId === g.id && otrosQueLlevan(p, vid).length).length,
-    // Vendidas: siguen siendo asignables a proposito (ver la nota del template), pero el
-    // administrador tiene que saber cuantas de ese grupo ya no se pueden volver a vender.
     vendidas: g.casetas.filter((p) => p.estado === 'O').length,
   }));
 });
@@ -243,13 +193,10 @@ const resumenCambios = computed(() => {
 
 function alternar(p) {
   if (seleccion.value.has(p.id)) {
-    // Quitarle una caseta YA VENDIDA es casi siempre un error: la venta es suya y dejaria de
-    // verla en su mapa. No se prohibe (puede hacer falta al reorganizar territorios), pero se
-    // avisa, porque desde aqui no se ve que esa caseta tiene una venta detras.
     if (p.estado === 'O' && !confirm(`La caseta ${p.codigo} está vendida. Si se la quitas, el vendedor dejará de verla en su mapa. ¿Quitarla igual?`)) return;
     seleccion.value.delete(p.id);
   } else seleccion.value.add(p.id);
-  seleccion.value = new Set(seleccion.value); // dispara la reactividad
+  seleccion.value = new Set(seleccion.value);
 }
 
 function marcarGrupo(grupo, marcar) {
@@ -272,13 +219,6 @@ function alternarColapsoMasivo(id) {
   colapsadasMasiva.value = s;
 }
 
-/**
- * Interpreta lo que se escribe en el cuadro de rango: "1-20", "3,7,12", "1-5, 9, 20-24".
- * Devuelve el conjunto de codigos pedidos, como texto, para casar con `codigo` de la caseta.
- *
- * Se compara por CODIGO y no por posicion en la lista: el codigo es lo que el vendedor ve en
- * el plano y lo que dice en voz alta, y no tiene por que ser correlativo si se anularon casetas.
- */
 function codigosDelRango(texto) {
   const pedidos = new Set();
   for (const parte of (texto || '').split(',')) {
@@ -296,7 +236,6 @@ function codigosDelRango(texto) {
   return pedidos;
 }
 
-/** Aplica el rango escrito a una categoria: marca o desmarca de golpe. */
 function aplicarRango(grupo, marcar) {
   const texto = rangos.value[grupo.id];
   const pedidos = codigosDelRango(texto);
@@ -316,8 +255,6 @@ function aplicarRango(grupo, marcar) {
   rangos.value = { ...rangos.value, [grupo.id]: '' };
 
   if (!tocadas) { toast('Ninguna caseta con esos números en ' + grupo.nombre, 'error'); return; }
-  // Se avisa de las compartidas sin impedirlas: es una decision deliberada del administrador,
-  // pero conviene que sepa que esas casetas las lleva alguien mas.
   const cola = compartidas ? ` (${compartidas} las lleva también otro vendedor)` : '';
   toast(`${marcar ? 'Marcadas' : 'Desmarcadas'} ${tocadas} en ${grupo.nombre}${cola}`, 'ok');
 }
@@ -394,7 +331,6 @@ async function guardarMasivo() {
   }
 }
 
-/** Guarda la seleccion entera de una vez: dos consultas en el servidor, no una por casilla. */
 async function guardarPuestos() {
   if (guardando.value) return;
   guardando.value = true;
@@ -406,7 +342,6 @@ async function guardarPuestos() {
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.ok) { toast(d.mensaje || 'No se pudo guardar', 'error'); return; }
     toast(d.mensaje, d.noDisponibles?.length ? 'error' : 'ok');
-    // Y la tabla de atrás, que es donde se lee el recuento por categoría que acaba de cambiar.
     await Promise.all([cargarCatalogo(vendedorSel.value.id), cargarVendedores()]);
   } catch (e) {
     toast(e.message, 'error');
@@ -421,7 +356,6 @@ function descartarCambios() {
 
 onMounted(async () => {
   await cargarVendedores();
-  // El catálogo solo llena el desplegable del filtro: si falla, la tabla ya está pintada.
   academico.asegurar().catch((e) => toast(e.message, 'error'));
 });
 
@@ -463,11 +397,11 @@ const esAdmin = computed(() => auth.puedeEditarPlano);
 
       <div v-if="cargando" class="cargando">Cargando…</div>
       <div v-else-if="vendedores.length === 0" class="vacio">
-        No hay vendedores registrados. Crea usuarios con rol <strong>ADMINISTRATIVO</strong> desde <router-link to="/usuarios">Usuarios</router-link>.
+        No hay vendedores registrados. Crea usuarios con rol <strong>ADMINISTRATIVO</strong> desde <router-link :to="aModulo('usuarios')">Usuarios</router-link>.
       </div>
       <div v-else-if="vendedoresFiltrados.length === 0" class="vacio">
         Ningún vendedor con ese filtro. La carrera se asigna en la ficha de la persona, desde
-        <router-link to="/personas">Personas</router-link>.
+        <router-link :to="aModulo('personas')">Personas</router-link>.
       </div>
       <div v-else class="tabla-scroll">
         <table class="tabla">
@@ -606,8 +540,6 @@ const esAdmin = computed(() => auth.puedeEditarPlano);
     </section>
   </div>
 
-
-  <!-- Modal Puestos: agrupado por categoría, con rangos y guardado en lote -->
   <UiModal
     v-if="modalPuestos"
     :titulo="'Casetas de ' + (vendedorSel?.username || '')"
@@ -678,8 +610,6 @@ const esAdmin = computed(() => auth.puedeEditarPlano);
                 : (p.estado === 'O' ? 'Vendida' : 'Libre')"
               @click="alternar(p)">
               {{ p.codigo }}
-              <!-- El punto avisa de que esa caseta la lleva alguien mas. No la bloquea: solo
-                   evita compartirla sin darse cuenta. -->
               <span v-if="otrosQueLlevan(p, vendedorSel?.id).length" class="punto-compartida">•</span>
             </button>
           </div>
@@ -771,19 +701,16 @@ const esAdmin = computed(() => auth.puedeEditarPlano);
 .fila-busqueda { margin-bottom: 0.8rem; }
 .cuerpo-modal { max-height: 60vh; overflow-y: auto; }
 
-/* ---- Modal de casetas: rejilla agrupada por categoria ---- */
 .barra-puestos { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
 .barra-puestos .control { flex: 1; min-width: 250px; padding: 0.6rem 0.8rem; }
 .check-otros { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; color: var(--muted); white-space: nowrap; }
 .ayuda { font-size: 0.85rem; margin: 1rem 0; line-height: 1.4; }
 
-/* ELIMINADO EL MAX-HEIGHT Y OVERFLOW AQUÍ PARA EVITAR DOBLE SCROLL */
 .cuerpo-modal { max-height: 75vh; overflow-y: auto; padding-right: 0.5rem; }
 .grupos { display: flex; flex-direction: column; gap: 0.8rem; padding-bottom: 1rem; }
 
 .grupo { border: 1px solid var(--border); border-radius: var(--radio-sm); overflow: hidden; }
 
-/* Mejora de espaciado en la cabecera */
 .cab-grupo {
   display: flex; align-items: center; gap: 0.8rem; padding: 0.8rem 1rem;
   background: var(--panel-2); cursor: pointer; flex-wrap: wrap;
@@ -791,16 +718,13 @@ const esAdmin = computed(() => auth.puedeEditarPlano);
 .flecha { width: 1rem; color: var(--muted); font-weight: bold; }
 .de-otros { font-size: 0.8rem; }
 
-/* CLASE CLAVE QUE FALTABA PARA EMPUJAR LOS BOTONES A LA DERECHA */
 .crecer { flex-grow: 1; min-width: 1rem; }
 
 .acciones-grupo { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; cursor: default; }
 .control-rango { width: 100px; padding: 0.4rem 0.5rem; font-size: 0.85rem; text-align: center; }
 
-/* Cuadrícula más grande y con más espacio */
 .rejilla {
   display: grid; 
-  /* Aumentamos de 52px a 70px para que los números respiren */
   grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
   gap: 0.5rem; 
   padding: 1rem;
@@ -815,8 +739,6 @@ const esAdmin = computed(() => auth.puedeEditarPlano);
 }
 .caseta:hover:not(:disabled) { border-color: var(--acento); transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
 .caseta.elegida { background: var(--acento); border-color: var(--acento); color: var(--acento-texto); }
-/* Compartida: se puede elegir igual, asi que NADA de tacharla ni de bajarle la opacidad como
-   cuando estaba prohibida. Solo un punto que avisa de que la lleva alguien mas. */
 .caseta.compartida { position: relative; }
 .caseta .punto-compartida {
   position: absolute; top: 1px; right: 3px;

@@ -18,21 +18,10 @@ import org.springframework.test.context.ActiveProfiles;
 import com.usic.uniFex.model.dao.IInscripcionDao;
 import com.usic.uniFex.model.dao.IPuestoDao;
 import com.usic.uniFex.model.dto.SolicitudCancelacionDTO;
-import com.usic.uniFex.model.entity.Inscripcion;
 import com.usic.uniFex.model.entity.Puesto;
 import com.usic.uniFex.model.service.RegistroVentaService;
 import com.usic.uniFex.model.service.SolicitudCancelacionService;
 
-/**
- * Flujo de solicitud de cancelacion (V11), contra la copia LOCAL (perfil dev).
- *
- * Lo que se protege: el vendedor solo puede pedir con motivo y una sola solicitud
- * pendiente a la vez; administracion decide (aprobar o rechazar, con respuesta
- * obligatoria al rechazar) y cada decision deja huella de auditoria. El estado de
- * la solicitud se ve en la cola del admin y en "mis solicitudes" del vendedor.
- *
- * Ejecutar:  mvnw.cmd test "-Dtest=SolicitudCancelacionTest"
- */
 @SpringBootTest
 @ActiveProfiles("dev")
 class SolicitudCancelacionTest {
@@ -140,7 +129,6 @@ class SolicitudCancelacionTest {
 
         assertThat(r.ok()).as(r.mensaje()).isTrue();
 
-        // Aparece en la cola del admin, con la venta y quien la pidio.
         SolicitudCancelacionDTO s = pendienteDe(id);
         assertThat(s).isNotNull();
         assertThat(s.estado()).isEqualTo("PENDIENTE");
@@ -148,10 +136,8 @@ class SolicitudCancelacionTest {
         assertThat(s.vendedor()).isNotBlank();
         assertThat(s.entidad()).isEqualTo(NOMBRE_PRUEBA);
 
-        // Y en "mis solicitudes" del vendedor.
         assertThat(solicitudes.delVendedor(1L)).anyMatch(x -> x.id().equals(s.id()));
 
-        // Huella: registro + solicitud.
         assertThat(auditoria("SOLICITUD_CANCELACION", id)).isEqualTo(1);
     }
 
@@ -184,10 +170,8 @@ class SolicitudCancelacionTest {
         Long id = venderUnaVenta();
         Long solicitudId = solicitudes.solicitar(id, "Quiero cancelar", 1L, "WEB").solicitudId();
 
-        // Rechazo sin respuesta: no procede.
         assertThat(solicitudes.rechazar(solicitudId, "  ", 2L, "WEB").ok()).isFalse();
 
-        // Rechazo con respuesta: la solicitud queda rechazada con el motivo del admin.
         assertThat(solicitudes.rechazar(solicitudId, "El comprobante no se pudo verificar", 2L, "WEB").ok()).isTrue();
         SolicitudCancelacionDTO s = solicitudes.resueltas().stream()
                 .filter(x -> x.id().equals(solicitudId)).findFirst().orElseThrow();
@@ -196,10 +180,8 @@ class SolicitudCancelacionTest {
         assertThat(s.resueltoPor()).isNotBlank();
         assertThat(auditoria("RECHAZO_CANCELACION", id)).isEqualTo(1);
 
-        // Rechazar dos veces: la segunda ya no pilla una pendiente.
         assertThat(solicitudes.rechazar(solicitudId, "Otra vez", 2L, "WEB").ok()).isFalse();
 
-        // Tras el rechazo el vendedor puede volver a pedir (la cola vuelve a tener una).
         assertThat(solicitudes.solicitar(id, "Reintento", 1L, "WEB").ok()).isTrue();
         assertThat(pendienteDe(id)).isNotNull();
     }
@@ -211,17 +193,14 @@ class SolicitudCancelacionTest {
 
         assertThat(solicitudes.aprobar(solicitudId, 2L, "WEB").ok()).isTrue();
 
-        // Sale de la cola y entra en resueltas como APROBADA.
         assertThat(pendienteDe(id)).isNull();
         SolicitudCancelacionDTO s = solicitudes.resueltas().stream()
                 .filter(x -> x.id().equals(solicitudId)).findFirst().orElseThrow();
         assertThat(s.estado()).isEqualTo("APROBADA");
         assertThat(auditoria("APROBACION_CANCELACION", id)).isEqualTo(1);
 
-        // Aprobar dos veces: la segunda no pilla una pendiente.
         assertThat(solicitudes.aprobar(solicitudId, 2L, "WEB").ok()).isFalse();
 
-        // La venta sigue intacta hasta que alguien ejecute la cancelacion.
         assertThat(inscripcionDao.findById(id).orElseThrow().getEstado()).isNotEqualTo("X");
         for (Puesto p : libres) {
             assertThat(puestoDao.findById(p.getId()).orElseThrow().getEstadoPuesto())
@@ -233,14 +212,11 @@ class SolicitudCancelacionTest {
     void elEstadoDeVentaReflejaLoQueVeElVendedor() {
         Long id = venderUnaVenta();
 
-        // Nunca se solicito: null.
         assertThat(solicitudes.estadoDeVenta(id)).isNull();
 
-        // Pendiente: en espera.
         solicitudes.solicitar(id, "Desistio", 1L, "WEB");
         assertThat(solicitudes.estadoDeVenta(id).estado()).isEqualTo("PENDIENTE");
 
-        // Aprobada: habilitado para cancelar.
         Long solicitudId = solicitudes.pendientes().stream()
                 .filter(s -> s.inscripcionId().equals(id)).findFirst().orElseThrow().id();
         solicitudes.aprobar(solicitudId, 2L, "WEB");

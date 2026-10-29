@@ -17,25 +17,21 @@ public class EntidadServiceImpl implements IEntidadService{
 
     @Override
     public List<Entidad> findAll() {
-        // TODO Auto-generated method stub
         return entidadDao.findAll();
     }
 
     @Override
     public Entidad findById(Long idEntidad) {
-        // TODO Auto-generated method stub
         return entidadDao.findById(idEntidad).orElse(null);
     }
 
     @Override
     public Entidad save(Entidad entidad) {
-        // TODO Auto-generated method stub
         return entidadDao.save(entidad);
     }
 
     @Override
     public void deleteById(Long idEntidad) {
-        // TODO Auto-generated method stub
         entidadDao.deleteById(idEntidad);
     }
 }

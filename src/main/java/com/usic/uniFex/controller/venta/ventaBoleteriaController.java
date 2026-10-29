@@ -23,7 +23,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 
-
 @Controller
 @RequiredArgsConstructor
 public class ventaBoleteriaController {
@@ -53,7 +52,6 @@ public class ventaBoleteriaController {
 
         Usuario usuario = (Usuario) request.getSession().getAttribute("usuario");
 
-        // 1) Persona: buscar por CI; si no existe, crear
         Persona persona = personaService.findFirstByCi(ci).orElseGet(Persona::new);
         persona.setNombre(nombre != null ? nombre.trim() : null);
         persona.setPaterno(paterno != null ? paterno.trim() : null);
@@ -62,17 +60,14 @@ public class ventaBoleteriaController {
         persona.setCelular(celular != null ? celular.trim() : null);
         persona.setRegistroIdUsuario(usuario.getId());
 
-        // Si agregaste el campo:
         try {
             persona.setEstado("CLIENTE");
-        } catch (Exception ignored) { /* si no existe el campo, no pasa nada */ }
+        } catch (Exception ignored) { }
 
         persona = personaService.save(persona);
 
-        // 2) Categoría + precio real desde BD
         CategoriaVenta cat = categoriaVentaService.findById(categoriaId);
 
-        // Parseo precio (String -> BigDecimal) o usa cat.getPrecio() si es BigDecimal
         BigDecimal unit;
         try {
             unit = new BigDecimal(cat.getPrecio());
@@ -83,7 +78,6 @@ public class ventaBoleteriaController {
         int qty = (cantidad == null || cantidad < 1) ? 1 : Math.min(cantidad, 50);
         BigDecimal total = unit.multiply(BigDecimal.valueOf(qty));
 
-        // 3) Guardar venta
         VentaBoleto v = new VentaBoleto();
         v.setPersona(persona);
         v.setCategoria(cat);
@@ -96,7 +90,6 @@ public class ventaBoleteriaController {
 
         ventaBoletoService.save(v);
 
-        // 4) Feedback y redirección
         ra.addFlashAttribute("ok", true);
         ra.addFlashAttribute("ventaId", v.getId());
         ra.addFlashAttribute("cliente", persona.getNombreCompleto());
@@ -104,6 +97,6 @@ public class ventaBoleteriaController {
         ra.addFlashAttribute("cantidad", qty);
         ra.addFlashAttribute("total", total);
 
-        return "redirect:/venta"; // crea una vista simple de éxito
+        return "redirect:/venta";
     }
 }

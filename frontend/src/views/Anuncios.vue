@@ -1,14 +1,4 @@
 <script setup>
-/**
- * Publicar anuncios para todos los usuarios.
- *
- * Lo que se publica aqui aparece **al instante** en la pantalla de todos los que tengan la
- * aplicacion abierta, estén donde estén —mapa, registro de venta, credenciales—, como una
- * tarjeta arriba a la derecha que no les tapa el trabajo. Quien entre despues lo recibe al abrir.
- *
- * El aviso de "esto lo van a ver todos" esta a la vista a proposito: un anuncio no se puede
- * "deshacer" en la cabeza de nadie, solo retirar de la pantalla.
- */
 import { ref, reactive, computed, onMounted } from 'vue';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
@@ -27,7 +17,6 @@ const NIVELES = [
   { v: 'urgente', txt: '🚨 Urgente', desc: 'Hay que verlo ya.' },
 ];
 
-/** Duraciones en minutos. "Sin límite" = hasta que alguien lo retire a mano. */
 const DURACIONES = [
   { v: 30, txt: '30 minutos' },
   { v: 120, txt: '2 horas' },
@@ -83,8 +72,6 @@ async function publicar() {
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { await aviso(d.mensaje || 'No se pudo publicar', 'error', 0); return; }
-    // Se aplica tambien aqui: quien publica tiene que ver su propio anuncio salir, igual que
-    // los demas. Es la confirmacion de que de verdad se envio.
     tienda.aplicar(d);
     form.titulo = '';
     form.mensaje = '';
@@ -157,7 +144,6 @@ async function retirar(a) {
       <select v-model="form.minutos" class="control">
         <option v-for="d in DURACIONES" :key="String(d.v)" :value="d.v">{{ d.txt }}</option>
       </select>
-      <!-- Lo que vence solo es lo que no hay que acordarse de retirar. -->
       <span class="muted chico">
         Pasado ese tiempo deja de verse solo. Con «sin límite» hay que retirarlo a mano.
       </span>

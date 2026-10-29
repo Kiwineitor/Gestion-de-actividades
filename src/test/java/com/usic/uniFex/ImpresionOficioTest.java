@@ -1,7 +1,6 @@
 package com.usic.uniFex;
 
 import static org.assertj.core.api.Assertions.*;
-import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -37,7 +36,6 @@ class ImpresionOficioTest {
                 "14, 15, 16", 1L, true, false, false, null, null, false, null);
     }
 
-    /** Origen del hueco i (0: arriba-izq, 1: arriba-der, 2: abajo-izq, 3: abajo-der). */
     private static float[] hueco(int i) {
         return new float[]{X0 + (i % 2) * CRED_W, i < 2 ? Y0 + CRED_H : Y0};
     }
@@ -56,7 +54,6 @@ class ImpresionOficioTest {
                 assertThat(hoja.getWidth()).isCloseTo(ANCHO, within(.02f));
                 assertThat(hoja.getHeight()).isCloseTo(ALTO, within(.02f));
             }
-            // Pagina 1: los frentes en cuadricula 2x2, cada uno de 10x14,85.
             var frente = leer(lector, 1);
             var fondos = frente.imagenes.stream()
                     .filter(m -> m.get(Matrix.I11) > 0 && Math.abs(m.get(Matrix.I11) - CRED_W) < .02f)
@@ -71,14 +68,12 @@ class ImpresionOficioTest {
             for (TextRenderInfo texto : frente.textos) {
                 assertThat(fondos.stream().anyMatch(fondo -> enUnaCaja(texto, fondo))).isTrue();
             }
-            // Pagina 2: los reversos espejados en X (columna contraria, misma fila) para que
-            // el duplex por borde largo deje cada reverso detras de su frente.
             var dorso = leer(lector, 2);
             var reversos = dorso.imagenes.stream()
                     .filter(m -> m.get(Matrix.I11) > CRED_W + .5f)
                     .toList();
             assertThat(reversos).hasSize(cantidad);
-            assertThat(dorso.textos).isEmpty(); // el reverso es la imagen fija
+            assertThat(dorso.textos).isEmpty();
             for (int i = 0; i < cantidad; i++) {
                 Matrix fondo = fondos.get(i), reverso = reversos.get(i);
                 assertThat(reverso.get(Matrix.I22)).isCloseTo(CRED_H, within(.02f));
@@ -99,7 +94,6 @@ class ImpresionOficioTest {
                 "https://ejemplo.test", codigos);
         PdfReader lector = new PdfReader(contenido);
         try {
-            // 5 credenciales = lote de 4 (pags 1-2) + lote de 1 (pags 3-4).
             assertThat(lector.getNumberOfPages()).isEqualTo(4);
             var fondos1 = leer(lector, 1).imagenes.stream()
                     .filter(m -> m.get(Matrix.I11) > 0 && Math.abs(m.get(Matrix.I11) - CRED_W) < .02f)
@@ -109,7 +103,6 @@ class ImpresionOficioTest {
                     .toList();
             assertThat(fondos1).hasSize(4);
             assertThat(fondos3).hasSize(1);
-            // El lote incompleto ocupa el primer hueco (arriba-izq) y su reverso el espejo.
             float[] h = hueco(0);
             assertThat(fondos3.get(0).get(Matrix.I31)).isCloseTo(h[0], within(.02f));
             assertThat(fondos3.get(0).get(Matrix.I32)).isCloseTo(h[1], within(.02f));
@@ -175,7 +168,6 @@ class ImpresionOficioTest {
         var lector = new PdfReader(contenido);
         try {
             assertThat(lector.getNumberOfPages()).isEqualTo(2);
-            // Pagina 1: 2 fondos + 2 QR + 1 foto (la rota se salta).
             assertThat(leer(lector, 1).imagenes).hasSize(5);
         } finally { lector.close(); }
         Files.write(Path.of("target/credenciales-oficio-foto.pdf"), contenido);

@@ -5,13 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.junit.jupiter.api.Test;
 
-/**
- * El codigo de expositor une las compras del mismo negocio (cada venta crea su propia entidad).
- *
- * Sin Spring ni base: es una funcion pura, y los casos salen de valores REALES de
- * {@code entidad.nit} en la base ("00000", "S/N", "NO TIENE", "11111111"...). Si esos rellenos
- * contaran como NIT, decenas de negocios distintos quedarian unidos en un solo expositor.
- */
 class ControlVentasCodigoExpositorTest {
 
     private static String[] codigo(Long id, String nit, String ci) {
@@ -32,7 +25,6 @@ class ControlVentasCodigoExpositorTest {
 
     @Test
     void elMismoNumeroComoNitOComoCiEsElMismoExpositor() {
-        // Muchos expositores pequeños ponen su C.I. como NIT: las dos compras deben unirse.
         String comoNit = codigo(1L, "4214822", null)[0];
         String comoCi = codigo(2L, "S/N", "4214822")[0];
         assertEquals("EXP-4214822", comoNit);

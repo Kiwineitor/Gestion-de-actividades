@@ -19,9 +19,9 @@
     function cargarTabla() {
         $.ajax({
             type: 'POST',
-            url: "/administracion/inscripcion/resumen/tabla-categorias",  // Ruta del metodo del controlador en Spring Boot
+            url: "/administracion/inscripcion/resumen/tabla-categorias",
             success: function (response) {
-                $("#tablaRegistro").html(response);  // Actualiza el contenido del div con la respuesta del servidor
+                $("#tablaRegistro").html(response);
             }
         });
     }
@@ -29,9 +29,9 @@
     function cargarTabla1() {
         $.ajax({
             type: 'POST',
-            url: "/administracion/inscripcion/resumen/tabla-entidades",  // Ruta del metodo del controlador en Spring Boot
+            url: "/administracion/inscripcion/resumen/tabla-entidades",
             success: function (response) {
-                $("#tablaRegistro1").html(response);  // Actualiza el contenido del div con la respuesta del servidor
+                $("#tablaRegistro1").html(response);
             }
         });
     }

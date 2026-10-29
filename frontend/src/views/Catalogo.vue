@@ -3,11 +3,15 @@ import { computed, onMounted, ref } from 'vue';
 import { apiFetch } from '../api';
 import { descargarPdf } from '../ui/descargas';
 import { toast } from '../ui/toast';
+import { useActividadStore } from '../stores/actividad';
+
+const actividad = useActividadStore();
+actividad.asegurar();
 
 const cargando = ref(true);
 const categorias = ref([]);
 const busqueda = ref('');
-const seccion = ref('tarjetas'); // tarjetas | tabla
+const seccion = ref('tarjetas');
 
 const visibles = computed(() => {
   const q = busqueda.value.trim().toLowerCase();
@@ -57,7 +61,7 @@ onMounted(cargar);
   <div class="catalogo">
     <section class="hero card">
       <div>
-        <span class="eyebrow">Catalogo FEXPO UAP</span>
+        <span class="eyebrow">Catálogo · {{ actividad.actual?.nombre || 'actividad actual' }}</span>
         <h2>Categorias, subcategorias y precios</h2>
         <p>Consulta rapida de las categorias disponibles y sus opciones de precio por caseta.</p>
       </div>

@@ -6,8 +6,9 @@ import { useRouter } from 'vue-router';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
 import { useAcademicoStore } from '../stores/academico';
+import { aModulo } from '../modulos';
 
-const PASSWORD_MIN = 8; // igual que GestionUsuarioService.PASSWORD_MIN
+const PASSWORD_MIN = 8;
 
 const usuarios = ref([]);
 const roles = ref([]);
@@ -16,12 +17,8 @@ const filtro = ref('');
 const filtroRol = ref('');
 const filtroEstado = ref('');
 const guardando = ref(false);
-// Una operacion de fila por vez; evita dobles clicks en acciones de fila y contraseña.
 const ocupado = ref(false);
 
-// Alta y edicion. `modoPersona` decide de donde sale la persona: 'buscar' la elige de las que
-// ya existen, 'nueva' la crea en el mismo guardado. Es lo que evita tener que ir al modulo de
-// Personas, crearla, volver aqui y buscarla para dar de alta a un vendedor.
 const modal = reactive({
   abierto: false, editando: null, username: '', password: '', verPassword: false,
   rolId: null, modoPersona: 'buscar', personaId: null, personaTexto: '',
@@ -49,7 +46,7 @@ function accionesDe(u) {
   return [
     { txt: 'Editar usuario', accion: () => abrirEditar(u) },
     { txt: 'Cambiar contraseña', accion: () => abrirPassword(u) },
-    { txt: 'Ver permisos', accion: () => router.push({ path: '/permisos', query: { usuario: u.id } }) },
+    { txt: 'Ver permisos', accion: () => router.push(aModulo('permisos', { usuario: u.id })) },
     { txt: u.estado === 'ACTIVO' ? 'Desactivar' : 'Activar', accion: () => alternarEstado(u) },
     { separador: true },
     { txt: 'Eliminar usuario', peligro: true, accion: () => eliminar(u) },
@@ -74,11 +71,10 @@ async function cargar() {
   }
 }
 
-// ---- buscador de persona ----
 let debounce;
 function buscarPersona() {
   clearTimeout(debounce);
-  modal.personaId = null; // al escribir, se deselecciona hasta elegir de la lista
+  modal.personaId = null;
   buscandoPersonas.value = true;
   debounce = setTimeout(async () => {
     try {
@@ -92,17 +88,12 @@ function buscarPersona() {
   }, 250);
 }
 function elegirPersona(p) {
-  if (p.tieneUsuario) return; // ya tiene login: una persona, un usuario
+  if (p.tieneUsuario) return;
   modal.personaId = p.id;
   modal.personaTexto = `${p.nombre}${p.ci ? ` · ${p.ci}` : ''}`;
   personasSugeridas.value = [];
 }
 
-/**
- * El C.I. ya registrado se avisa ANTES de guardar. No es un lujo: los responsables de entidad
- * viven en la misma tabla con otro `_estado`, así que no salen en el buscador de arriba pero sí
- * ocupan el C.I., y el alta fallaría con un "ya existe" sin decir quién es.
- */
 async function comprobarCi() {
   const ci = modal.nueva.ci.trim();
   modal.ciExistente = null;
@@ -111,7 +102,7 @@ async function comprobarCi() {
     const r = await apiFetch(`/api/app/usuarios/personas/por-ci?ci=${encodeURIComponent(ci)}`);
     const d = await r.json();
     if (d.existe) modal.ciExistente = d.persona;
-  } catch { /* sin conexion: el guardado lo volvera a comprobar en el servidor */ }
+  } catch { }
 }
 function usarPersonaDelCi() {
   const p = modal.ciExistente;
@@ -127,8 +118,6 @@ function usarPersonaDelCi() {
   personasSugeridas.value = [];
 }
 
-// ---- contraseña ----
-// Sin ambiguos (O/0, l/1): estas claves se dictan por teléfono al vendedor.
 const ALFABETO = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
 function generarPassword() {
   const azar = new Uint32Array(12);
@@ -153,7 +142,6 @@ async function copiar(texto) {
   }
 }
 
-// ---- crear / editar ----
 function abrirCrear() {
   Object.assign(modal, {
     abierto: true, editando: null, username: '', password: '', verPassword: false,
@@ -206,7 +194,6 @@ async function guardar() {
           password: modal.password,
           rolId: modal.rolId,
           personaId: creaPersona ? null : modal.personaId,
-          // '' es "sin carrera": el <select> devuelve texto y el backend espera un id o null.
           persona: creaPersona ? { ...modal.nueva, carreraId: modal.nueva.carreraId || null } : null,
         };
     const r = await apiFetch(url, { method: metodo, body: JSON.stringify(body) });
@@ -222,7 +209,6 @@ async function guardar() {
   }
 }
 
-// ---- contraseña de un usuario existente ----
 function abrirPassword(u) {
   Object.assign(modalPass, { abierto: true, id: u.id, username: u.username, nueva: '', confirmar: '', ver: false });
 }
@@ -246,7 +232,6 @@ async function guardarPassword() {
   }
 }
 
-// ---- estado / eliminar ----
 async function alternarEstado(u) {
   if (ocupado.value) return;
   const activar = u.estado !== 'ACTIVO';
@@ -280,7 +265,6 @@ async function eliminar(u) {
 
 onMounted(() => {
   cargar();
-  // El catalogo no bloquea la tabla: si falla, lo unico que queda vacio es el desplegable.
   academico.asegurar().catch((e) => toast(e.message, 'error'));
 });
 </script>
@@ -331,7 +315,6 @@ onMounted(() => {
     </div>
   </div>
 
-  <!-- Crear / editar -->
   <UiModal v-if="modal.abierto" :titulo="modal.editando ? 'Editar usuario' : 'Nuevo usuario'"
            @cerrar="modal.abierto = false" ancho="600px">
     <div class="grid2">
@@ -363,7 +346,6 @@ onMounted(() => {
       <span class="muted pista">Mínimo {{ PASSWORD_MIN }} caracteres. Genérala y cópiala para dictarla.</span>
     </div>
 
-    <!-- Persona: elegir una que ya existe, o crearla aquí mismo -->
     <div class="campo">
       <span>Persona *</span>
       <div v-if="!modal.editando" class="pestanas">
@@ -402,7 +384,6 @@ onMounted(() => {
           <label class="campo"><span>Apellido materno</span><input v-model="modal.nueva.materno" class="control" /></label>
           <label class="campo"><span>Correo</span><input v-model="modal.nueva.correo" type="email" class="control" /></label>
           <label class="campo"><span>Celular</span><input v-model="modal.nueva.celular" class="control" /></label>
-          <!-- Agrupado por area: de ella sale el area con la que se filtra el modulo de Vendedores. -->
           <label class="campo campo-ancho">
             <span>Carrera</span>
             <select v-model="modal.nueva.carreraId" class="control">
@@ -428,7 +409,6 @@ onMounted(() => {
     </template>
   </UiModal>
 
-  <!-- Contraseña -->
   <UiModal v-if="modalPass.abierto" :titulo="`Contraseña de ${modalPass.username}`"
            @cerrar="modalPass.abierto = false" ancho="420px">
     <div class="campo">
@@ -471,7 +451,6 @@ onMounted(() => {
 .card { overflow: visible; }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
-/* La carrera ocupa la fila entera: los nombres son largos y a media columna se cortan. */
 .campo-ancho { grid-column: 1 / -1; }
 @media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } }
 
@@ -489,7 +468,6 @@ onMounted(() => {
 }
 .sugerencias li { padding: 0.5rem 0.6rem; border-radius: var(--radio-sm); cursor: pointer; font-size: 0.9rem; }
 .sugerencias li:hover { background: var(--panel-2); }
-/* Una persona que ya tiene login no es elegible: se ve, pero no responde al clic. */
 .sugerencias li.ocupada { opacity: 0.55; cursor: not-allowed; }
 .sello { margin-left: 0.4rem; }
 </style>

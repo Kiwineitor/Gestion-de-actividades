@@ -6,19 +6,12 @@ import { toast } from '../ui/toast';
 import { alerta } from '../ui/alerta';
 import { descargarPdf } from '../ui/descargas';
 
-/*
- * Credenciales del personal de apoyo. Vista solo de administracion (el servidor exige
- * ADMINISTRA): agrupa TODAS las fichas activas por dependencia e imprime sus credenciales
- * 10x15 con QR. A diferencia de expositores no hay "aptas/no aptas": el apoyo no exige
- * comprobante ni foto, asi que todo lo activo sale.
- */
 const cargando = ref(true);
 const busqueda = ref('');
 const generando = ref(false);
 const fichas = ref([]);
 const seleccion = ref(new Set());
 const abiertas = ref(new Set());
-/** Fotos que la base dice tener pero que no estan en disco: se marcan una vez. */
 const rotas = ref(new Set());
 
 async function cargar() {
@@ -34,7 +27,6 @@ async function cargar() {
   }
 }
 
-/** Las fichas, AGRUPADAS POR DEPENDENCIA: asi se imprimen, por unidades. */
 const porDependencia = computed(() => {
   const q = busqueda.value.trim().toLowerCase();
   const m = new Map();
@@ -71,10 +63,6 @@ function alternarGrupo(g) {
   abiertas.value = s;
 }
 
-/*
- * Lanza la impresion duplex 4-up A4. `ids` vacio = TODO el personal activo (el servidor lo resuelve).
- * 4 credenciales por cara (2x2), reversos espejados para imprimir a doble cara por borde largo.
- */
 async function imprimir(ids, etiqueta) {
   if (generando.value) return;
   generando.value = true;
@@ -102,7 +90,6 @@ function imprimirTodas() {
 
 onMounted(async () => {
   await cargar();
-  // Todo abierto al entrar: es una lista para recorrer, no un acordeon que esconder.
   abiertas.value = new Set(porDependencia.value.map((g) => g.id));
 });
 </script>

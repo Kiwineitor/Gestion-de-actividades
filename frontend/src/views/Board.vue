@@ -8,12 +8,9 @@ import { toast } from '../ui/toast';
 
 const auth = useAuthStore();
 const router = useRouter();
-// Casetas y tiempo real compartidos con el Mapa y el Editor (ver stores/puestos.js).
 const tienda = usePuestosStore();
 const puestos = computed(() => tienda.puestos);
 const cargando = computed(() => tienda.cargando);
-// Ids con peticion en vuelo: evita el doble clic sobre la misma caseta sin congelar
-// el resto del tablero.
 const enPeticion = ref(new Set());
 
 const porCategoria = computed(() => {
@@ -34,26 +31,20 @@ const resumen = computed(() => {
 
 const clase = { L: 'libre', T: 'tramite', O: 'ocupado', X: 'bloqueado' };
 
-/** ¿La reserva en tramite de esta caseta es de quien esta mirando? */
 const esMia = (p) => p.estado === 'T' && p.reservadoPor != null && p.reservadoPor === auth.id;
 
-/** De las 'T', cuantas son propias: la leyenda separa las mias (azul) de las ajenas. */
 const mias = computed(() => puestos.value.filter(esMia).length);
 
 async function clickPuesto(p) {
-  // Igual que en el Mapa: solo se bloquea la caseta tocada, no el tablero entero.
   if (enPeticion.value.has(p.id)) return;
 
-  // Una caseta en tramite de otro vendedor no se toca: intentarlo solo producia un
-  // parpadeo (verde un instante) y un 409.
   if (p.estado === 'T' && !esMia(p)) {
     toast(`Caseta ${p.codigo}: la tiene reservada otro vendedor`, 'info');
     return;
   }
   const accion = p.estado === 'L' ? 'reservar' : esMia(p) ? 'liberar' : null;
-  if (!accion) return; // ocupado o bloqueado: no se toca
+  if (!accion) return;
 
-  // Se pinta antes de salir a la red; si el servidor rechaza, se revierte.
   const estadoPrevio = p.estado;
   const reservadoPrevio = p.reservadoPor ?? null;
   tienda.aplicar(accion === 'reservar'
@@ -80,15 +71,11 @@ async function clickPuesto(p) {
   }
 }
 
-/** El WebSocket rechazo el token: sin tiempo real el tablero miente, asi que salimos. */
 function sesionCaducada() {
   auth.logout();
-  router.push('/login');
+  router.push('/admin');
 }
 
-// No se desconecta al desmontar: la conexion es compartida y la cierra AppLayout al
-// salir de la sesion. Esta vista vive en <KeepAlive>, donde onUnmounted no se dispara
-// al navegar — ahi estaba la fuga de conexiones.
 onMounted(() => tienda.asegurar(sesionCaducada));
 </script>
 
@@ -107,7 +94,6 @@ onMounted(() => tienda.asegurar(sesionCaducada));
     <section v-for="grupo in porCategoria" :key="grupo.categoria" class="grupo">
       <h2>{{ grupo.categoria }} <span class="muted">({{ grupo.items.length }})</span></h2>
       <div class="grid">
-        <!-- v-memo: cambiar una caseta no debe repintar las 520 del tablero. -->
         <button
           v-for="p in grupo.items"
           :key="p.id"
@@ -144,7 +130,5 @@ header {
 }
 .celda:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .celda.ocupado, .celda.bloqueado, .celda.tramite { cursor: default; }
-/* La reserva propia ya sale azul (.mia, en style.css); el borde marca ademas que es la
-   unica en tramite que uno puede tocar. */
 .celda.tramite.mia { cursor: pointer; outline: 2px solid var(--text); outline-offset: -2px; }
 </style>

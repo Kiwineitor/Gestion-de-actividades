@@ -39,15 +39,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * API REST de puestos para la SPA/app movil (Fase 2). Protegida por JWT: el usuario
- * se toma del token (SecurityContext), no de la sesion. Cada escritura exitosa
- * difunde el nuevo estado por WebSocket para actualizar el mapa en vivo.
- *
- * Vender (reservar/liberar/confirmar) lo puede hacer cualquier usuario autenticado —los 35
- * vendedores tienen rol ADMINISTRATIVO—. Rediseñar el plano (posiciones, alta y baja de
- * casetas) es solo de la administracion: ver {@link Roles#EDITA_PLANO}.
- */
 @RestController
 @RequestMapping("/api/app/puestos")
 @RequiredArgsConstructor
@@ -61,18 +52,6 @@ public class PuestoApiController {
     private final VendedorAsignacionService vendedorAsignacionService;
     private final PuestoOcupacionService ocupacionService;
 
-    /**
-     * Estado de TODAS las casetas no anuladas (opcionalmente filtrado por categoria).
-     *
-     * Antes, a un vendedor se le devolvian solo las suyas. Se quito el filtro a proposito: un
-     * cliente se planta delante de una caseta que no le toca a ese vendedor y, con el mapa
-     * recortado, no habia ni como decirle "esa la lleva fulano, este es su telefono" — ni
-     * siquiera se veia. Ahora salen todas; las ajenas se pintan en gris y su ficha da el
-     * contacto del companiero (ver {@link #asignaciones()}).
-     *
-     * Lo que NO cambia es quien puede venderlas: eso se comprueba en cada escritura
-     * ({@link #vetoPorAsignacion}), que es donde de verdad importa.
-     */
     @GetMapping
     public List<PuestoEstadoDTO> listar(@RequestParam(value = "categoriaId", required = false) Long categoriaId) {
         if (usuarioActual() == null) return List.of();
@@ -83,42 +62,15 @@ public class PuestoApiController {
                 .toList();
     }
 
-    /**
-     * Quien responde por cada caseta, con su telefono.
-     *
-     * Va aparte del listado, y no como un campo mas de PuestoEstadoDTO, por dos razones: ese
-     * DTO se difunde entero por WebSocket en CADA cambio de estado —meterle el nombre y el
-     * telefono del vendedor multiplicaria el trafico de algo que casi nunca cambia—, y las
-     * asignaciones se tocan desde otra pantalla, con su propio ritmo. Mismo patron que
-     * {@link #idsConFoto()}.
-     */
     @GetMapping("/asignaciones")
     public List<AsignacionPuestoDTO> asignaciones() {
         return usuarioActual() == null ? List.of() : vendedorAsignacionService.asignacionesConVendedor();
     }
 
-    /**
-     * Quien TIENE cada caseta no libre: el que la esta registrando y el que ya la vendio.
-     *
-     * No es lo mismo que {@link #asignaciones()} y conviene no confundirlos: habilitado es
-     * quien PUEDE venderla, y pueden ser varios; esto es quien se la LLEVO, que es uno solo.
-     * Una caseta puede estar habilitada a tres vendedores y vendida por el que la reservo
-     * primero.
-     *
-     * Va aparte de {@code PuestoEstadoDTO} por lo mismo que las asignaciones —el nombre y el
-     * telefono de una persona no caben en un mensaje que se difunde en cada movimiento del
-     * plano— y ademas porque la mitad "vendida" ni siquiera esta en la caseta: hay que ir a
-     * buscarla a la inscripcion (ver {@code findOcupacionConVendedor}).
-     *
-     * Lo ve cualquier autenticado, igual que el contacto del companiero: el vendedor esta
-     * delante del cliente y "ya esta vendida" a secas no le sirve para responder nada.
-     */
     @GetMapping("/ocupacion")
     public List<OcupacionPuestoDTO> ocupacion() {
         return usuarioActual() == null ? List.of() : ocupacionService.ocupacionConVendedor();
     }
-
-    // ===== Venta: cualquier usuario autenticado =====
 
     @PostMapping("/{id}/reservar")
     public ResponseEntity<Map<String, Object>> reservar(@PathVariable Long id) {
@@ -140,19 +92,9 @@ public class PuestoApiController {
         return respuesta(ok, ok ? "Reserva liberada" : "No tienes esta caseta reservada");
     }
 
-    // ===== Carrito: varias casetas para una misma venta =====
-
-    /** Ids de casetas de una operacion en lote. */
     public record LotePuestos(List<Long> ids) {
     }
 
-    /**
-     * Las casetas que este vendedor tiene en tramite: su carrito.
-     *
-     * No hace falta guardarlo en ningun sitio aparte — el carrito **es** la reserva. Asi
-     * sobrevive a cerrar el movil o a un corte de señal, y no aparece en los listados ni en
-     * los reportes, que solo cuentan casetas ya vendidas.
-     */
     @GetMapping("/mi-carrito")
     public ResponseEntity<Map<String, Object>> miCarrito() {
         Long usuarioId = usuarioActual();
@@ -172,36 +114,16 @@ public class PuestoApiController {
         return ResponseEntity.ok(cuerpo);
     }
 
-    /**
-     * Suma varias casetas al carrito. Devuelve 200 aunque alguna se rechace: el vendedor
-     * necesita quedarse con las que si consiguio y ver cuales perdio, no perderlo todo.
-     * El campo {@code rechazadas} es el que hay que mirar.
-     */
     @PostMapping("/carrito")
     public ResponseEntity<Map<String, Object>> agregarAlCarrito(@RequestBody LotePuestos req) {
         return operarCarrito(req, true);
     }
 
-    /** Quita varias casetas del carrito y las devuelve a libres. */
     @DeleteMapping("/carrito")
     public ResponseEntity<Map<String, Object>> quitarDelCarrito(@RequestBody LotePuestos req) {
         return operarCarrito(req, false);
     }
 
-    /**
-     * ¿Quien pide es un vendedor? Decide si se le filtran las casetas por asignacion.
-     * Administracion no se filtra nunca: vende y edita cualquier caseta del plano.
-     */
-    /**
-     * Corta a un vendedor que intente tocar una caseta que no tiene asignada.
-     *
-     * Esta comprobacion NO es nueva en el sistema, pero si en estos dos endpoints: hasta ahora
-     * bastaba con que el listado le ocultara las ajenas, asi que reservar y confirmar iban sin
-     * guardia. Al ensenarle el mapa entero, esa proteccion por omision desaparece y la regla
-     * tiene que estar donde se escribe. El carrito y el registro de la venta ya la tenian.
-     *
-     * @return la respuesta 409 que hay que devolver, o null si puede seguir.
-     */
     private ResponseEntity<Map<String, Object>> vetoPorAsignacion(Long usuarioId, Long puestoId) {
         if (!esVendedor() || vendedorAsignacionService.puedeVender(usuarioId, puestoId)) return null;
         return ResponseEntity.status(409).body(Map.<String, Object>of(
@@ -222,11 +144,6 @@ public class PuestoApiController {
                     .body(Map.of("ok", false, "mensaje", "No se indico ninguna caseta"));
         }
 
-        // Un vendedor no reserva lo que no tiene asignado. Se comprueba AQUI, en el servidor, y no
-        // solo escondiendo casetas en el mapa: la peticion lleva ids y un cliente puede mandar
-        // cualquiera. Solo se filtra al AGREGAR; soltar una caseta propia siempre se permite,
-        // porque si no una asignacion retirada a media venta dejaria la caseta bloqueada en 'T'
-        // hasta que venciera sola.
         List<Long> ids = req.ids();
         List<Long> noPermitidas = List.of();
         if (agregar && esVendedor()) {
@@ -249,7 +166,6 @@ public class PuestoApiController {
                 ? reservaService.agregarAlCarrito(ids, usuarioId)
                 : reservaService.quitarDelCarrito(ids, usuarioId);
 
-        // Solo se difunde lo que de verdad cambio de estado.
         publisher.publicarVarios(r.logradas());
 
         Map<String, Object> cuerpo = new LinkedHashMap<>();
@@ -266,36 +182,16 @@ public class PuestoApiController {
         return ResponseEntity.ok(cuerpo);
     }
 
-    // ===== Fotos de la caseta =====
-
-    /**
-     * Fotos de una caseta. Las ve cualquier vendedor: es lo que le enseña al cliente.
-     */
     @GetMapping("/{id}/fotos")
     public List<PuestoFotoDTO> fotos(@PathVariable Long id) {
         return fotoService.fotosDe(id).stream().map(PuestoFotoDTO::de).toList();
     }
 
-    /**
-     * Ids de las casetas que tienen alguna foto.
-     *
-     * Se pide de una vez, y no caseta por caseta, porque el mapa dibuja ~500 a la vez: una
-     * consulta por pin seria N+1 puro. Con esto el mapa marca cuales se pueden enseñar.
-     */
     @GetMapping("/con-foto")
     public List<Long> idsConFoto() {
         return fotoService.idsConFoto();
     }
 
-    /**
-     * Sube una foto y la asocia a una o varias casetas (multipart).
-     *
-     * Admitir varias es lo que hace la funcionalidad viable: en una feria hay filas de
-     * casetas identicas, y subir la misma imagen 40 veces no lo hace nadie. El archivo se
-     * guarda una sola vez y las casetas comparten la ruta.
-     *
-     * Es del Editor, o sea administracion: colocar y documentar el plano es trabajo de montaje.
-     */
     @PostMapping(value = "/fotos", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize(Roles.EDITA_PLANO)
     public ResponseEntity<Map<String, Object>> subirFoto(
@@ -319,7 +215,6 @@ public class PuestoApiController {
         return respuesta(ok, ok ? "Foto eliminada" : "La foto no existe");
     }
 
-    /** Referencia en texto de donde esta la caseta ("frente a la puerta 3"). */
     public record ReferenciaRequest(String referencia) {
     }
 
@@ -386,13 +281,6 @@ public class PuestoApiController {
         return respuesta(ok, ok ? "Venta confirmada" : "No se pudo confirmar (reserva no vigente)");
     }
 
-    // ===== Editor del plano: solo administracion =====
-
-    /**
-     * Guarda un lote de posiciones y escalas. Una posicion con {@code x}/{@code y} nulos quita
-     * la caseta del plano sin borrarla. Difunde cada caseta que cambio: mover una caseta altera
-     * lo que ven todos los mapas abiertos.
-     */
     @PostMapping("/posiciones")
     @PreAuthorize(Roles.EDITA_PLANO)
     public ResponseEntity<Map<String, Object>> guardarPosiciones(
@@ -402,7 +290,6 @@ public class PuestoApiController {
         return ResponseEntity.ok(Map.<String, Object>of("ok", true, "guardadas", cambiados.size()));
     }
 
-    /** Alta de una caseta suelta dentro de una categoria. */
     @PostMapping
     @PreAuthorize(Roles.EDITA_PLANO)
     public ResponseEntity<Map<String, Object>> crear(@RequestBody NuevaCaseta req) {
@@ -414,30 +301,17 @@ public class PuestoApiController {
         return ResponseEntity.ok(Map.<String, Object>of("ok", true, "id", p.getId()));
     }
 
-    /**
-     * Baja logica de una caseta. Solo si esta libre y no arrastra ventas; si no, 409.
-     * No se borra la fila: inscripcion_puesto la referencia y hay casetas anuladas con historial.
-     */
     @DeleteMapping("/{id}")
     @PreAuthorize(Roles.EDITA_PLANO)
     public ResponseEntity<Map<String, Object>> anular(@PathVariable Long id) {
         boolean ok = mapaService.anular(id, usuarioActual());
-        if (ok) publisher.publicar(id); // llega con activo=false: los clientes la quitan del mapa
+        if (ok) publisher.publicar(id);
         return respuesta(ok, ok ? "Caseta eliminada" : "Solo se puede eliminar una caseta libre y sin ventas");
     }
 
     public record NuevaCaseta(Long categoriaId, String codigo, String tamano) {
     }
 
-    /**
-     * Renumera un grupo de casetas de una vez: el editor manda los numeros ya calculados en
-     * el orden en que se leen sobre el plano.
-     *
-     * Va como lote y no caseta por caseta porque renumerar es una permutacion: mandar los
-     * cambios sueltos obligaria a pasar por estados con numeros repetidos y cualquier fallo a
-     * medias dejaria el plano incoherente. El servicio valida el conjunto entero y, si algo
-     * choca, no escribe nada y esto responde 409.
-     */
     @PatchMapping("/codigos")
     @PreAuthorize(Roles.EDITA_PLANO)
     public ResponseEntity<Map<String, Object>> renumerar(
@@ -446,29 +320,11 @@ public class PuestoApiController {
         if (usuarioId == null) return noAutenticado();
 
         PuestoMapaService.ResultadoRenumeracion r = mapaService.renumerar(cambios, usuarioId);
-        // El numero rotula la caseta en TODOS los mapas abiertos, asi que se difunde igual
-        // que un cambio de estado: el cliente no vuelve a pedir la lista.
         if (r.ok()) publisher.publicarVarios(r.cambiados());
         return ResponseEntity.status(r.ok() ? 200 : 409).body(Map.<String, Object>of(
                 "ok", r.ok(), "mensaje", r.mensaje(), "cambiados", r.cambiados().size()));
     }
 
-    /**
-     * Pone el precio propio de un grupo de casetas (V37).
-     *
-     * El caso: se crea la categoria con su precio, se colocan todas sus casetas, y despues
-     * algunas valen distinto. Sin esto, la unica forma de cambiarle el precio a una era
-     * cambiarselo a la categoria entera, es decir, a todas.
-     *
-     * Va en lote porque asi se usa —se repasan las casetas de una categoria de una sentada— y
-     * porque la pantalla de Puestos ya guarda la numeracion del mismo modo.
-     *
-     * Un {@code precio} nulo devuelve la caseta al precio de su categoria. Es una orden, no un
-     * campo que falte: quien quita un precio especial quiere exactamente eso.
-     *
-     * Difunde, igual que el numero: el precio se lee en el mapa y en el carrito de todos los
-     * vendedores, y sin difundirlo seguirian vendiendo al importe viejo hasta recargar.
-     */
     @PatchMapping("/precios")
     @PreAuthorize(Roles.EDITA_PLANO)
     public ResponseEntity<Map<String, Object>> actualizarPrecios(
@@ -482,11 +338,6 @@ public class PuestoApiController {
                 "ok", r.ok(), "mensaje", r.mensaje(), "cambiados", r.cambiados().size()));
     }
 
-    /**
-     * Bloqueo por reparacion (LIBRE -> BLOQUEADO). No es una anulacion: la caseta sigue activa
-     * y se ve gris en el mapa, pero no se puede reservar, liberar ni confirmar. Solo se bloquea
-     * una caseta libre: nunca roba una reserva en curso (T) ni una venta (O).
-     */
     @PostMapping("/{id}/bloquear")
     @PreAuthorize(Roles.EDITA_PLANO)
     public ResponseEntity<Map<String, Object>> bloquear(@PathVariable Long id) {
@@ -495,10 +346,6 @@ public class PuestoApiController {
         return respuesta(ok, ok ? "Caseta bloqueada (reparacion)" : "Solo se bloquea una caseta libre");
     }
 
-    /**
-     * Desbloquea (BLOQUEADO -> LIBRE). Nunca reactiva una caseta anulada: el servicio y el
-     * UPDATE condicional rechazan esa vuelta.
-     */
     @PostMapping("/{id}/desbloquear")
     @PreAuthorize(Roles.EDITA_PLANO)
     public ResponseEntity<Map<String, Object>> desbloquear(@PathVariable Long id) {
@@ -506,8 +353,6 @@ public class PuestoApiController {
         if (ok) publisher.publicar(id);
         return respuesta(ok, ok ? "Caseta desbloqueada" : "La caseta no esta bloqueada o esta anulada");
     }
-
-    // ===== helpers =====
 
     private Long usuarioActual() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();

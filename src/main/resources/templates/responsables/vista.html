@@ -2,7 +2,6 @@
 
 <div id="tablaRegistro"></div>
 
-<!-- Modal: Registrar Responsable -->
 <div class="modal fade" id="modalFormularioResponsable" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
@@ -20,7 +19,6 @@
                 <div class="modal-body">
 
                     <div class="row g-3">
-                        <!-- Entidad -->
                         <div class="col-12 col-md-6">
                             <label class="form-label" for="selEntidad">Entidad</label>
                             <select id="selEntidad" name="idEntidad" class="form-select" required>
@@ -34,7 +32,6 @@
                             <hr class="my-2" />
                         </div>
 
-                        <!-- Datos Persona -->
                         <div class="col-sm-4">
                             <label class="form-label" for="inpNombre">Nombres</label>
                             <input type="text" id="inpNombre" name="nombre" class="form-control text-capitalize"
@@ -73,20 +70,18 @@
                             <div class="invalid-feedback">Ingrese un celular válido.</div>
                         </div>
 
-                        <!-- Foto -->
                         <div class="col-sm-6">
                             <label class="form-label" for="inpFoto">Foto (opcional)</label>
                             <input type="file" id="inpFoto" name="foto" class="form-control" accept="image/*" />
                             <small class="text-muted">Formatos: .jpg, .png. Tamaño razonable.</small>
 
-                            <!-- Preview -->
                             <div id="fotoPreviewWrap" class="mt-2 d-none">
                                 <img id="fotoPreview" alt="Preview" class="img-thumbnail" style="max-height: 180px;">
                             </div>
                         </div>
 
-                    </div><!-- /.row -->
-                </div><!-- /.modal-body -->
+                    </div>
+                </div>
 
                 <div class="modal-footer">
                     <button type="submit" class="btn btn-primary" id="btnGuardar">
@@ -102,18 +97,13 @@
     </div>
 </div>
 
-
 <script>
 
-
     $(document).ready(function () {
-        // Carga tabla al inicio
         cargarTabla();
 
-        // Envío multipart (con archivo) usando FormData
         manejarEnvioFormulario('#formResponsable');
 
-        // Preview de foto + validación de tamaño (opcional: 3 MB)
         $('#inpFoto').on('change', function (e) {
             const file = e.target.files?.[0];
             if (!file) {
@@ -135,7 +125,6 @@
             reader.readAsDataURL(file);
         });
 
-        // (Opcional) Select con búsqueda: requiere Select2 y dropdownParent
         if ($.fn.select2) {
             $('#selEntidad').select2({
                 width: '100%',
@@ -145,7 +134,6 @@
             });
         }
     });
-
 
     function cargarTabla() {
         $.ajax({
@@ -170,17 +158,15 @@
             $('#spGuardar').removeClass('d-none');
             $('#btnGuardar').prop('disabled', true);
 
-            // Construir FormData para incluir archivos
             const formData = new FormData(form);
 
             $.ajax({
                 type: form.getAttribute("method") || "POST",
                 url: form.getAttribute("action"),
                 data: formData,
-                processData: false,      // **clave** para multipart
-                contentType: false,      // **clave** para multipart
+                processData: false,
+                contentType: false,
                 success: function (resp) {
-                    // Tu código original compara con "OK", así que unificamos:
                     if ((typeof resp === 'string' && resp.trim() === "Se realizó el registro correctamente") || (resp && resp.ok === true)) {
                         $('#modalFormularioResponsable').modal('hide');
                         cargarTabla();

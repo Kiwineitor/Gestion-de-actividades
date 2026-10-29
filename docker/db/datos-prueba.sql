@@ -1,42 +1,13 @@
--- =============================================================================
--- Datos de PRUEBA para levantar UniFex en Docker y simular una feria de punta a punta.
---
--- Lo aplica docker/db/init/20-datos-prueba.sh UNA sola vez, al crear el volumen de la
--- base, y solo si CARGAR_DATOS_PRUEBA=true. Corre DESPUES del esquema (V0..V49) y ANTES
--- de que arranque Java. NUNCA contra produccion: inventa personas, ventas y contrasenas.
---
--- Que deja listo:
---   * 8 categorias con color/forma/precio y 2 opciones de precio cada una
---   * 196 casetas sobre el plano de ejemplo (frontend/public/mapa.png), libres,
---     menos 2 bloqueadas y las vendidas de abajo
---   * catalogo academico: carreras dentro de ACEF / ACBN / ACYT (las areas las crea V47)
---   * 5 tipos de entidad
---   * 4 usuarios de prueba, uno por rol de trabajo (admin1 y admin2 los crea Java al
---     arrancar, con ADMIN1_PASSWORD / ADMIN2_PASSWORD):
---         vendedor1 / vendedor2  ADMINISTRATIVO   contrasena: Fexpo2026
---         control1               CONTROL          contrasena: Fexpo2026
---         asesoria1              ASESORIA         contrasena: Fexpo2026
---   * casetas habilitadas a cada vendedor (algunas compartidas, como permite V32)
---   * pantallas por rol (rol_pantalla), alineadas con lo que el backend autoriza
---   * 3 ventas de ejemplo "por rendir" (sin comprobante adjunto), para que los tableros
---     no arranquen vacios y para practicar el rendido adjuntando el comprobante
---
--- Las contrasenas se guardan con BCrypt via pgcrypto (crypt + gen_salt('bf')): el
--- BCryptPasswordEncoder de Spring acepta esos hashes $2a$ tal cual.
--- =============================================================================
-
 BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 
--- ------------------------------------------------------------------ tipos de entidad
 INSERT INTO tipo_entidad (nombre, _estado, _fecha_registro, _fecha_modificacion)
 SELECT v.nombre, 'ACTIVO', now(), now()
   FROM (VALUES ('EMPRESA PRIVADA'), ('INSTITUCION PUBLICA'), ('EMPRENDEDOR'),
                ('UNIDAD ACADEMICA UAP'), ('ORGANIZACION SOCIAL / ONG')) AS v(nombre)
  WHERE NOT EXISTS (SELECT 1 FROM tipo_entidad t WHERE t.nombre = v.nombre);
 
--- ------------------------------------------------------------------ categorias
 INSERT INTO categoria (nombre, descripcion, color, forma, precio_base, tamano_mapa,
                        _estado, _fecha_registro, _fecha_modificacion)
 SELECT v.nombre, v.descripcion, v.color, v.forma, v.precio, 0.014, 'A', now(), now()
@@ -52,8 +23,6 @@ SELECT v.nombre, v.descripcion, v.color, v.forma, v.precio, 0.014, 'A', now(), n
        ) AS v(nombre, descripcion, color, forma, precio)
  WHERE NOT EXISTS (SELECT 1 FROM categoria c WHERE c.nombre = v.nombre);
 
--- Dos opciones de precio por categoria: la estandar (predeterminada, al precio base) y una
--- con energia electrica (+20 %). Exactamente una predeterminada viva por categoria (V47).
 INSERT INTO categoria_opcion (id_categoria, nombre, precio, predeterminada, orden,
                               _estado, _fecha_registro, _fecha_modificacion)
 SELECT c.id, o.nombre, round(c.precio_base * o.factor, 2), o.pred, o.orden, 'A', now(), now()
@@ -63,10 +32,6 @@ SELECT c.id, o.nombre, round(c.precio_base * o.factor, 2), o.pred, o.orden, 'A',
  WHERE c._estado <> 'X'
    AND NOT EXISTS (SELECT 1 FROM categoria_opcion x WHERE x.id_categoria = c.id AND x.nombre = o.nombre);
 
--- ------------------------------------------------------------------ casetas
--- (zona del plano, x, y) normalizados 0..1 sobre mapa.png: el centro de cada lote dibujado.
--- Las genera el mismo programa que dibuja el plano, asi que coinciden. Cada zona va entera a una
--- categoria; el codigo es correlativo y NUMERICO, porque fn_lista_puestos hace codigo::integer.
 CREATE TEMP TABLE _punto (orden serial, seccion int, x double precision, y double precision);
 INSERT INTO _punto (seccion, x, y) VALUES
   (0, 0.1300, 0.2350),
@@ -281,11 +246,8 @@ SELECT p.orden::text, '3x3', c.id, 'L', p.x, p.y, 1, 0, 'A', now(), now()
  WHERE NOT EXISTS (SELECT 1 FROM puesto x WHERE x.codigo = p.orden::text)
  ORDER BY p.orden;
 
--- Dos casetas bloqueadas "por reparacion" (solo estado_puesto: siguen vivas y se pueden
--- desbloquear desde el editor), para ver ese estado en el mapa.
 UPDATE puesto SET estado_puesto = 'X' WHERE codigo IN ('120', '121') AND estado_puesto = 'L';
 
--- ------------------------------------------------------------------ catalogo academico
 INSERT INTO carrera (id_area, nombre, _estado, _fecha_registro, _fecha_modificacion)
 SELECT a.id, v.nombre, 'A', now(), now()
   FROM (VALUES
@@ -296,7 +258,6 @@ SELECT a.id, v.nombre, 'A', now(), now()
   JOIN area a ON a.sigla = v.sigla AND a._estado <> 'X'
  WHERE NOT EXISTS (SELECT 1 FROM carrera c WHERE c.nombre = v.nombre);
 
--- ------------------------------------------------------------------ usuarios de prueba
 INSERT INTO persona (nombre, paterno, materno, ci, correo, celular, id_carrera,
                      _estado, _fecha_registro, _fecha_modificacion)
 SELECT v.nombre, v.paterno, v.materno, v.ci, v.correo, v.celular,
@@ -321,13 +282,9 @@ SELECT v.username, crypt('Fexpo2026', gen_salt('bf', 10)),
        ) AS v(username, ci, rol)
  WHERE NOT EXISTS (SELECT 1 FROM usuario u WHERE u.username = v.username);
 
--- La asesora monitorea la facultad ACYT (Seguimiento por facultad, V41).
 UPDATE usuario SET id_area_seguimiento = (SELECT id FROM area WHERE sigla = 'ACYT')
  WHERE username = 'asesoria1' AND id_area_seguimiento IS NULL;
 
--- ------------------------------------------------------------------ casetas por vendedor
--- Un vendedor solo vende las casetas que tiene habilitadas (V23). COMIDA se comparte
--- entre los dos (V32); ARTESANIAS es solo de vendedor1; MYPES y EMPRESAS solo de vendedor2.
 INSERT INTO vendedor_puesto (id_usuario, id_puesto, _fecha_registro)
 SELECT u.id, p.id, now()
   FROM (VALUES ('vendedor1', 'COMIDA'), ('vendedor1', 'ARTESANIAS'),
@@ -337,13 +294,9 @@ SELECT u.id, p.id, now()
   JOIN puesto p    ON p.id_categoria = c.id AND p._estado <> 'X'
 ON CONFLICT DO NOTHING;
 
--- ------------------------------------------------------------------ pantallas por rol
--- SUPER USUARIO no figura: lo ve todo siempre (PermisoPantallaService.loVeTodo).
--- Cada pantalla dada aqui esta autorizada tambien en el backend para ese rol (security/Roles).
 INSERT INTO rol_pantalla (id_rol, pantalla)
 SELECT r.id, v.pantalla
   FROM (VALUES
-        -- Administracion de la feria: todo menos mantenimiento (queda para SUPER USUARIO)
         ('ADMINISTRADOR', 'inicio'), ('ADMINISTRADOR', 'mapa'), ('ADMINISTRADOR', 'venta'),
         ('ADMINISTRADOR', 'mis-ventas'), ('ADMINISTRADOR', 'catalogo'), ('ADMINISTRADOR', 'tablero'),
         ('ADMINISTRADOR', 'editor'), ('ADMINISTRADOR', 'categorias'), ('ADMINISTRADOR', 'puestos'),
@@ -357,15 +310,12 @@ SELECT r.id, v.pantalla
         ('ADMINISTRADOR', 'escaner'), ('ADMINISTRADOR', 'control-acceso'), ('ADMINISTRADOR', 'usuarios'),
         ('ADMINISTRADOR', 'roles'), ('ADMINISTRADOR', 'permisos'), ('ADMINISTRADOR', 'personas'),
         ('ADMINISTRADOR', 'personal-apoyo'), ('ADMINISTRADOR', 'notificaciones'),
-        -- Vendedor: vende, ve lo suyo y saca las credenciales de sus ventas
         ('ADMINISTRATIVO', 'inicio'), ('ADMINISTRATIVO', 'mapa'), ('ADMINISTRATIVO', 'venta'),
         ('ADMINISTRATIVO', 'mis-ventas'), ('ADMINISTRATIVO', 'catalogo'),
         ('ADMINISTRATIVO', 'inscripciones'), ('ADMINISTRATIVO', 'credenciales'),
         ('ADMINISTRATIVO', 'notificaciones'),
-        -- Puerta: escanea credenciales y registra entradas/salidas
         ('CONTROL', 'inicio'), ('CONTROL', 'escaner'), ('CONTROL', 'control-acceso'),
         ('CONTROL', 'notificaciones'),
-        -- Asesoria: consulta, sin modificar
         ('ASESORIA', 'inicio'), ('ASESORIA', 'catalogo'), ('ASESORIA', 'tablero'),
         ('ASESORIA', 'inscripciones'), ('ASESORIA', 'control-ventas'),
         ('ASESORIA', 'seguimiento-facultad'), ('ASESORIA', 'notificaciones')
@@ -373,11 +323,6 @@ SELECT r.id, v.pantalla
   JOIN rol r ON r.nombre = v.rol
 ON CONFLICT DO NOTHING;
 
--- ------------------------------------------------------------------ ventas de ejemplo
--- Replican lo que escribe RegistroVentaService: entidad -> personas/responsables ->
--- inscripcion (edicion activa, registrada por el vendedor) -> inscripcion_puesto con el
--- costo congelado y la opcion predeterminada -> caseta en 'O'. Sin img_comprobante: quedan
--- "por rendir" en Control de ventas hasta que alguien adjunte el comprobante desde la ficha.
 CREATE TEMP TABLE _venta (n int, vendedor text, tipo text, entidad text, nit text,
                           representante text, ci_rep text, celular text, contado boolean,
                           banco text, comprobante text, casetas text[], hace interval);
@@ -418,7 +363,6 @@ BEGIN
                 v_fecha, v_vendedor, v_fecha, v_vendedor)
         RETURNING id INTO v_entidad;
 
-        -- Responsables: el representante (titular) y un ayudante, dos por caseta como maximo.
         FOR i IN 1..2 LOOP
             INSERT INTO persona (nombre, paterno, materno, ci, celular, _estado,
                                  _fecha_registro, _registro_id_usuario, _fecha_modificacion, _modificacion_id_usuario)
@@ -457,5 +401,11 @@ BEGIN
         END LOOP;
     END LOOP;
 END $$;
+
+UPDATE categoria
+   SET id_edicion = (SELECT id FROM edicion WHERE activa ORDER BY anio DESC, id DESC LIMIT 1)
+ WHERE id_edicion IS NULL;
+
+UPDATE edicion SET nombre = 'Feria de ejemplo ' || anio WHERE nombre ILIKE 'FEXPO%';
 
 COMMIT;

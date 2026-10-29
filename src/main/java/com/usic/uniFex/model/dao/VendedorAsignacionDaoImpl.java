@@ -10,22 +10,11 @@ import org.springframework.stereotype.Repository;
 
 import com.usic.uniFex.model.entity.Puesto;
 
-/**
- * Implementación personalizada para asignaciones de vendedores.
- * NO es un JpaRepository: usa EntityManager directamente para evitar
- * el escaneo de Spring Data JPA. La tabla vendedor_puesto no tiene entidad JPA propia.
- */
 @Repository
 public class VendedorAsignacionDaoImpl implements IVendedorAsignacionDao {
 
     @PersistenceContext
     private EntityManager em;
-
-
-
-
-
-
 
     @Override
     public void asignarPuesto(Long usuarioId, Long puestoId, Long adminId) {
@@ -46,7 +35,6 @@ public class VendedorAsignacionDaoImpl implements IVendedorAsignacionDao {
         q.executeUpdate();
     }
 
-
     @Override
     @SuppressWarnings("unchecked")
     public List<Long> findPuestoIdsByVendedor(Long usuarioId) {
@@ -58,12 +46,11 @@ public class VendedorAsignacionDaoImpl implements IVendedorAsignacionDao {
     @Override
     @SuppressWarnings("unchecked")
     public List<Puesto> findPuestosVisiblesParaVendedor(Long usuarioId) {
-        // Una sola via: las casetas que se le seleccionaron. Antes habia dos (categoria entera y
-        // caseta suelta) y se contradecian: a un vendedor con la categoria asignada se le podian
-        // seleccionar 10 casetas y le seguian saliendo todas, porque la categoria pesaba mas.
         return em.createNativeQuery("""
                         SELECT p.* FROM puesto p
                         INNER JOIN categoria c ON c.id = p.id_categoria AND c._estado <> 'X'
+                        AND c.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
+                              AND c.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
                         INNER JOIN vendedor_puesto vp ON vp.id_puesto = p.id AND vp.id_usuario = :usuarioId
                         WHERE p._estado <> 'X'
                           AND p.estado_puesto <> 'X'
@@ -73,17 +60,6 @@ public class VendedorAsignacionDaoImpl implements IVendedorAsignacionDao {
                 .getResultList();
     }
 
-    /**
-     * Todas las casetas vivas con su categoria y a quien estan habilitadas (o null).
-     *
-     * Una sola consulta para llenar el modal entero: agrupar por categoria, marcar las del
-     * vendedor y senalar las compartidas son decisiones de pantalla, y hacerlas aqui obligaria a
-     * ir y volver al servidor por cada una.
-     *
-     * Desde V32 una caseta puede estar habilitada a VARIOS vendedores, asi que devuelve una fila
-     * POR PAREJA (caseta, vendedor) y quien llama las agrupa. Una caseta sin habilitar sigue
-     * saliendo una vez, con los dos ultimos campos en null: por eso el LEFT JOIN.
-     */
     @Override
     @SuppressWarnings("unchecked")
     public List<Object[]> findCatalogoAsignable() {
@@ -92,6 +68,7 @@ public class VendedorAsignacionDaoImpl implements IVendedorAsignacionDao {
                        vp.id_usuario, u.username
                   FROM puesto p
                   INNER JOIN categoria c ON c.id = p.id_categoria AND c._estado <> 'X'
+                        AND c.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
                   LEFT JOIN vendedor_puesto vp ON vp.id_puesto = p.id
                   LEFT JOIN usuario u ON u.id = vp.id_usuario
                  WHERE p._estado <> 'X' AND p.estado_puesto <> 'X'
@@ -99,18 +76,6 @@ public class VendedorAsignacionDaoImpl implements IVendedorAsignacionDao {
                 """).getResultList();
     }
 
-    /**
-     * Deja la asignacion individual de este vendedor EXACTAMENTE en la lista que se pasa.
-     *
-     * Se hace en dos sentencias (borrar lo que sobra, insertar lo que falta) y no en un ciclo de
-     * altas y bajas sueltas: el modal manda la seleccion final de una vez, asi que guardar 40
-     * cambios cuesta dos consultas en lugar de 40 peticiones.
-     *
-     * El {@code ON CONFLICT DO NOTHING} va sobre el indice de PAREJA (V32): lo unico que descarta
-     * es volver a insertar una habilitacion que este vendedor ya tenia. Ya NO descarta casetas de
-     * otros vendedores —desde V32 se comparten— asi que lo que vuelva en {@code noDisponibles}
-     * solo puede ser una caseta que no existe o que esta anulada.
-     */
     @Override
     @SuppressWarnings("unchecked")
     public List<Object[]> nombresDeCategoriaPorPuesto(List<Long> puestoIds) {
@@ -125,13 +90,6 @@ public class VendedorAsignacionDaoImpl implements IVendedorAsignacionDao {
                 .getResultList();
     }
 
-    /**
-     * El desglose por categoria de TODOS los vendedores de una vez.
-     *
-     * Cuenta solo casetas vivas y no bloqueadas, igual que {@code findPuestosVisiblesParaVendedor}:
-     * si contara las anuladas, la pantalla de administracion diria "12 de PYMES" y el vendedor
-     * veria 10 en su mapa, y el numero que no cuadra siempre parece un fallo del reparto.
-     */
     @Override
     @SuppressWarnings("unchecked")
     public List<Object[]> contarPuestosPorCategoriaYVendedor() {
@@ -141,6 +99,7 @@ public class VendedorAsignacionDaoImpl implements IVendedorAsignacionDao {
                   INNER JOIN puesto p    ON p.id = vp.id_puesto
                                         AND p._estado <> 'X' AND p.estado_puesto <> 'X'
                   INNER JOIN categoria c ON c.id = p.id_categoria AND c._estado <> 'X'
+                        AND c.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
                  GROUP BY vp.id_usuario, c.id, c.nombre
                  ORDER BY vp.id_usuario, c.nombre
                 """).getResultList();
@@ -190,6 +149,7 @@ public class VendedorAsignacionDaoImpl implements IVendedorAsignacionDao {
                   FROM usuario u
                   CROSS JOIN puesto p
                   INNER JOIN categoria c ON c.id = p.id_categoria AND c._estado <> 'X'
+                        AND c.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
                  WHERE u.id IN (:usuarioIds)
                    AND p.id IN (:puestoIds)
                    AND p._estado <> 'X'
@@ -215,7 +175,6 @@ public class VendedorAsignacionDaoImpl implements IVendedorAsignacionDao {
                 .getResultList();
     }
 
-    /** ¿Tiene este vendedor alguna asignacion, de cualquiera de las dos clases? */
     @Override
     public boolean tieneAlgunaAsignacion(Long usuarioId) {
         Query q = em.createNativeQuery(
@@ -227,9 +186,6 @@ public class VendedorAsignacionDaoImpl implements IVendedorAsignacionDao {
     @Override
     @SuppressWarnings("unchecked")
     public List<Object[]> findAsignacionesConVendedor() {
-        // Una sola consulta para las ~530 casetas: el mapa la pide UNA vez, no una por caseta.
-        // Se excluyen los usuarios dados de baja: su telefono ya no sirve de contacto, y dejar
-        // la caseta sin duenio visible es mas honesto que mandar al cliente a quien no esta.
         Query q = em.createNativeQuery("""
                 SELECT vp.id_puesto, u.id, pe.nombre, pe.paterno, pe.materno, pe.celular, u.username
                 FROM vendedor_puesto vp
@@ -258,8 +214,6 @@ public class VendedorAsignacionDaoImpl implements IVendedorAsignacionDao {
 
     @Override
     public boolean vendedorTienePuesto(Long usuarioId, Long puestoId) {
-        // Dice lo mismo que findPuestosVisiblesParaVendedor. Si difirieran, un vendedor podria
-        // vender una caseta que su mapa no le muestra, o al reves.
         Query q = em.createNativeQuery(
                 "SELECT 1 FROM vendedor_puesto WHERE id_usuario = :usuarioId AND id_puesto = :puestoId");
         q.setParameter("usuarioId", usuarioId);

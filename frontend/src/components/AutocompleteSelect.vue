@@ -3,14 +3,14 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 
 const props = defineProps({
   modelValue: { type: [String, Number], default: '' },
-  options: { type: Array, default: () => [] }, // [{value, label, ...}]
+  options: { type: Array, default: () => [] },
   placeholder: { type: String, default: 'Seleccione…' },
   label: { type: String, default: '' },
   required: { type: Boolean, default: false },
   allowClear: { type: Boolean, default: true },
-  searchKey: { type: String, default: 'label' }, // property to search in
-  valueKey: { type: String, default: 'value' }, // property for value
-  labelKey: { type: String, default: 'label' }, // property for label
+  searchKey: { type: String, default: 'label' },
+  valueKey: { type: String, default: 'value' },
+  labelKey: { type: String, default: 'label' },
   disabled: { type: Boolean, default: false },
 });
 
@@ -23,7 +23,6 @@ const inputRef = ref(null);
 const dropdownRef = ref(null);
 const wrapperRef = ref(null);
 const menuRef = ref(null);
-/** Posicion fija del menu (vive teletransportado al body, ver abajo). */
 const posMenu = ref({ top: 0, left: 0, width: 0 });
 
 const filteredOptions = computed(() => {
@@ -55,7 +54,6 @@ function toggleOpen() {
   }
 }
 
-/** El menu flota sobre el body: calcula donde cae el campo y lo pone debajo (o encima). */
 function actualizarPosMenu() {
   const r = wrapperRef.value?.getBoundingClientRect();
   if (!r) return;
@@ -117,7 +115,6 @@ function handleKeydown(e) {
       if (highlightedIndex.value >= 0 && opts[highlightedIndex.value]) {
         selectOption(opts[highlightedIndex.value]);
       } else if (opts.length === 1) {
-        // Escribio algo que deja una sola opcion y pulso Enter: es esa, sin pedirle flechas.
         selectOption(opts[0]);
       }
       break;
@@ -165,8 +162,6 @@ watch(() => props.modelValue, () => {
       <span class="chevron" :class="{ rotated: isOpen }">▼</span>
     </div>
 
-    <!-- El menu vive en el body: dentro de un modal quedaria recortado por el
-         overflow del dialogo y el pie lo taparia. Con posicion fija flota por encima. -->
     <Teleport to="body">
       <div
         v-if="isOpen"
@@ -280,7 +275,6 @@ watch(() => props.modelValue, () => {
   display: flex;
   flex-direction: column;
 }
-/* Flotante (teleport al body): por encima del modal (overlay en 900). */
 .dropdown-flotante {
   position: fixed;
   z-index: 1300;

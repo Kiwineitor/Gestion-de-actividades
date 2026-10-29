@@ -12,13 +12,10 @@ const cargando = ref(true);
 const errorCarga = ref('');
 const enVivo = ref(false);
 
-// Filtros y orden se aplican aquí, en el cliente: son pocas filas y así cada cambio es
-// instantáneo, sin peticiones (ver InteresadoStandApiController).
 const filtros = reactive({ texto: '', categoriaId: null, desde: '', hasta: '' });
 const orden = reactive({ campo: 'fecha', asc: false });
 const CAMPOS_ORDEN = { fecha: 'Fecha de registro', persona: 'Persona', empresa: 'Emprendimiento', categoria: 'Categoría' };
 
-// `silencioso`: resincronización tras reconectar el WebSocket, sin tapar la tabla con "Cargando…".
 async function cargar({ silencioso = false } = {}) {
   if (!silencioso) cargando.value = true;
   errorCarga.value = '';
@@ -38,7 +35,6 @@ async function cargar({ silencioso = false } = {}) {
   }
 }
 
-// Búsqueda sin importar mayúsculas ni tildes: "maria" encuentra a "María".
 function normalizar(s) {
   return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
@@ -50,12 +46,10 @@ function formatearFecha(iso) {
   });
 }
 
-// Todos los filtros MENOS la categoría: así los contadores de cada chip dicen cuántos hay de
-// esa categoría con la búsqueda y las fechas actuales.
 const base = computed(() => {
   const q = normalizar(filtros.texto.trim());
   return interesados.value.filter((i) => {
-    const dia = (i.fechaRegistro || '').slice(0, 10); // "2026-09-12": se compara como texto
+    const dia = (i.fechaRegistro || '').slice(0, 10);
     if (filtros.desde && dia < filtros.desde) return false;
     if (filtros.hasta && dia > filtros.hasta) return false;
     if (!q) return true;
@@ -84,8 +78,6 @@ const filtrados = computed(() => {
   });
 });
 
-// Chips de categoría con su contador. Incluye también las categorías que ya no existen pero
-// que algún interesado eligió en su momento, para que ese registro no quede imposible de filtrar.
 const chips = computed(() => {
   const n = new Map();
   base.value.forEach((i) => n.set(i.categoriaId, (n.get(i.categoriaId) || 0) + 1));
@@ -105,8 +97,6 @@ function limpiarFiltros() {
   Object.assign(filtros, { texto: '', categoriaId: null, desde: '', hasta: '' });
 }
 
-// Al cambiar de campo, cada uno arranca en su sentido natural: los textos de la A a la Z y la
-// fecha con lo más reciente primero (lo que se quiere ver al entrar).
 watch(() => orden.campo, (campo) => { orden.asc = campo !== 'fecha'; });
 
 function ordenarPor(campo) {
@@ -122,8 +112,6 @@ const etiquetaSentido = computed(() => {
   if (orden.campo === 'fecha') return orden.asc ? '↑ Más antiguos primero' : '↓ Más recientes primero';
   return orden.asc ? 'A → Z' : 'Z → A';
 });
-
-// ---- Edición en modal ----
 
 const edicion = reactive({ abierto: false, id: null, nombreCompleto: '', celular: '', empresa: '',
   rubro: '', categoriaId: null, categoriaNombre: '', fechaRegistro: '' });
@@ -143,8 +131,6 @@ function cerrarEdicion() {
   if (!guardando.value) edicion.abierto = false;
 }
 
-// Éxito: se cierra el modal, la fila se actualiza en el sitio y sale el aviso de 2 s.
-// Fallo: el aviso dice el motivo y el modal queda abierto con lo escrito, para corregir.
 async function guardar() {
   if (guardando.value) return;
   guardando.value = true;
@@ -171,11 +157,6 @@ async function guardar() {
   }
 }
 
-// ---- En vivo ----
-// Cada registro nuevo del formulario "Quiero exponer" (y cada edición hecha desde otro panel)
-// llega por /topic/interesados, solo para administración (ver WebSocketConfig).
-
-// Filas recién llegadas, resaltadas unos segundos para que se note qué apareció.
 const recienLlegados = ref(new Set());
 
 function aplicarEnVivo(i, { resaltar = true } = {}) {
@@ -203,8 +184,6 @@ onMounted(() => {
     onMensaje: (i) => aplicarEnVivo(i),
     onConectado: () => {
       enVivo.value = true;
-      // La primera conexión coincide con la carga inicial; en las siguientes (tras un corte)
-      // se vuelve a pedir la lista: lo que llegó mientras tanto no se redifunde.
       if (!primeraConexion) cargar({ silencioso: true });
       primeraConexion = false;
     },
@@ -357,7 +336,6 @@ onUnmounted(() => dejarDeEscuchar?.());
 .en-vivo.activo .en-vivo-punto { background: var(--ok); animation: latir 1.6s ease-in-out infinite; }
 @keyframes latir { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
-/* Fila recién llegada por WebSocket: se ilumina y se apaga sola. */
 .fila-nueva td { animation: resaltar 6s ease-out; }
 @keyframes resaltar { 0%, 40% { background: color-mix(in srgb, var(--ok) 16%, transparent); } 100% { background: transparent; } }
 .etiqueta-nuevo { margin-left: 0.4rem; font-size: 0.7rem; }

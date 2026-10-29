@@ -1,16 +1,3 @@
--- V6: Listados por EDICION y etiqueta de edicion en venta_boleto.
--- Corre sobre V1..V5. Se aplica a mano (no hay Flyway), en la BD de turno:
---   psql -U postgres -h localhost -d <base> -f V6__edicion_filtros.sql
---
--- Que hace:
---   1. venta_boleto queda etiquetado por edicion (id_edicion, FK a edicion).
---      Las filas existentes se reparten a la edicion ACTIVA (la venta en curso);
---      el DEFAULT se fija a la activa de hoy (cambiar cuando rote la edicion).
---   2. fn_get_inscripciones y fn_inscripciones_por_categoria aceptan un
---      p_id_edicion opcional; NULL = la edicion ACTIVA. Con esto "Mis ventas"
---      y los listados quedan por edicion y el historico (FEXPO 2025) no se mezcla.
-
--- ===== 1. venta_boleto por edicion =====
 ALTER TABLE public.venta_boleto ADD COLUMN IF NOT EXISTS id_edicion bigint;
 
 UPDATE public.venta_boleto vb
@@ -38,8 +25,6 @@ BEGIN
   END IF;
 END $$;
 
--- ===== 2. fn_get_inscripciones(uid [, id_edicion]) =====
--- NULL en p_id_edicion = edicion activa; si no hay activa, no filtra.
 CREATE OR REPLACE FUNCTION public.fn_get_inscripciones(
     p_usuario_id bigint,
     p_id_edicion bigint DEFAULT NULL::bigint)
@@ -103,7 +88,6 @@ BEGIN
 END;
 $function$;
 
--- ===== 3. fn_inscripciones_por_categoria([id_edicion]) =====
 CREATE OR REPLACE FUNCTION public.fn_inscripciones_por_categoria(
     p_id_edicion bigint DEFAULT NULL::bigint)
  RETURNS TABLE(id_categoria bigint, id_inscripcion bigint,

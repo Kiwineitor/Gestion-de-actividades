@@ -1,16 +1,4 @@
 <script setup>
-/**
- * Modulo de categorias: nombre, color, forma, tamaño en el plano y OPCIONES DE PRECIO.
- *
- * Lo que se toca aqui se ve al instante en el mapa de todos: el servidor redifunde las casetas
- * de la categoria por `/topic/puestos` en cada guardado, porque la apariencia y el precio de
- * una caseta los hereda de su categoria. No hay que recargar nada en la otra pantalla.
- *
- * Las OPCIONES son la parte nueva. Una categoria ya no tiene un precio, tiene una lista:
- * "PYMES" a 800 y "PYMES con tarima" a 1.200. Al registrar la venta se elige una por categoria.
- * Siempre hay exactamente una PREDETERMINADA —la que se aplica si nadie elige— y su precio es
- * el que el mapa canta en la ficha de la caseta.
- */
 import { ref, reactive, computed, watch, onMounted } from 'vue';
 import UiModal from '../components/UiModal.vue';
 import { apiFetch } from '../api';
@@ -90,8 +78,6 @@ onMounted(() => {
   planoTienda.asegurar();
   cargar();
 });
-
-// ---------------------------------------------------------------- categoria
 
 function abrirCrear() {
   Object.assign(modal, {
@@ -181,8 +167,6 @@ async function eliminarCategoria(c) {
     ocupado.value = false;
   }
 }
-
-// ---------------------------------------------------------------- opciones de precio
 
 function abrirOpcion(c, o = null) {
   Object.assign(modalOpcion, {
@@ -301,8 +285,6 @@ async function eliminarOpcion(c, o) {
         <ul v-else class="lista-op">
           <li v-for="o in c.opciones" :key="o.id" :class="{ predet: o.predeterminada }">
             <span class="nombre-op">{{ o.nombre }}</span>
-            <!-- La marca no es decorativa: es el precio que el mapa canta en la ficha de la
-                 caseta y el que se cobra si el vendedor no elige nada. -->
             <span v-if="o.predeterminada" class="badge badge-ok">por defecto</span>
             <button v-else class="btn btn-sm btn-fantasma marcar" :disabled="ocupado"
                     @click="hacerPredeterminada(c, o)">Usar por defecto</button>
@@ -316,7 +298,6 @@ async function eliminarOpcion(c, o) {
     </article>
   </div>
 
-  <!-- ---------------------------------------------------------------- categoria -->
   <UiModal v-if="modal.abierto"
            :titulo="modal.editando ? `Editar ${modal.editando.nombre}` : 'Nueva categoría'"
            @cerrar="modal.abierto = false">
@@ -382,7 +363,6 @@ async function eliminarOpcion(c, o) {
     </template>
   </UiModal>
 
-  <!-- ---------------------------------------------------------------- opcion -->
   <UiModal v-if="modalOpcion.abierto"
            :titulo="modalOpcion.editando ? 'Editar opción' : `Nueva opción de ${modalOpcion.categoria?.nombre}`"
            @cerrar="modalOpcion.abierto = false">
@@ -468,7 +448,6 @@ async function eliminarOpcion(c, o) {
 .lista-op li.predet { outline: 1px solid var(--ok, #16a34a); }
 .nombre-op { font-weight: 600; }
 .precio-op { white-space: nowrap; }
-/* En el teléfono el botón de "usar por defecto" no puede empujar el precio fuera de la fila. */
 .marcar { font-size: 0.78rem; }
 
 .formulario { display: flex; flex-direction: column; gap: 0.9rem; }

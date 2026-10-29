@@ -1,23 +1,4 @@
 <script setup>
-/**
- * Control de ventas: la rendición de cuentas de la feria. Lo vendido, lo recaudado (con
- * comprobante) y lo que falta rendir, por venta, por vendedor y por categoría, con todas las
- * celdas del registro.
- *
- * <h2>Rendido = comprobante adjunto</h2>
- * Una venta está rendida si tiene su comprobante adjunto: la foto del depósito, el voucher o el
- * recibo. Banco y número no se exigen. Rendir lo que falta es adjuntar ese comprobante desde la
- * ficha de la venta.
- *
- * <h2>Un filtro para todo</h2>
- * Los filtros de arriba valen para las cuatro pestañas y para las descargas: el Excel que se
- * baja es exactamente lo que se estaba mirando. Se filtra en el SERVIDOR porque lo recaudado,
- * el estado o el código de expositor se calculan allí.
- *
- * <h2>Tablero y tabla, en la misma recarga</h2>
- * Se piden juntos cada vez que cambia un filtro o se adjunta un comprobante: si el tablero
- * dijera un monto por rendir y la tabla otro, aunque fuera un segundo, nadie sabría a cuál creer.
- */
 import { ref, computed, watch, onMounted } from 'vue';
 import { apiFetch, jsonOError } from '../api';
 import { toast } from '../ui/toast';
@@ -47,15 +28,9 @@ function parametros(extra = {}) {
 }
 
 async function leer(ruta) {
-  // Un rol sin permiso en el servidor (p. ej. uno creado a mano) recibe 403: se explica, no
-  // se disfraza de avería.
   return jsonOError(await apiFetch(ruta), 'No se pudo cargar el control de ventas');
 }
 
-/*
- * Una recarga que llega tarde no pisa a una más nueva: al escribir en la búsqueda salen varias
- * peticiones seguidas y la respuesta de "uni" podría llegar después de la de "union".
- */
 let turno = 0;
 async function cargar() {
   const mio = ++turno;
@@ -89,10 +64,7 @@ onMounted(async () => {
   await cargar();
 });
 
-// La búsqueda espera a que se deje de escribir; el resto de filtros recarga al instante.
 let esperaTexto = null;
-// Se vigila una CLAVE sin la búsqueda: si el getter leyera `q`, cada tecla recargaría al
-// instante y la espera de abajo no serviría de nada.
 watch(() => {
   const f = filtros.value;
   return [f.vendedor, f.categoria, f.desde, f.hasta, f.estado].join('|');
@@ -106,13 +78,11 @@ function limpiarFiltros() {
   filtros.value = { vendedor: '', categoria: '', desde: '', hasta: '', estado: '', q: '' };
 }
 
-/** Desde la tabla de vendedores: ver las ventas de uno. */
 function verVentasDe(vendedorId) {
   filtros.value.vendedor = vendedorId ? String(vendedorId) : '';
   pestana.value = 'ventas';
 }
 
-// ---- ventas: orden y paginado en el cliente (unos cientos de filas)
 const orden = ref('fecha');
 const pagina = ref(1);
 const POR_PAGINA = 50;
@@ -135,15 +105,12 @@ const totalesVentas = computed(() => ventas.value.reduce((t, v) => ({
   porRendir: t.porRendir + Number(v.porRendir || 0),
 }), { puestos: 0, extras: 0, total: 0, recaudado: 0, porRendir: 0 }));
 
-// ---- ficha
 const fichaId = ref(null);
 
 function alCambiar() {
-  // Adjuntar un comprobante cambia lo recaudado y lo por rendir de todo el tablero.
   cargar();
 }
 
-// ---- descargas
 const bajando = ref('');
 async function bajar(formato) {
   if (bajando.value) return;
@@ -159,7 +126,6 @@ async function bajar(formato) {
   }
 }
 
-/** La hoja de rendición de cuentas de un vendedor: su PDF para revisar y firmar. */
 async function bajarRendicion(v) {
   if (bajando.value || !v.usuarioId) return;
   bajando.value = `rendicion-${v.usuarioId}`;
@@ -187,7 +153,6 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
 
 <template>
   <div class="control">
-    <!-- Filtros: una sola fila sobre todo, valen para las cuatro pestañas y las descargas. -->
     <section class="card filtros">
       <select v-model="filtros.vendedor" class="control-campo" aria-label="Vendedor">
         <option value="">Todos los vendedores</option>
@@ -219,8 +184,6 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
       </div>
     </section>
 
-    <!-- Quien entra con la pantalla asignada sin ser de dirección ve solo lo suyo: el servidor
-         le fuerza el filtro de vendedor. Se dice para que no crea que faltan ventas. -->
     <p v-if="opciones.soloPropias" class="card aviso-alcance">
       Estás viendo <strong>tu propia rendición de cuentas</strong>: solo las ventas que registraste tú.
     </p>
@@ -241,7 +204,6 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
     <div v-else-if="cargando" class="vacio">Cargando el control de ventas…</div>
 
     <template v-else-if="tablero">
-      <!-- ============================================================ TABLERO -->
       <section v-if="pestana === 'ventas'" class="card bloque">
         <header class="cab">
           <div>
@@ -312,7 +274,6 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
         </button>
       </section>
 
-      <!-- ============================================================ VENDEDORES -->
       <section v-else-if="pestana === 'vendedores'" class="card bloque">
         <header class="cab">
           <div>
@@ -328,8 +289,6 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
         <div class="tabla-scroll">
           <table class="tabla densa">
             <thead>
-              <!-- Cabecera en dos niveles: con catorce cifras seguidas no se sabe de un vistazo
-                   cuál «vendido» es de puestos y cuál de extras. -->
               <tr class="grupos">
                 <th rowspan="2">Vendedor</th><th rowspan="2" class="num">Operac.</th>
                 <th colspan="3" class="grupo">Puestos</th>
@@ -345,8 +304,6 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
             </thead>
             <tbody>
               <tr v-for="v in vendedores" :key="v.usuarioId ?? 'sin'">
-                <!-- Las acciones van bajo el nombre y no en una última columna: la tabla es ancha y
-                     al final quedaban fuera de la vista, detrás del desplazamiento lateral. -->
                 <td class="vendedor">
                   <strong>{{ v.vendedor }}</strong>
                   <span class="muted chico usuario">{{ v.usuario }}</span>
@@ -396,7 +353,6 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
         </div>
       </section>
 
-      <!-- ============================================================ CATEGORÍAS -->
       <section v-else class="card bloque">
         <header class="cab">
           <div>
@@ -491,8 +447,6 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
 .tabla .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tabla tfoot th { border-top: 2px solid var(--border); color: var(--text); font-size: 0.85rem; text-transform: none; letter-spacing: 0; }
 .ventas td { font-size: 0.86rem; }
-/* Muchas columnas de cifras: más juntas, para que «Por rendir» —la que se busca al rendir
-   cuentas— se vea sin desplazar la tabla en un portátil. */
 .densa th, .densa td { padding: 0.5rem 0.4rem; font-size: 0.82rem; }
 .densa th { font-size: 0.7rem; }
 .densa .grupos th { border-bottom: 0; padding-bottom: 0.15rem; }
@@ -500,16 +454,11 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
 .densa .inicio-grupo { border-left: 1px solid var(--border); }
 .codigo strong, .entidad strong { display: block; }
 .entidad { min-width: 12rem; max-width: 18rem; }
-/* Una línea por fila: con los nombres completos partidos en tres, 50 ventas ocupaban cinco
-   pantallas. El nombre entero sale al pasar el ratón y en la ficha. */
 .corto { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clicable { cursor: pointer; }
 .clicable:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
-/* Ámbar y no rojo: falta un comprobante, no hay una avería (mismo criterio que Dirección). */
 .debe { color: var(--tramite); font-weight: 700; }
 .vendedor { min-width: 10.5rem; }
-/* Por clase y no `.vendedor > span`: ese selector pesaba más que `.acciones-vendedor` y le
-   quitaba el flex, así que los dos enlaces salían pegados. */
 .vendedor strong, .vendedor .usuario { display: block; }
 .acciones-vendedor { display: flex; gap: 0.8rem; margin-top: 0.2rem; }
 .enlace {

@@ -27,13 +27,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Gestion de usuarios para la SPA. Solo administracion: crear un login es la operacion mas
- * sensible del sistema. La contraseña nunca sale en ninguna respuesta (ver UsuarioDTO).
- *
- * El catalogo de roles ya no se sirve desde aqui: vive en {@code /api/app/roles}, que ademas trae
- * la descripcion de cada rol y cuantos usuarios tiene.
- */
 @RestController
 @RequestMapping("/api/app/usuarios")
 @RequiredArgsConstructor
@@ -50,22 +43,12 @@ public class UsuarioApiController {
         return gestion.listar().stream().map(UsuarioDTO::de).toList();
     }
 
-    /**
-     * Personas para asignar a un usuario. Con {@code q} filtra por nombre o C.I.; sin el devuelve
-     * las primeras. Se limita a {@value #MAX_PERSONAS} porque hay cientos y un selector no las
-     * necesita todas de golpe. Cada resultado dice si ya tiene login, para no ofrecerla dos veces.
-     */
     @GetMapping("/personas")
     public List<GestionPersonaService.Seleccionable> personas(
             @RequestParam(value = "q", required = false) String q) {
         return gestionPersona.buscarParaSelector(q, MAX_PERSONAS);
     }
 
-    /**
-     * ¿Existe ya alguien con ese C.I.? Lo consulta el formulario de alta mientras se escribe, para
-     * ofrecer "usar esa persona" en vez de dejar que el guardado falle por duplicado. Devuelve
-     * {@code null} en {@code persona} cuando no hay nadie.
-     */
     @GetMapping("/personas/por-ci")
     public Map<String, Object> personaPorCi(@RequestParam("ci") String ci) {
         return gestionPersona.buscarPorCi(ci)
@@ -99,22 +82,12 @@ public class UsuarioApiController {
         return responder(gestion.eliminar(id, actor()));
     }
 
-    // ===== records de request =====
-
-    /**
-     * Alta. La persona llega de una de dos formas y solo una: {@code personaId} si se eligio del
-     * buscador, o {@code persona} con sus datos si se esta creando en el mismo formulario. Las dos
-     * se guardan en la misma transaccion, asi que un alta fallida no deja personas sueltas.
-     */
     public record CrearUsuario(String username, String password, Long personaId,
                                GestionPersonaService.Datos persona, Long rolId) {}
     public record EditarUsuario(String username, Long personaId, Long rolId) {}
     public record PasswordReq(String password) {}
     public record EstadoReq(Boolean activo) {}
 
-    // ===== helpers =====
-
-    /** Traduce el Resultado del servicio a HTTP: 200 si ok, 400 (validacion) si no. */
     private ResponseEntity<Map<String, Object>> responder(Resultado r) {
         Map<String, Object> cuerpo = (r.usuario() != null)
                 ? Map.of("ok", r.ok(), "mensaje", r.mensaje(), "usuario", UsuarioDTO.de(r.usuario()))
@@ -122,10 +95,6 @@ public class UsuarioApiController {
         return ResponseEntity.status(r.ok() ? 200 : 400).body(cuerpo);
     }
 
-    /**
-     * Quien pide la operacion, sacado del JWT. El rol viaja con el id porque las reglas de
-     * privilegio del servicio dependen de el (solo un SUPER USUARIO toca a otro SUPER USUARIO).
-     */
     private Actor actor() {
         Authentication a = SecurityContextHolder.getContext().getAuthentication();
         if (a != null && a.getPrincipal() instanceof JwtUser ju) {

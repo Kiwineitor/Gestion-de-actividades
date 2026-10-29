@@ -4,7 +4,6 @@ import com.usic.uniFex.model.entity.Area;
 import com.usic.uniFex.model.entity.Carrera;
 import com.usic.uniFex.model.entity.Persona;
 
-/** Vista de una persona del sistema para la API de administracion. */
 public record PersonaDTO(
         Long id,
         String nombre,
@@ -15,7 +14,6 @@ public record PersonaDTO(
         String celular,
         String nombreCompleto,
         boolean tieneUsuario,
-        /** Carrera y area vienen aplanadas: la tabla las pinta, no navega por ellas. */
         Long carreraId,
         String carrera,
         Long areaId,

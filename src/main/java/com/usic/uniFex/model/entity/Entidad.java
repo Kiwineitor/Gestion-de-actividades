@@ -32,16 +32,6 @@ public class Entidad extends AuditoriaConfig{
     private String RepresentanteLegal;
     private String ciRepresentante;
 
-    /**
-     * Telefono del responsable legal: el dueño real de la caseta.
-     *
-     * Los celulares que ya se guardaban son los de los responsables que ATIENDEN el puesto, y
-     * muchas veces son terceros. Cuando hay que llamar por un cobro o una incidencia, el que
-     * hace falta es este (V16).
-     *
-     * @Column explicito: sin el, Hibernate deriva "celularrepresentante" —no mete guion bajo
-     * antes de una letra sola ni parte bien esta forma— y falla con "no existe la columna".
-     */
     @Column(name = "celular_representante", length = 30)
     private String celularRepresentante;
 

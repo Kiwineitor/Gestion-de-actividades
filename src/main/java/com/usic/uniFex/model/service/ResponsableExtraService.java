@@ -22,24 +22,6 @@ import com.usic.uniFex.model.entity.Responsable;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Agregar un responsable a una venta YA registrada.
- *
- * <h2>El derecho, y lo que hay de mas</h2>
- * Cada caseta da derecho a dos responsables, o sea a dos credenciales: una venta de tres casetas
- * admite seis personas sin pagar nada. Quien pasa de ahi paga
- * {@link RegistroVentaService#COSTO_RESPONSABLE_EXTRA} Bs y tiene que entregar su comprobante.
- *
- * <h2>Por que el comprobante es obligatorio para el extra</h2>
- * Es la misma leccion que la del comprobante de la venta: mientras "pagado" fue algo que se
- * marcaba a mano, se emitieron credenciales de gente que nunca entrego el papel. Aqui el
- * comprobante viaja en la MISMA peticion que crea al responsable, asi que no existe el estado
- * intermedio "responsable extra creado y sin pagar" — no hay forma de olvidarse.
- *
- * El cobro se guarda en el propio responsable (V34) y **no** se suma al total de la inscripcion:
- * es un pago aparte, hecho otro dia y con otro recibo. Sumarlo al total haria que el recibo ya
- * entregado dejara de cuadrar.
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -54,12 +36,10 @@ public class ResponsableExtraService {
     private final IResponsableService responsableService;
     private final FileStorageService almacen;
 
-    /** Datos de la persona que se agrega. */
     public record NuevoResponsable(String nombre, String paterno, String materno, String ci,
                                    String correo, String celular) {
     }
 
-    /** Cuantos caben y cuantos hay: lo que la pantalla necesita para decidir si cobra. */
     public record Cupo(int casetas, int derecho, int registrados, int extras, boolean dentroDelDerecho,
                        BigDecimal costoSiguiente) {
     }
@@ -69,12 +49,6 @@ public class ResponsableExtraService {
         static Resultado error(String m) { return new Resultado(false, m, null, false, null); }
     }
 
-    /**
-     * Cuantos responsables admite esta venta sin cobrar, y cuantos tiene ya.
-     *
-     * Se cuentan los responsables VIVOS de la entidad. Uno dado de baja no ocupa sitio: si se
-     * quito a alguien del stand, su lugar vuelve a estar disponible.
-     */
     @Transactional(readOnly = true)
     public Cupo cupoDe(Long inscripcionId) {
         Inscripcion i = inscripcionService.findById(inscripcionId);
@@ -88,12 +62,6 @@ public class ResponsableExtraService {
                 dentro ? BigDecimal.ZERO : RegistroVentaService.COSTO_RESPONSABLE_EXTRA);
     }
 
-    /**
-     * Agrega el responsable. Si ya se paso del derecho, exige el comprobante y anota el cobro.
-     *
-     * El comprobante se guarda en disco ANTES de tocar la base: si el archivo falla, no queda
-     * un responsable marcado como pagado cuyo papel no existe en ningun sitio.
-     */
     @Transactional
     public Resultado agregar(Long inscripcionId, NuevoResponsable datos, MultipartFile comprobante,
                              Long usuarioId) {
@@ -131,8 +99,6 @@ public class ResponsableExtraService {
         persona.setCi(datos.ci());
         persona.setCorreo(datos.correo());
         persona.setCelular(datos.celular());
-        // En `persona` el _estado guarda un TIPO, no ACTIVO/INACTIVO: marcarla RESPONSABLE es
-        // lo que la mantiene fuera del selector del modulo Usuarios.
         persona.setEstado(RESPONSABLE);
         persona.setRegistro(ahora);
         persona.setRegistroIdUsuario(usuarioId);
@@ -143,14 +109,6 @@ public class ResponsableExtraService {
         r.setPersona(persona);
         r.setEsTitular(false);
         r.setEsExtra(cobra);
-        /*
-         * El comprobante se guarda SIEMPRE que venga, cobre o no.
-         *
-         * Estaba dentro del `if (cobra)`, asi que adjuntar un recibo a un responsable que entraba
-         * dentro del derecho dejaba el archivo escrito en disco y TIRABA la ruta: un archivo
-         * huerfano que nadie podia volver a encontrar, y el vendedor creyendo que lo adjunto.
-         * Si alguien se toma la molestia de subir un papel, ese papel se guarda.
-         */
         r.setComprobanteExtra(ruta);
         if (cobra) {
             r.setMontoExtra(RegistroVentaService.COSTO_RESPONSABLE_EXTRA);
@@ -167,22 +125,12 @@ public class ResponsableExtraService {
                 r.getId(), cobra, cobra ? RegistroVentaService.COSTO_RESPONSABLE_EXTRA : BigDecimal.ZERO);
     }
 
-    /** Un responsable extra tal como lo lista la pantalla de control de cobros. */
     public record ExtraListado(Long responsableId, String nombre, String ci, String celular,
                                String fotoUrl, java.math.BigDecimal monto, String comprobanteUrl,
                                Long inscripcionId, String entidad,
                                String agregadoPor, java.time.LocalDateTime cuando) {
     }
 
-    /**
-     * Todos los responsables extra de la edicion activa, con su cobro y su comprobante.
-     *
-     * Existe porque la pregunta "¿quien se agrego de mas y pago?" es de TODA la feria, no de una
-     * venta: contestarla abriendo venta por venta con cien ventas no lo hace nadie, y por eso los
-     * cobros se perdian de vista.
-     *
-     * Se listan tambien los que NO tienen comprobante: son exactamente los que hay que reclamar.
-     */
     @Transactional(readOnly = true)
     public List<ExtraListado> listarExtras() {
         return responsableDao.listarExtrasDeEdicionActiva().stream().map(f -> new ExtraListado(
@@ -200,7 +148,6 @@ public class ResponsableExtraService {
         )).toList();
     }
 
-    /** Los archivos viajan como la ruta que sirve /files/**, nunca como el nombre suelto. */
     private static String ruta(String archivo) {
         return (archivo == null || archivo.isBlank()) ? null : "/files/" + archivo;
     }

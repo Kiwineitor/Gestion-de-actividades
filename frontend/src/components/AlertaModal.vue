@@ -38,23 +38,14 @@ function cancelar() {
   cerrar(false);
 }
 
-// Un aviso (sin pregunta) se cierra con un clic en cualquier parte del cuadro.
 function alClicDialogo() {
   if (!alertaConfig.mostrarConfirmar) confirmar();
 }
 
-// AlertaModal vive montado siempre en App.vue (junto a ToastHost y Bienvenida), visible o
-// no: bloquear el scroll en onMounted lo dejaba bloqueado desde el arranque de la app
-// entera, en TODAS las rutas, se mostrara una alerta o no. Pasaba desapercibido porque las
-// rutas bajo AppLayout desplazan un contenedor interno, no el body — pero una pagina suelta
-// como /feria, que sí depende del scroll del documento, quedaba sin poder hacer scroll nunca.
-//
-// Se vigila también `serie`: una alerta que reemplaza a otra abierta reinicia su tiempo.
 watch(() => (alertaVisible.value ? alertaConfig.serie : 0), (activa) => {
   if (activa) {
     iniciarTemporizador();
     document.body.style.overflow = 'hidden';
-    // Foco en el botón: Enter o Espacio lo cierran, y el lector de pantalla lo anuncia.
     nextTick(() => botonPrincipal.value?.focus({ preventScroll: true }));
   } else {
     limpiar();
@@ -82,7 +73,6 @@ onUnmounted(() => {
          role="alertdialog" aria-modal="true" aria-labelledby="alerta-titulo" aria-describedby="alerta-mensaje">
       <div class="dialogo" :class="{ cerrable: !alertaConfig.mostrarConfirmar }"
            :style="{ '--color-tipo': colorTipo }" @click="alClicDialogo">
-        <!-- :key reinicia el dibujo del icono cuando una alerta reemplaza a otra. -->
         <svg :key="alertaConfig.serie" class="icono" viewBox="0 0 52 52" aria-hidden="true">
           <circle class="aro" cx="26" cy="26" r="24" pathLength="100" />
           <template v-if="tipo === 'ok'">
@@ -116,7 +106,6 @@ onUnmounted(() => {
           <button v-else ref="botonPrincipal" type="button" class="boton-tipo" @click.stop="confirmar">Ok</button>
         </footer>
 
-        <!-- Barra que se consume: cuánto falta para que el aviso se cierre solo. -->
         <div v-if="alertaConfig.ms > 0 && !alertaConfig.mostrarConfirmar" :key="`barra-${alertaConfig.serie}`"
              class="barra-tiempo" :style="{ animationDuration: `${alertaConfig.ms}ms` }"></div>
       </div>
@@ -147,7 +136,6 @@ onUnmounted(() => {
   display: block; width: 78px; height: 78px; margin: 0 auto 0.9rem;
   fill: none; stroke: var(--color-tipo); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
 }
-/* Dibujo del icono: el aro primero, luego la marca (pathLength=100 iguala los largos). */
 .aro, .trazo { stroke-dasharray: 100; stroke-dashoffset: 100; animation: dibujar 0.5s ease-out forwards; }
 .trazo { stroke-width: 3; animation-delay: 0.3s; }
 .trazo-2 { animation-delay: 0.45s; }
@@ -181,7 +169,6 @@ h2 { margin: 0 0 0.5rem; font-size: 1.3rem; font-weight: 700; color: var(--color
 .modal-enter-active, .modal-leave-active { transition: opacity 0.15s ease; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
 
-/* La barra de tiempo se queda: no es decoración, dice cuánto falta para que se cierre. */
 @media (prefers-reduced-motion: reduce) {
   .dialogo, .aro, .trazo, .punto { animation: none; }
   .aro, .trazo { stroke-dashoffset: 0; }

@@ -20,13 +20,6 @@ public interface IResponsableDao extends JpaRepository<Responsable, Long> {
     @Query("select r from Responsable r")
     List<Responsable> findAllConPersona();
 
-    /**
-     * Los responsables VIVOS de una entidad, con su persona.
-     *
-     * Vivos y no todos: un responsable dado de baja no ocupa uno de los sitios que dan las
-     * casetas. Si se quito a alguien del stand, su lugar vuelve a estar disponible y no habria
-     * que cobrar por reemplazarlo.
-     */
     @Query("select r from Responsable r left join fetch r.persona "
          + "where r.entidad.id = :entidadId and (r.estado is null or r.estado <> 'X') "
          + "order by r.esTitular desc, r.id")
@@ -40,7 +33,6 @@ public interface IResponsableDao extends JpaRepository<Responsable, Long> {
             """)
     List<Responsable> findAllConPersonaYEntidad();
 
-    // EAGER solo para esta consulta (evita N+1)
     @EntityGraph(attributePaths = { "persona", "entidad" })
     @Query("""
                 select r
@@ -70,7 +62,7 @@ public interface IResponsableDao extends JpaRepository<Responsable, Long> {
             """)
     List<ResponsableListadoView> listarVista();
 
-    @EntityGraph(attributePaths = { "persona" }) // evita LazyInitialization en la vista
+    @EntityGraph(attributePaths = { "persona" })
     @Query("""
             select r
             from Responsable r
@@ -79,14 +71,6 @@ public interface IResponsableDao extends JpaRepository<Responsable, Long> {
             """)
     List<Responsable> findByEntidadIdWithPersona(@Param("entidadId") Long entidadId);
 
-    /**
-     * Responsables vigentes de una entidad, el titular primero. Para la nota de venta.
-     *
-     * Antes la nota usaba {@code findByEntidadId}, que (a) no excluia a los dados de baja
-     * ({@code _estado = 'X'}), asi que imprimia gente que ya no responde por la caseta, y
-     * (b) traia la persona LAZY, una consulta por fila. El orden importa: en el documento
-     * el titular tiene que salir primero, no quien tenga el apellido mas cercano a la A.
-     */
     @EntityGraph(attributePaths = { "persona" })
     @Query("""
             select r
@@ -129,14 +113,6 @@ public interface IResponsableDao extends JpaRepository<Responsable, Long> {
             """)
     List<ResponsableListadoExplodeView> listarVistaExplode();
 
-    /**
-     * Reporte completo de responsables con estado de impresión de credencial y foto.
-     *
-     * Incluye todos los responsables de la edición activa (inscripciones no anuladas),
-     * con su entidad, categoría, puesto, si es titular/extra, y el estado de impresión
-     * de su credencial (veces impresa, última impresión, si alguna fue incompleta).
-     * Ordenado por entidad, categoría, puesto y nombre.
-     */
     @Query(value = """
             SELECT
                 r.id                                              AS id,
@@ -190,7 +166,6 @@ public interface IResponsableDao extends JpaRepository<Responsable, Long> {
             """, nativeQuery = true)
     List<ResponsableReporteView> listarParaReporte();
 
-    // PARA BUSCAR POR CI A LOS RESPONSABLES
     @Query(value = """
     SELECT
       p.id                                                            AS idPersona,
@@ -234,18 +209,6 @@ public interface IResponsableDao extends JpaRepository<Responsable, Long> {
     """, nativeQuery = true)
 List<ResponsableDetalleRow> findDetallePorCi(@Param("ci") String ci);
 
-
-
-    /**
-     * Todos los responsables EXTRA de la edicion activa, con su cobro, su comprobante y quien
-     * los agrego.
-     *
-     * Columnas: responsableId, nombre, ci, celular, foto, montoExtra, comprobanteExtra,
-     *           inscripcionId, entidad, agregadoPor, cuando.
-     *
-     * Nativa y no JPQL porque arma el nombre con `concat_ws` y cruza con `usuario`/`persona` para
-     * decir QUIEN lo agrego, que es la mitad de lo que se viene a auditar.
-     */
     @Query(value = """
             SELECT r.id                                                  AS responsable_id,
                    concat_ws(' ', p.nombre, p.paterno, p.materno)        AS nombre,

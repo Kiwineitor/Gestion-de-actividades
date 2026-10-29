@@ -12,14 +12,14 @@ public record InscripcionListadoDTO(
     String nit,
     String nroComprobante,
     Integer cantidadPuestos,
-    List<String> categorias,   // para chips/badges
+    List<String> categorias,
     BigDecimal total,
     LocalDateTime fecha,
     String estado,
     String imgComprobante,
-        boolean pagoContado,          // <— nuevo
-    List<String> codigosPuestos,      // <— nuevo
-    String motivoCancelacion,         // <— cancelacion (V10)
+        boolean pagoContado,
+    List<String> codigosPuestos,
+    String motivoCancelacion,
     LocalDateTime fechaCancelacion,
     String canceladaPor,
     String origenCancelacion

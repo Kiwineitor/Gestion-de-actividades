@@ -11,14 +11,6 @@ import com.usic.uniFex.model.IService.ITipoEntidadService;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Listas fijas que el formulario de venta necesita para poder rellenarse.
- *
- * De solo lectura y para cualquier usuario autenticado: sin el tipo de entidad no se puede
- * registrar una venta, asi que restringirlo a administracion dejaria al vendedor sin poder
- * vender. Se filtran los dados de baja ({@code _estado = 'X'}) para no ofrecer opciones
- * retiradas.
- */
 @RestController
 @RequestMapping("/api/app/catalogos")
 @RequiredArgsConstructor
@@ -28,7 +20,6 @@ public class CatalogosApiController {
 
     private final ITipoEntidadService tipoEntidadService;
 
-    /** Tipos de entidad expositora: INSTITUCIONES, PYMES, EMPRESAS GRANDES… */
     @GetMapping("/tipos-entidad")
     public List<Map<String, Object>> tiposEntidad() {
         return tipoEntidadService.findAll().stream()

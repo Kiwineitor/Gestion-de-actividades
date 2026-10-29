@@ -17,25 +17,21 @@ public class InscripcionPuestoServiceImpl implements IInscripcionPuestoService {
 
     @Override
     public List<InscripcionPuesto> findAll() {
-        // TODO Auto-generated method stub
         return inscripcionPuestoDao.findAll();
     }
 
     @Override
     public InscripcionPuesto findById(Long idEntidad) {
-        // TODO Auto-generated method stub
         return inscripcionPuestoDao.findById(idEntidad).orElse(null);
     }
 
     @Override
     public InscripcionPuesto save(InscripcionPuesto entidad) {
-        // TODO Auto-generated method stub
         return inscripcionPuestoDao.save(entidad);
     }
 
     @Override
     public void deleteById(Long idEntidad) {
-        // TODO Auto-generated method stub
         inscripcionPuestoDao.deleteById(idEntidad);
     }
 }

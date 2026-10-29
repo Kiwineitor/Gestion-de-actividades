@@ -1,9 +1,5 @@
 ext {
     minSdkVersion = 23
-    // 36 y no el 35 que genera Capacitor por defecto: en esta maquina solo estan instaladas
-    // las plataformas android-36 y 36.1, y no hay `cmdline-tools`, asi que Gradle no puede
-    // descargar la 35 y la compilacion fallaria pidiendo un SDK que no se puede obtener.
-    // Si algun dia se instala cmdline-tools, se puede volver al valor por defecto.
     compileSdkVersion = 36
     targetSdkVersion = 36
     androidxActivityVersion = '1.9.2'

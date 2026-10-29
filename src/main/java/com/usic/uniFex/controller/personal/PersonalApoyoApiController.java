@@ -32,10 +32,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * API para gestión de personal de apoyo de la feria (fotógrafos, azafatas, logística, etc.).
- * Módulo aislado: no toca la tabla persona ni usuario existentes.
- */
 @RestController
 @RequestMapping("/api/app/personal-apoyo")
 @RequiredArgsConstructor
@@ -43,8 +39,6 @@ import lombok.RequiredArgsConstructor;
 public class PersonalApoyoApiController {
 
     private final GestionPersonalApoyoService gestion;
-
-    // ===== DEPENDENCIAS (solo SUPER USUARIO) =====
 
     @GetMapping("/dependencias")
     @PreAuthorize(Roles.SOLO_SUPER_USUARIO)
@@ -88,12 +82,6 @@ public class PersonalApoyoApiController {
         return responderDependencia(gestion.eliminarDependencia(id, actorId()));
     }
 
-    // ===== PERSONAL (recortado a la dependencia propia salvo super usuario) =====
-
-    /**
-     * Lo que la vista necesita para pintarse: si eres super usuario ves todo; si no, tu
-     * dependencia (o nada, si tu usuario no tiene ficha de apoyo con tu CI).
-     */
     @GetMapping("/mi-dependencia")
     public Map<String, Object> miDependencia() {
         Map<String, Object> m = new HashMap<>();
@@ -115,7 +103,6 @@ public class PersonalApoyoApiController {
                     .map(PersonalApoyoDTO::de)
                     .toList();
         }
-        // Sin super: solo la propia, aunque el cliente pida otra en el parametro.
         return gestion.miDependencia(actorId())
                 .map(d -> gestion.listarParaGestion(d.getId()).stream()
                         .map(PersonalApoyoDTO::de)
@@ -158,8 +145,6 @@ public class PersonalApoyoApiController {
         return responder(gestion.quitarFoto(id, actorId(), alcance()));
     }
 
-    // ===== helpers =====
-
     private ResponseEntity<Map<String, Object>> responder(Resultado r) {
         boolean tiene = r.personal() != null;
         Map<String, Object> cuerpo = new HashMap<>();
@@ -189,17 +174,12 @@ public class PersonalApoyoApiController {
         return (a != null && a.getPrincipal() instanceof JwtUser ju) ? ju.id() : null;
     }
 
-    /** true si quien llama es SUPER USUARIO (sin recorte de dependencia). */
     private boolean esSuperUsuario() {
         Authentication a = SecurityContextHolder.getContext().getAuthentication();
         return a != null && a.getPrincipal() instanceof JwtUser ju
                 && "SUPER_USUARIO".equals(ju.rolNormalizado());
     }
 
-    /**
-     * El recorte para este actor: null = ve y toca todo; si no, solo su dependencia (o nada,
-     * si no tiene ficha: el servicio rechaza la escritura y el listado sale vacio).
-     */
     private Long alcance() {
         if (esSuperUsuario()) return null;
         return gestion.miDependencia(actorId()).map(Dependencia::getId).orElse(-1L);

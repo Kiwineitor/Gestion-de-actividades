@@ -29,7 +29,6 @@ public class ApiController {
 
         Map<String, Object> response = new HashMap<>();
 
-        // Validar API Key
         if (!apiKey.equals(headerKey)) {
             response.put("error", "API Key inválida");
             return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);

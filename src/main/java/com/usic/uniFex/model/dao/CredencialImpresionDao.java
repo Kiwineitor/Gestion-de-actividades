@@ -9,14 +9,6 @@ import jakarta.persistence.Query;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Bitacora de credenciales impresas.
- *
- * Existe para poder responder "¿esta credencial se imprimio sin el comprobante?". Por eso se
- * guarda lo que FALTABA en el momento de imprimir, como texto y no como referencia: si el
- * expositor sube el comprobante media hora despues, esta fila tiene que seguir diciendo que
- * cuando se imprimio no estaba.
- */
 @Repository
 public class CredencialImpresionDao {
 
@@ -39,7 +31,6 @@ public class CredencialImpresionDao {
                 .executeUpdate();
     }
 
-    /** Cuantas veces se imprimio cada responsable y cuando fue la ultima. */
     @SuppressWarnings("unchecked")
     public List<Object[]> resumen() {
         return em.createNativeQuery("""
@@ -52,7 +43,6 @@ public class CredencialImpresionDao {
                 """).getResultList();
     }
 
-    /** El historial de una credencial, con quien la imprimio. */
     @SuppressWarnings("unchecked")
     public List<Object[]> historial(Long responsableId) {
         Query q = em.createNativeQuery("""

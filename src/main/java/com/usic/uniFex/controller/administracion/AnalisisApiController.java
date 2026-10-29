@@ -25,17 +25,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Los analisis de direccion: cuanto queda por vender, quien vende, que se cobro y a que ritmo.
- *
- * Cada uno se sirve de tres formas —JSON para la pantalla, PDF para imprimir, Excel para
- * seguir trabajando el dato— y las tres salen del MISMO calculo. Es la razon de que la
- * exportacion viva aqui y no en cada servicio: si el PDF recalculara por su cuenta, tarde o
- * temprano el papel diria una cifra y la pantalla otra, y nadie sabria cual creer.
- *
- * Lo ve {@code VE_REPORTES}, que incluye a direccion (ASESORIA) ademas de administracion. Un
- * vendedor no entra: aqui esta el total de la feria y el ranking de sus compañeros.
- */
 @RestController
 @RequestMapping("/api/app/analisis")
 @RequiredArgsConstructor
@@ -47,16 +36,6 @@ public class AnalisisApiController {
 
     private static final DateTimeFormatter DIA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
-    // ------------------------------------------------------------------ JSON para la pantalla
-
-    /**
-     * Todo de una vez.
-     *
-     * El tablero pinta las cuatro cosas juntas, asi que en cuatro peticiones separadas la
-     * pantalla se llenaria a trompicones y —peor— podrian venir de momentos distintos: el
-     * total de arriba de hace un segundo y el desglose de hace tres. En una sola peticion,
-     * todo lo que se ve es de la misma foto.
-     */
     @GetMapping
     public Map<String, Object> todo() {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -87,27 +66,16 @@ public class AnalisisApiController {
         return analisis.avance();
     }
 
-    /** Lo vendido por facultad (area academica) del vendedor que registro la venta. */
     @GetMapping("/facultad")
     public List<AnalisisDTO.Facultad> facultad() {
         return analisis.porFacultad();
     }
 
-    /** Lo VENDIDO de cada categoria, sin lo que queda por vender. */
     @GetMapping("/vendido-categoria")
     public List<AnalisisDTO.VendidoCategoria> vendidoCategoria() {
         return analisis.vendidoPorCategoria();
     }
 
-    // ------------------------------------------------------------------ descargas
-
-    /**
-     * El mismo reporte en PDF o en Excel, elegido por la ruta.
-     *
-     * Un solo endpoint para los dos formatos y los cuatro reportes: la alternativa eran ocho
-     * metodos que solo se diferencian en dos lineas. Un nombre desconocido responde **400**,
-     * no un archivo vacio con nombre bonito.
-     */
     @GetMapping("/{nombre}/{formato}")
     public ResponseEntity<byte[]> descargar(@PathVariable String nombre, @PathVariable String formato) {
         Tabla tabla = switch (nombre) {
@@ -136,13 +104,9 @@ public class AnalisisApiController {
                 .contentType(pdf ? MediaType.APPLICATION_PDF
                         : MediaType.parseMediaType(
                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-                // `attachment` con nombre: sin esto el navegador abre el XLSX como basura en
-                // pantalla o guarda el PDF con el nombre del endpoint.
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + archivo + "\"")
                 .body(datos);
     }
-
-    // ------------------------------------------------------------------ armado de cada tabla
 
     private Tabla tablaOcupacion() {
         List<List<String>> filas = new ArrayList<>();
@@ -162,8 +126,6 @@ public class AnalisisApiController {
             bsVendido = bsVendido.add(o.bsVendido());
             bsPorVender = bsPorVender.add(o.bsPorVender());
         }
-        // El TOTAL va como una fila mas y no en un pie aparte: en Excel un pie flotante rompe
-        // el ordenar y el filtrar, que es justo para lo que se baja la hoja.
         int vendible = total - bloqueadas;
         String pct = vendible <= 0 ? "0,0" : bs(BigDecimal.valueOf(vendidas * 100.0 / vendible));
         if (!filas.isEmpty()) {
@@ -211,9 +173,6 @@ public class AnalisisApiController {
             filas.add(List.of(corte.concepto(), "", "", String.valueOf(corte.ventas()),
                     String.valueOf(corte.casetas()), bs(corte.totalBs()), ""));
         }
-        // El detalle va en la MISMA tabla, detras de los cortes y con una fila que lo separa:
-        // dos hojas obligarian a cuadrarlas a mano, y el total de arriba es justo la suma de
-        // lo de abajo.
         if (!c.pendientes().isEmpty()) {
             filas.add(List.of("", "", "", "", "", "", ""));
             filas.add(List.of("PENDIENTES DE COMPROBANTE", "", "", "", "", "", ""));
@@ -278,8 +237,6 @@ public class AnalisisApiController {
                 "Edicion activa. Solo ventas vivas.",
                 "La facultad es la del VENDEDOR que registro la venta: sale de su carrera (V35).",
                 "Vendedores = personas distintas que vendieron algo, no cuantas hay en el area."));
-        // El aviso solo cuando aplica: un reporte que sale casi entero en "sin carrera" parece
-        // roto, y la causa —que falta asignarles la carrera— no se adivina mirando el papel.
         if (haySinCarrera) {
             notas.add("ATENCION: hay ventas SIN CARRERA asignada. La carrera de cada vendedor se "
                     + "pone en Administracion > Vendedores; hasta entonces sus ventas no se "
@@ -322,7 +279,6 @@ public class AnalisisApiController {
                 cuerpo);
     }
 
-    /** Formato es-BO: el punto agrupa y la coma separa decimales. */
     private static String bs(BigDecimal v) {
         return String.format(java.util.Locale.of("es", "BO"), "%,.2f",
                 v == null ? BigDecimal.ZERO : v);

@@ -2,7 +2,6 @@
 import { ref, computed } from 'vue';
 import { apiFetch } from '../api.js';
 import { toast } from '../ui/toast.js';
-import UiModal from './UiModal.vue';
 
 const props = defineProps({
   notificacion: { type: Object, required: true },
@@ -18,14 +17,12 @@ const modalResolver = ref(false);
 const respuestaTexto = ref('');
 const enviando = ref(false);
 
-/** Formato de fecha legible. */
 function formatearFecha(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   return d.toLocaleString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-/** Clase CSS por tipo. */
 function claseTipo(tipo) {
   const mapa = {
     SOLICITUD_CANCELACION: 'tipo-solicitud',
@@ -38,7 +35,6 @@ function claseTipo(tipo) {
   return mapa[tipo] || 'tipo-otro';
 }
 
-/** Etiqueta legible del tipo. */
 function etiquetaTipo(tipo) {
   const mapa = {
     SOLICITUD_CANCELACION: 'Solicitud cancelación',
@@ -51,7 +47,6 @@ function etiquetaTipo(tipo) {
   return mapa[tipo] || tipo;
 }
 
-/** Ícono por tipo. */
 function iconoTipo(tipo) {
   const mapa = {
     SOLICITUD_CANCELACION: '📋',
@@ -64,20 +59,17 @@ function iconoTipo(tipo) {
   return mapa[tipo] || '🔔';
 }
 
-/** Si es una observación admin → vendedor y está ABIERTA/RESPONDIDA. */
 const esHiloAbierto = computed(() =>
   props.notificacion.tipo === 'OBSERVACION_ADMIN' &&
   ['ABIERTA', 'RESPONDIDA'].includes(props.notificacion.estadoHilo)
 );
 
-/** Si es admin y el hilo es RESPONDIDA → puede resolver. */
 const puedeResolver = computed(() =>
   props.esAdmin &&
   props.notificacion.tipo === 'OBSERVACION_ADMIN' &&
   props.notificacion.estadoHilo === 'RESPONDIDA'
 );
 
-/** Si es vendedor y el hilo es ABIERTA → puede responder. */
 const puedeResponder = computed(() =>
   !props.esAdmin &&
   props.notificacion.tipo === 'OBSERVACION_ADMIN' &&
@@ -176,7 +168,6 @@ async function confirmarResolver() {
     <div class="cuerpo" v-show="expandida">
       <p class="cuerpo-texto">{{ notificacion.cuerpo }}</p>
 
-      <!-- Hilo de observación -->
       <div v-if="notificacion.tipo === 'OBSERVACION_ADMIN'" class="hilo">
         <div v-if="notificacion.respuesta" class="respuesta">
           <div class="respuesta-cabecera">
@@ -280,7 +271,6 @@ async function confirmarResolver() {
 .acciones-responder, .acciones-resolver { display: flex; justify-content: flex-end; gap: 0.5rem; }
 .resuelta { color: var(--ok); font-weight: 600; font-size: 0.85rem; }
 
-/* Colores de badge por tipo */
 .tipo-solicitud .badge { background: var(--tramite-suave, #fff3cd); color: #8a6d1a; }
 .tipo-aprobada .badge { background: var(--ok-suave, #d4edda); color: #1e6b34; }
 .tipo-rechazada .badge { background: var(--danger-suave); color: var(--danger); }

@@ -11,7 +11,6 @@ import com.usic.uniFex.model.dto.ResponsableListadoExplodeView;
 import com.usic.uniFex.model.dto.ResponsableListadoView;
 import com.usic.uniFex.model.dto.ResponsableReporteView;
 import com.usic.uniFex.model.entity.Responsable;
-import com.usic.uniFex.model.service.ResponsableDetalleRow;
 
 @Service
 public interface IResponsableService extends IServiceGenerico<Responsable, Long> {

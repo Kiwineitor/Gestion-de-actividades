@@ -2,7 +2,6 @@ package com.usic.uniFex.Config;
 
 import org.slf4j.MDC;
 
-/** Conserva el usuario de la accion cuando su trabajo continua en otro hilo. */
 public final class ContextoRegistro {
     private ContextoRegistro() {}
 

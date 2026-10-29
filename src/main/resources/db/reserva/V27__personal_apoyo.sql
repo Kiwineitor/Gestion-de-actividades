@@ -1,12 +1,3 @@
--- V27: Personal de apoyo para la feria (fotógrafos, azafatas, logística, etc.).
---
--- Dos tablas:
---   dependencia        Catálogo de dependencias/unidades (ej. "Unidad de Comunicación").
---   personal_apoyo     Personas asignadas a una dependencia con un rol concreto
---                      (ej. "fotógrafo", "azafata", "logística").
---
--- No tocan la tabla persona ni usuario existentes: es un módulo aislado de apoyo.
-
 CREATE TABLE IF NOT EXISTS dependencia (
     id                       BIGSERIAL PRIMARY KEY,
     nombre                   VARCHAR(150) NOT NULL UNIQUE,
@@ -29,7 +20,7 @@ CREATE TABLE IF NOT EXISTS personal_apoyo (
     ci                       VARCHAR(20) NOT NULL,
     correo                   VARCHAR(120),
     celular                  VARCHAR(20),
-    rol                      VARCHAR(80) NOT NULL,       -- ej. "fotógrafo", "azafata", "logística"
+    rol                      VARCHAR(80) NOT NULL,
     _fecha_registro          TIMESTAMP(6),
     _registro_id_usuario     BIGINT,
     _fecha_modificacion      TIMESTAMP(6),
@@ -43,7 +34,6 @@ CREATE INDEX IF NOT EXISTS idx_personal_apoyo_ci ON personal_apoyo (ci);
 COMMENT ON COLUMN personal_apoyo.rol IS 'Rol dentro de la dependencia: fotógrafo, azafata, logística, etc.';
 COMMENT ON COLUMN personal_apoyo._estado IS 'A = activo, X = eliminado lógicamente';
 
--- Datos de ejemplo (opcional, se pueden borrar si no se quieren)
 INSERT INTO dependencia (nombre, descripcion, _fecha_registro, _estado)
 VALUES
     ('Unidad de Comunicación', 'Área de comunicación y prensa de la feria', NOW(), 'A'),

@@ -88,10 +88,8 @@ public class UsuarioController {
             @RequestParam("persona") Long personaId,
             @RequestParam("rol") Long rolId) {
 
-        // Normalizar sin re-asignar la variable usada en el lambda
         final String usernameNorm = (username == null) ? null : username.trim();
 
-        // 1) Validaciones básicas
         if (usernameNorm == null || usernameNorm.isBlank())
             return ResponseEntity.badRequest().body("El nombre de usuario es obligatorio.");
         if (rawPassword == null || rawPassword.isBlank())
@@ -101,7 +99,6 @@ public class UsuarioController {
         if (rolId == null)
             return ResponseEntity.badRequest().body("Debe seleccionar un rol.");
 
-        // 2) Reglas de negocio
         boolean usernameExiste = usuarioService.findAll().stream()
                 .anyMatch(u -> u.getUsername() != null && u.getUsername().equalsIgnoreCase(usernameNorm));
         if (usernameExiste)
@@ -114,17 +111,15 @@ public class UsuarioController {
         if (personaYaTieneUsuario)
             return ResponseEntity.badRequest().body("La persona seleccionada ya tiene un usuario asignado.");
 
-        // 3) Cargar Persona y Rol
         var persona = personaService.findById(personaId);
         if (persona == null) return ResponseEntity.badRequest().body("Persona no encontrada.");
 
         var rol = rolService.findById(rolId);
         if (rol == null) return ResponseEntity.badRequest().body("Rol no encontrado.");
 
-        // 4) Guardar
         Usuario nuevo = new Usuario();
-        nuevo.setUsername(usernameNorm);                         // usar el normalizado
-        nuevo.setPassword(passwordEncoder.encode(rawPassword));  // encriptar
+        nuevo.setUsername(usernameNorm);
+        nuevo.setPassword(passwordEncoder.encode(rawPassword));
         nuevo.setPersona(persona);
         nuevo.setRol(rol);
         nuevo.setEstado("ACTIVO");
@@ -136,15 +131,12 @@ public class UsuarioController {
         return ResponseEntity.ok("Usuario registrado correctamente.");
     }
 
-
-
     @ValidarUsuarioAutenticado
     @PostMapping("/modificar-usuario")
     public ResponseEntity<String> modificar(HttpServletRequest request, Usuario usuario) {
         Usuario original = usuarioService.findById(usuario.getId());
         if (original == null) return ResponseEntity.badRequest().body("Usuario no encontrado.");
 
-        // copia campos editables excepto password
         original.setUsername(usuario.getUsername());
         original.setPersona(usuario.getPersona());
         original.setRol(usuario.getRol());
@@ -157,7 +149,6 @@ public class UsuarioController {
         return ResponseEntity.ok("Se realizó la modificación correctamente");
     }
 
-    // 🔑 Cambiar contraseña (admin define nueva)
     @ValidarUsuarioAutenticado
     @PostMapping("/cambiar-password/{id_usuario}")
     public ResponseEntity<String> cambiarPassword(

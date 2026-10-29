@@ -44,25 +44,21 @@ public class InscripcionServiceImpl implements IInscripcionService{
 
     @Override
     public List<Inscripcion> findAll() {
-        // TODO Auto-generated method stub
         return inscripcionDao.findAll();
     }
 
     @Override
     public Inscripcion findById(Long idEntidad) {
-        // TODO Auto-generated method stub
         return inscripcionDao.findById(idEntidad).orElse(null);
     }
 
     @Override
     public Inscripcion save(Inscripcion entidad) {
-        // TODO Auto-generated method stub
         return inscripcionDao.save(entidad);
     }
 
     @Override
     public void deleteById(Long idEntidad) {
-        // TODO Auto-generated method stub
         inscripcionDao.deleteById(idEntidad);
     }
 
@@ -86,19 +82,11 @@ public class InscripcionServiceImpl implements IInscripcionService{
         return listarParaTabla(false);
     }
 
-    /**
-     * @param canceladas false = las activas (lo que ve la SPA por defecto);
-     *                   true  = el historico de canceladas (baja logica).
-     */
     @Override
     public List<InscripcionListadoDTO> listarParaTabla(boolean canceladas) {
         return listarParaTabla(canceladas, null);
     }
 
-    /**
-     * @param soloDeUsuario null = todas; si no, solo las que registro ese usuario. Se recorta
-     *                      sobre la entidad y no sobre el DTO, que no lleva el id del vendedor.
-     */
     @Override
     public List<InscripcionListadoDTO> listarParaTabla(boolean canceladas, Long soloDeUsuario) {
         List<Inscripcion> ins = canceladas ? inscripcionDao.findAllCanceladas()
@@ -108,12 +96,6 @@ public class InscripcionServiceImpl implements IInscripcionService{
                 .map(this::aListado).collect(Collectors.toList());
     }
 
-    /**
-     * Detalle completo para el modulo de Inscripciones: datos de la venta, responsables,
-     * casetas con costo, datos de cancelacion y la traza de auditoria.
-     *
-     * @return null si la inscripcion no existe.
-     */
     @Override
     public InscripcionDetalleDTO detalleParaTabla(Long id) {
         Inscripcion i = inscripcionDao.findConTodoPorId(id).orElse(null);
@@ -123,13 +105,11 @@ public class InscripcionServiceImpl implements IInscripcionService{
         var tipo = (entidad != null && entidad.getTipoEntidad() != null)
                 ? entidad.getTipoEntidad().getNombre() : null;
 
-        // Los responsables van en consulta aparte (ver findConTodoPorId): fetch de dos
-        // colecciones a la vez dispara MultipleBagFetchException en Hibernate.
         List<Responsable> responsables = (entidad == null) ? List.of()
                 : responsableDao.findByEntidadIdWithPersona(entidad.getId());
 
         List<InscripcionDetalleDTO.ResponsableDetalle> rds = responsables.stream()
-                .sorted(Comparator.comparing(r -> !r.isEsTitular())) // el titular primero
+                .sorted(Comparator.comparing(r -> !r.isEsTitular()))
                 .map(r -> {
                     var p = r.getPersona();
                     String foto = p != null ? p.getFoto() : null;
@@ -139,8 +119,6 @@ public class InscripcionServiceImpl implements IInscripcionService{
                             p != null ? p.getCorreo() : null,
                             p != null ? p.getCelular() : null,
                             r.isEsTitular(),
-                            // Misma forma que en el resto del sistema: la ruta que sirve
-                            // /files/**, no el nombre suelto del archivo.
                             (foto != null && !foto.isBlank()) ? "/files/" + foto : null,
                             r.isEsExtra(),
                             r.getMontoExtra(),
@@ -254,7 +232,6 @@ public class InscripcionServiceImpl implements IInscripcionService{
                 i.getOrigenCancelacion());
     }
 
-    /** Nombre para mostrar de un usuario: el de su persona, o el username como respaldo. */
     private String nombreDe(Usuario u) {
         return Optional.ofNullable(u)
                 .map(us -> {

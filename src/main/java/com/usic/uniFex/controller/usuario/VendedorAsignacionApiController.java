@@ -25,20 +25,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Que casetas tiene habilitadas cada vendedor (rol ADMINISTRATIVO).
- *
- * **Una sola via de habilitacion: las casetas que se le seleccionan.** Hubo otra por categoria
- * entera y un "cupo" aparte; las dos podian contradecir a la seleccion (con la categoria asignada,
- * seleccionarle 10 casetas no servia de nada porque le seguian saliendo todas). Se retiraron en
- * V23: si se le habilitan 10 casetas, ve 10 y vende 10.
- *
- * **La misma caseta puede habilitarse a varios vendedores** (V32): varios atienden el mismo
- * sector y registra quien cierra el trato primero. Que no se venda dos veces lo garantiza la
- * reserva, no esta pantalla.
- *
- * El mapa filtrado del vendedor lo sirve PuestoApiController, que usa este mismo servicio.
- */
 @RestController
 @RequestMapping("/api/app")
 @RequiredArgsConstructor
@@ -46,43 +32,24 @@ public class VendedorAsignacionApiController {
 
     private final VendedorAsignacionService service;
 
-    /**
-     * Los vendedores del sistema, para la tabla de administracion: cada uno con su carrera, su
-     * area y cuantas casetas lleva de cada categoria.
-     *
-     * Devuelve {@link VendedorDTO} y no la entidad {@code Usuario}. Mientras devolvio la
-     * entidad, cada listado sacaba tambien el hash de la contraseña por la red, y la columna
-     * "Categorias" no se podia llenar porque ese dato no esta en el usuario.
-     */
     @GetMapping("/vendedores")
     @PreAuthorize(Roles.ADMINISTRA)
     public List<VendedorDTO> listarVendedores() {
         return service.listarVendedores();
     }
 
-    /** Las casetas habilitadas a un vendedor, con sus datos. */
     @GetMapping("/vendedores/{id}/puestos")
     @PreAuthorize(Roles.ADMINISTRA)
     public List<Puesto> getPuestos(@PathVariable Long id) {
         return service.getPuestosAsignados(id);
     }
 
-    /**
-     * Catalogo del modal: todas las casetas vivas con su categoria y su duenio actual.
-     * Una sola peticion para toda la pantalla; agrupar y filtrar se hace en el cliente.
-     */
     @GetMapping("/vendedores/puestos-asignables")
     @PreAuthorize(Roles.ADMINISTRA)
     public List<VendedorAsignacionService.CasetaAsignable> catalogoAsignable() {
         return service.catalogoAsignable();
     }
 
-    /**
-     * Guarda de una vez TODAS las casetas del vendedor (la seleccion final, no un cambio suelto).
-     *
-     * Existe porque habilitar veinte casetas de una en una son veinte peticiones, y en la practica
-     * se habilitan por rangos. Aqui son dos consultas, pase lo que pase.
-     */
     @PutMapping("/vendedores/{id}/puestos")
     @PreAuthorize(Roles.ADMINISTRA)
     public ResponseEntity<?> reemplazarPuestos(@PathVariable Long id, @RequestBody Map<String, Object> body) {
@@ -99,8 +66,6 @@ public class VendedorAsignacionApiController {
             cuerpo.put("asignadas", r.asignadas());
             cuerpo.put("quitadas", r.quitadas());
             cuerpo.put("noDisponibles", r.noDisponibles());
-            // El motivo ya no puede ser "es de otro": desde V32 las casetas se comparten. Si
-            // algo no quedo es que esa caseta no existe o esta anulada.
             cuerpo.put("mensaje", r.noDisponibles().isEmpty()
                     ? "Casetas habilitadas"
                     : r.noDisponibles().size() + " caseta(s) ya no existen y no se habilitaron");
@@ -110,7 +75,6 @@ public class VendedorAsignacionApiController {
         }
     }
 
-    /** Agrega las casetas seleccionadas a todos los vendedores de una facultad/area. */
     @PostMapping("/vendedores/areas/{areaId}/puestos")
     @PreAuthorize(Roles.ADMINISTRA)
     public ResponseEntity<?> agregarPuestosAArea(@PathVariable Long areaId, @RequestBody Map<String, Object> body) {
@@ -136,7 +100,6 @@ public class VendedorAsignacionApiController {
         }
     }
 
-    /** Retira una caseta suelta. El modal usa el guardado en lote; esto es para casos puntuales. */
     @DeleteMapping("/vendedores/{id}/puestos/{puestoId}")
     @PreAuthorize(Roles.ADMINISTRA)
     public ResponseEntity<?> quitarPuesto(@PathVariable Long id, @PathVariable Long puestoId) {
@@ -144,7 +107,6 @@ public class VendedorAsignacionApiController {
         return ResponseEntity.ok(Map.of("ok", true));
     }
 
-    /** Las casetas del vendedor autenticado. Las pinta su propia pantalla. */
     @GetMapping("/mis-puestos")
     public ResponseEntity<?> misPuestos() {
         Long usuarioId = usuarioActual();

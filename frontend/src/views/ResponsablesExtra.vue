@@ -1,16 +1,4 @@
 <script setup>
-/**
- * Control de los responsables EXTRA: los que pasan de los dos por caseta y pagan 15 Bs.
- *
- * <h2>Por qué una pantalla propia</h2>
- * La pregunta que contesta —«¿quién se agregó de más y pagó?»— es de toda la feria, no de una
- * venta. Con cien ventas, responderla abriendo una por una no lo hace nadie, y por eso estos
- * cobros se perdían de vista. Agrupada por entidad se lee como lo que es: una lista de cobros
- * a cuadrar.
- *
- * Lo primero que se ve son los que están <strong>sin comprobante</strong>: es lo único de esta
- * pantalla sobre lo que hay que actuar.
- */
 import { ref, computed, onMounted } from 'vue';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
@@ -19,7 +7,6 @@ import { url as urlApi } from '../config';
 const extras = ref([]);
 const cargando = ref(true);
 const filtro = ref('');
-/** Qué comprobante está abierto. Uno a la vez: dos imágenes grandes no caben en el móvil. */
 const viendo = ref(null);
 
 const urlArchivo = (r) => (r ? urlApi(r) : '');
@@ -53,7 +40,6 @@ const filtrados = computed(() => {
     `${e.entidad} ${e.nombre} ${e.ci} ${e.agregadoPor || ''}`.toLowerCase().includes(q));
 });
 
-/** Agrupados por entidad, que es como se pregunta: "los extras de tal empresa". */
 const porEntidad = computed(() => {
   const m = new Map();
   for (const e of filtrados.value) {
@@ -85,7 +71,6 @@ const totalCobrado = computed(() =>
     </div>
   </div>
 
-  <!-- Lo que hay que reclamar, arriba y con nombre y apellido. -->
   <section v-if="sinComprobante.length" class="card faltan">
     <header><h2>Falta el comprobante</h2><span class="cuenta">{{ sinComprobante.length }}</span></header>
     <ul>
@@ -116,7 +101,6 @@ const totalCobrado = computed(() =>
 
       <ul class="personas">
         <li v-for="e in g.personas" :key="e.responsableId" class="persona">
-          <!-- La foto es la de su credencial: reconocer a la persona es parte de auditar. -->
           <img v-if="e.fotoUrl" class="retrato" :src="urlArchivo(e.fotoUrl)" :alt="e.nombre" />
           <span v-else class="retrato sin-retrato" aria-hidden="true">👤</span>
 
@@ -162,7 +146,6 @@ const totalCobrado = computed(() =>
 .resumen { padding: 0.8rem; display: flex; flex-direction: column; align-items: center; gap: 0.15rem; text-align: center; }
 .resumen strong { font-size: 1.6rem; line-height: 1; }
 .resumen span { font-size: 0.82rem; opacity: 0.75; }
-/* Sin comprobante es lo único sobre lo que hay que actuar: salta a la vista. */
 .resumen.ojo strong { color: var(--danger); }
 
 .faltan { padding: 0; margin-bottom: 1rem; border-left: 3px solid var(--danger); }

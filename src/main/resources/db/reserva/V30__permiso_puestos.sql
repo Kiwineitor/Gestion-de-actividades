@@ -1,12 +1,3 @@
--- =============================================================================
--- V30 - Pantalla Puestos en el menu de la SPA.
---
--- Permite ver casetas activas y cambiar su numero sin entrar al editor del plano.
--- El endpoint sigue protegido con Roles.EDITA_PLANO; este permiso solo muestra el
--- enlace en el menu. SUPER USUARIO ya ve todo por codigo.
--- =============================================================================
-
--- Guarda por si V28 aun no creo la tabla (bases que la aplican suelta a mano).
 CREATE TABLE IF NOT EXISTS rol_pantalla (
     id                       BIGSERIAL PRIMARY KEY,
     id_rol                   BIGINT NOT NULL REFERENCES rol(id) ON DELETE CASCADE,

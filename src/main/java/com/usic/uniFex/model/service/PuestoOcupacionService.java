@@ -16,26 +16,12 @@ import com.usic.uniFex.model.dto.OcupacionPuestoDTO;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Quien tiene cada caseta: el que la esta registrando y el que ya la vendio.
- *
- * Es solo de lectura. La verdad de quien se queda una caseta la decide la maquina de estados
- * del puesto (el UPDATE condicional de {@code IPuestoDao}); esto se limita a ponerle cara y
- * telefono a lo que ya paso, para que el mapa pueda responder "¿y esta quien la vendio?" sin
- * que nadie tenga que llamar a administracion.
- */
 @Service
 @RequiredArgsConstructor
 public class PuestoOcupacionService {
 
     private final IPuestoDao puestoDao;
 
-    /**
-     * Una fila por caseta no libre, con quien la tiene.
-     *
-     * Las casetas libres y las bloqueadas no aparecen: no las tiene nadie, y mandarlas seria
-     * mandar ~300 filas vacias en cada carga del mapa.
-     */
     @Transactional(readOnly = true)
     public List<OcupacionPuestoDTO> ocupacionConVendedor() {
         return puestoDao.findOcupacionConVendedor().stream()
@@ -50,13 +36,6 @@ public class PuestoOcupacionService {
                 .toList();
     }
 
-    /**
-     * Cuantas casetas lleva vendidas cada vendedor en la edicion activa, por id de usuario.
-     *
-     * Una sola consulta para los treinta y cinco, no una por vendedor: la pantalla de
-     * seguimiento se refresca cada 5 s y una consulta por fila serian treinta y cinco viajes
-     * a la base cada vez que alguien la deja abierta.
-     */
     @Transactional(readOnly = true)
     public Map<Long, Long> vendidasPorVendedor() {
         Map<Long, Long> m = new HashMap<>();
@@ -86,10 +65,6 @@ public class PuestoOcupacionService {
         return null;
     }
 
-    /**
-     * El nombre que se lee en pantalla. Cae al usuario de la cuenta si la persona no tiene
-     * nombre cargado: es preferible "jperez" a un hueco, porque un hueco parece un fallo.
-     */
     private static String nombreDe(Object nombre, Object paterno, Object materno, Object username) {
         String completo = String.join(" ", Stream.of(nombre, paterno, materno)
                 .map(PuestoOcupacionService::limpio)

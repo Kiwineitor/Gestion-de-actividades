@@ -40,7 +40,7 @@ async function cargarCatalogos() {
     const [e, d] = await Promise.all([apiFetch('/api/app/ediciones'), apiFetch('/api/app/personal-apoyo/dependencias')]);
     if (e.ok) ediciones.value = await e.json();
     if (d.ok) dependencias.value = await d.json();
-  } catch { /* sin catalogos: los selectores quedan con la opcion general */ }
+  } catch { }
 }
 const selId = ref(null);
 const borrador = ref(null);
@@ -315,7 +315,7 @@ async function abrirPrevia() {
       if (r.ok) {
         previa.personas = (await r.json()).map((c) => ({ id: c.responsableId, etiqueta: `${c.nombre} · ${c.entidad || ''}` }));
       }
-    } catch { /* sin lista: se usa el ejemplo */ }
+    } catch { }
   }
   await generarPrevia();
 }

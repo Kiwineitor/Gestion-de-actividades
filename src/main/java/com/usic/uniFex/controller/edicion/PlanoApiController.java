@@ -22,12 +22,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Plano de la feria (V13).
- *
- * Leerlo lo necesita cualquier vendedor (es el fondo del mapa); reemplazarlo es montaje, asi
- * que va con el mismo permiso que editar el plano.
- */
 @RestController
 @RequestMapping("/api/app/plano")
 @RequiredArgsConstructor
@@ -40,13 +34,6 @@ public class PlanoApiController {
         return planoService.activo();
     }
 
-    /**
-     * Reemplaza el plano de la edicion activa.
-     *
-     * Ojo con lo que esto implica para las casetas ya colocadas: sus coordenadas son
-     * fracciones 0..1 de la imagen, asi que si el plano nuevo tiene otro encuadre, la misma
-     * fraccion cae en otro sitio y hay que recolocarlas. La interfaz lo advierte antes de subir.
-     */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize(Roles.EDITA_PLANO)
     public ResponseEntity<Map<String, Object>> reemplazar(@RequestPart("archivo") MultipartFile archivo) {
@@ -58,8 +45,6 @@ public class PlanoApiController {
 
         PlanoService.Resultado r = planoService.reemplazar(archivo, usuarioId);
 
-        // LinkedHashMap y no Map.of: `plano` es null cuando falla, y Map.of lanza NPE con un
-        // valor null — el mismo tropiezo que ya rompio "Mis ventas".
         Map<String, Object> cuerpo = new LinkedHashMap<>();
         cuerpo.put("ok", r.ok());
         cuerpo.put("mensaje", r.mensaje());

@@ -4,7 +4,6 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,7 +55,7 @@ public class AccesoResponsableServiceImpl implements IAccesoResponsableService {
             Map<String,Object> m = new LinkedHashMap<>();
             m.put("id", a.getId());
             m.put("entrada", a.getFechaEntrada());
-            m.put("salida", a.getFechaSalida()); // <-- F mayúscula
+            m.put("salida", a.getFechaSalida());
             m.put("observacion", a.getObservacion());
             return m;
         })

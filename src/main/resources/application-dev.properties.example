@@ -1,10 +1,3 @@
-# Plantilla del perfil "dev". Copiar a application-dev.properties (mismo directorio) y
-# completar. application-dev.properties NO se sube a git: lleva claves reales.
-# Para solo probar el sistema no hace falta nada de esto: usar Docker (ver DOCKER.md).
-
-# ===== BASE DE DATOS =====
-# Con Docker levantado, la base del contenedor sirve tal cual:
-#   jdbc:postgresql://localhost:5433/unifex   usuario unifex   clave unifex_dev_2026
 spring.datasource.url=jdbc:postgresql://localhost:5433/unifex
 spring.datasource.username=unifex
 spring.datasource.password=CAMBIAR
@@ -13,48 +6,35 @@ spring.datasource.driverClassName=org.postgresql.Driver
 spring.application.name=uniFex
 server.port=7676
 
-# Hibernate NO toca el esquema. Si la base esta vacia, la propia aplicacion la
-# construye al arrancar (ver UniFexApplication.aplicarEsquemaSiFalta).
 spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
 spring.jpa.properties.hibernate.hbm2ddl.auto=none
 spring.jpa.open-in-view=true
 spring.thymeleaf.cache=true
 
-# ===== Carpetas donde se guardan fotos y comprobantes =====
-# Las crea el arranque si no existen (ver UniFexApplication.prepararCarpetasDeSubida).
 app.upload-root=${user.home}/uniFex-dev/uploads
 spring.servlet.multipart.enabled=true
 spring.servlet.multipart.location=${user.home}/uniFex-dev/tmp
 spring.servlet.multipart.max-file-size=25MB
 spring.servlet.multipart.max-request-size=25MB
 
-# ===== Contrasenas iniciales de admin1 / admin2 =====
-# Solo se usan la PRIMERA vez que se crean esos usuarios. Si ya existen, no se tocan.
 unifex.admin.admin1-password=CAMBIAR
 unifex.admin.admin2-password=CAMBIAR
 
-# ===== Claves del sistema =====
 api.key=CAMBIAR
-# 32 caracteres o mas
 unifex.jwt.secret=CAMBIAR-POR-UN-SECRETO-DE-32-CARACTERES-O-MAS
 unifex.jwt.expiration-ms=86400000
 
-# ===== Reserva de casetas =====
 unifex.reserva.ttl-segundos=300
 unifex.reserva.barrido-ms=30000
 
-# ===== Pasarela de pago: APAGADA =====
-# Vacias a proposito. Asi el modulo no se activa y NO tumba el arranque.
 pasarela.url=
 pasarela.key=
 pasarela.successUrl=
 pasarela.cancelUrl=
 pasarela.notifyUrl=
 
-# ===== QR de la nota de venta (vacio = el QR lleva solo el codigo) =====
 unifex.nota.verificacion-url=
 
-# ===== Detras de proxy / nginx =====
 server.forward-headers-strategy=framework
 server.tomcat.remoteip.protocol-header=X-Forwarded-Proto
 server.tomcat.remoteip.remote-ip-header=X-Forwarded-For
@@ -63,11 +43,9 @@ unifex.cors.origenes=http://localhost:5173
 
 spring.output.ansi.enabled=always
 
-# ===== WhatsApp: apagado. Se configura desde la pantalla "Instancias de WhatsApp" =====
 whatsapp.enabled=false
 whatsapp.api.url=
 whatsapp.api.key=
 whatsapp.instance=
 
-# URL base publica para enlaces en el mensaje (credencial, recibo)
 app.base-url=http://localhost:7676/app/

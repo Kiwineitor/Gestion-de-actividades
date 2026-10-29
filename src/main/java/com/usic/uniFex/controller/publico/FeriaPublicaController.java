@@ -1,11 +1,11 @@
 package com.usic.uniFex.controller.publico;
 
-import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,7 +17,6 @@ import com.usic.uniFex.model.dao.IPuestoDao;
 import com.usic.uniFex.model.entity.Categoria;
 import com.usic.uniFex.model.entity.Edicion;
 import com.usic.uniFex.model.entity.Puesto;
-import com.usic.uniFex.model.dto.EdicionDTO;
 import com.usic.uniFex.model.dto.PlanoDTO;
 import com.usic.uniFex.model.service.VisitasPaginaService;
 
@@ -33,28 +32,24 @@ public class FeriaPublicaController {
     private final IPuestoDao puestoDao;
     private final com.usic.uniFex.model.service.PlanoService planoService;
     private final VisitasPaginaService visitasService;
+    private final JdbcTemplate jdbc;
 
-    /**
-     * Información pública de la feria: edición activa, categorías, estadísticas de casetas y plano.
-     * Sin autenticación: accesible desde la web pública, QR, APK sin login, etc.
-     */
     @GetMapping
     public Map<String, Object> info() {
         Map<String, Object> cuerpo = new LinkedHashMap<>();
 
-        // 1. Edición activa
         Edicion edicionActiva = edicionDao.findFirstByActivaTrueOrderByAnioDesc().orElse(null);
+        Map<String, Object> publico = edicionActiva == null ? null : datosPublicos(edicionActiva.getId());
+        if (publico != null && !Boolean.TRUE.equals(publico.get("publica"))) {
+            cuerpo.put("edicion", null);
+            return cuerpo;
+        }
         if (edicionActiva != null) {
-            // LinkedHashMap y no Map.of: "plano" es null en cuanto la edición no tiene un
-            // plano propio subido (el caso normal de una edición recién creada), y Map.of
-            // lanza NullPointerException ante cualquier valor null, aunque sea uno solo.
             Map<String, Object> edicionInfo = new LinkedHashMap<>();
             edicionInfo.put("id", edicionActiva.getId());
             edicionInfo.put("nombre", edicionActiva.getNombre());
             edicionInfo.put("anio", edicionActiva.getAnio());
             if (edicionActiva.getPlanoArchivo() != null) {
-                // Igual que arriba: ancho/alto/subidoEn pueden ser null en datos existentes
-                // aunque ya haya un archivo, así que tampoco aquí sirve Map.of.
                 Map<String, Object> planoInfo = new LinkedHashMap<>();
                 planoInfo.put("archivo", edicionActiva.getPlanoArchivo());
                 planoInfo.put("ancho", edicionActiva.getPlanoAncho());
@@ -68,14 +63,12 @@ public class FeriaPublicaController {
             edicionInfo.put("urlPlano", edicionActiva.getPlanoArchivo() != null
                     ? "/files/" + edicionActiva.getPlanoArchivo() + "?v=" + edicionActiva.getPlanoVersion()
                     : "/files/mapa.pdf");
+            edicionInfo.putAll(publico);
             cuerpo.put("edicion", edicionInfo);
         } else {
             cuerpo.put("edicion", null);
         }
 
-        // 2. Todas las ediciones (para selector histórico)
-        // LinkedHashMap y no Map.of: `activa` es un Boolean de entidad (puede ser null en
-        // ediciones antiguas que no pasaron por el backfill de V6), y Map.of no admite null.
         List<Map<String, Object>> ediciones = edicionDao.findAllByOrderByAnioDesc().stream()
                 .map(e -> {
                     Map<String, Object> m = new LinkedHashMap<>();
@@ -88,8 +81,7 @@ public class FeriaPublicaController {
                 .toList();
         cuerpo.put("ediciones", ediciones);
 
-        // 3. Categorías con color, forma y precio base
-        List<Categoria> categorias = categoriaDao.findAll();
+        List<Categoria> categorias = categoriaDao.deEdicionActiva();
         List<Map<String, Object>> categoriasInfo = categorias.stream()
                 .filter(c -> c.getEstado() == null || !"X".equals(c.getEstado()))
                 .map(c -> {
@@ -106,7 +98,6 @@ public class FeriaPublicaController {
                 .toList();
         cuerpo.put("categorias", categoriasInfo);
 
-        // 4. Estadísticas globales de casetas (solo activas)
         List<Puesto> puestosActivos = puestoDao.listarActivos();
         long total = puestosActivos.size();
         long libres = puestosActivos.stream().filter(p -> "L".equals(p.getEstadoPuesto())).count();
@@ -123,7 +114,6 @@ public class FeriaPublicaController {
         stats.put("porcentajeOcupacion", total > 0 ? Math.round((double) ocupados / total * 100) : 0);
         cuerpo.put("estadisticas", stats);
 
-        // 5. Detalle por categoría
         Map<Long, List<Puesto>> porCategoria = puestosActivos.stream()
                 .filter(p -> p.getCategoria() != null)
                 .collect(Collectors.groupingBy(p -> p.getCategoria().getId()));
@@ -149,7 +139,6 @@ public class FeriaPublicaController {
                 .toList();
         cuerpo.put("estadisticasPorCategoria", statsPorCategoria);
 
-        // 7. Plano (info completa para el visor público)
         PlanoDTO plano = planoService.activo();
         if (plano != null) {
             cuerpo.put("plano", Map.of(
@@ -163,12 +152,24 @@ public class FeriaPublicaController {
         return cuerpo;
     }
 
-    /**
-     * Contador de visitas de esta vista (V38), que la SPA muestra al pasar el cursor por
-     * "Quiero exponer". POST suma una visita y devuelve el total; GET solo lo lee. El cliente
-     * hace POST una vez por navegador y dia y GET el resto, asi recargar no infla el numero
-     * (ver VisitasPaginaService).
-     */
+    private Map<String, Object> datosPublicos(Long id) {
+        return jdbc.queryForObject("""
+                SELECT lugar, fechas_texto, descripcion_publica, contacto, portada_archivo, publica, recibe_interesados
+                  FROM edicion WHERE id = ?
+                """, (rs, i) -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("lugar", rs.getString("lugar"));
+            m.put("fechasTexto", rs.getString("fechas_texto"));
+            m.put("descripcion", rs.getString("descripcion_publica"));
+            m.put("contacto", rs.getString("contacto"));
+            String portada = rs.getString("portada_archivo");
+            m.put("portadaUrl", portada == null ? null : "/files/" + portada);
+            m.put("publica", rs.getBoolean("publica"));
+            m.put("recibeInteresados", rs.getBoolean("recibe_interesados"));
+            return m;
+        }, id);
+    }
+
     @PostMapping("/visitas")
     public Map<String, Object> registrarVisita() {
         return Map.of("total", visitasService.registrar(VisitasPaginaService.FERIA_PUBLICA));
@@ -179,9 +180,6 @@ public class FeriaPublicaController {
         return Map.of("total", visitasService.total(VisitasPaginaService.FERIA_PUBLICA));
     }
 
-    /**
-     * Solo estadísticas ligeras (para widgets, contadores en tiempo real, etc.)
-     */
     @GetMapping("/stats")
     public Map<String, Object> stats() {
         List<Puesto> puestosActivos = puestoDao.listarActivos();

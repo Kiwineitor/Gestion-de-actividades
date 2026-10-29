@@ -1,16 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- allowBackup="false" a proposito.
-         Con la copia automatica encendida, Android RESTAURA los datos de la aplicacion al
-         reinstalarla o al estrenar telefono, y eso incluye el almacenamiento del WebView: el
-         token de sesion y el menu guardado. El sintoma fue exactamente ese — desinstalar,
-         instalar la version nueva, y que la aplicacion abriera con el menu completo como si
-         hubiera sesion iniciada, para expulsar al usuario al tocar la primera opcion, porque
-         el token restaurado ya habia caducado.
-         Ademas no es algo que convenga respaldar: es la sesion de un vendedor y datos de
-         expositores viajando a una copia en la nube que no controlamos. Reinstalar tiene que
-         empezar limpio. -->
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -20,11 +10,6 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/AppTheme">
 
-        <!-- windowSoftInputMode: sin declararlo, Android elige por su cuenta y en una
-             ventana de borde a borde escoge adjustPan, que DESPLAZA la ventana entera para
-             dejar a la vista el campo enfocado. Eso movia la barra de menu "fija" y peleaba
-             con el arrastre del dedo: el formulario de venta no se podia deslizar. Con
-             adjustResize la ventana se encoge y la pagina scrollea como debe. -->
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation"
             android:windowSoftInputMode="adjustResize"
@@ -52,15 +37,8 @@
         </provider>
     </application>
 
-    <!-- Permissions -->
-
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- La camara es para leer el QR de las credenciales en la puerta (pantalla Escanear).
-         No se usa para tomar ni guardar fotos: el lector trabaja sobre el fotograma en vivo.
-         `required="false"` a proposito, para que la aplicacion siga instalandose en equipos
-         sin camara — el codigo tambien se puede teclear, que es el respaldo cuando el papel
-         viene arrugado o da el sol de frente. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />

@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Carga los datos de prueba si CARGAR_DATOS_PRUEBA=true (por defecto lo esta en
-# docker-compose.yml). Con false queda una instalacion limpia: solo esquema, roles y,
-# al arrancar Java, admin1/admin2.
 set -euo pipefail
 
 if [ "${CARGAR_DATOS_PRUEBA:-false}" != "true" ]; then

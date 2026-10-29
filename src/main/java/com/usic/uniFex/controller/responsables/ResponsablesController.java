@@ -68,7 +68,6 @@ public class ResponsablesController {
         return "responsables/tabla_registro";
     }
 
-    // POST: registrar persona + responsable
     @PostMapping(value = "/registrar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<String> registrar(
             @RequestParam("idEntidad") Long idEntidad,
@@ -81,7 +80,6 @@ public class ResponsablesController {
             @RequestParam(value = "foto", required = false) MultipartFile foto,
             HttpServletRequest request,
             Model model) {
-        // 1) Resuelve entidad
         Entidad entidad = entidadService.findById(idEntidad);
         if (entidad == null) {
             model.addAttribute("error", "La entidad seleccionada no existe.");
@@ -89,12 +87,10 @@ public class ResponsablesController {
             return ResponseEntity.ok("No está habilitada esta entidad");
         }
 
-        // 2) Usuario de sesión (si usas auditoría por usuario)
         Usuario usuario = (Usuario) request.getSession().getAttribute("usuario");
         Long idUsuario = (usuario != null ? usuario.getId() : null);
         Date ahora = new Date();
 
-        // 3) Construye Persona
         Persona persona = new Persona();
         persona.setNombre(nombre != null ? nombre.trim() : null);
         persona.setPaterno(paterno != null ? paterno.trim() : null);
@@ -103,50 +99,42 @@ public class ResponsablesController {
         persona.setCorreo(correo != null ? correo.trim() : null);
         persona.setCelular(celular != null ? celular.trim() : null);
 
-        // Auditoría básica (ajusta si tu AuditoriaConfig ya lo maneja)
         persona.setEstado("RESPONSABLE");
         persona.setRegistro(ahora);
         persona.setRegistroIdUsuario(idUsuario);
         persona.setModificacion(ahora);
         persona.setModificacionIdUsuario(idUsuario);
 
-        // 4) Guarda foto (si viene)
         if (foto != null && !foto.isEmpty()) {
             try {
                 String nombreBase = (persona.getNombreCompleto().isBlank() ? "responsable"
                         : persona.getNombreCompleto())
                         + "_" + (persona.getCi() == null ? "" : persona.getCi());
                 String fotoRel = storage.save(foto, Bucket.RESPONSABLES, nombreBase);
-                persona.setFoto(fotoRel); // guarda ruta relativa devuelta por storage
+                persona.setFoto(fotoRel);
             } catch (IOException e) {
                 log.warn("No se pudo guardar foto del responsable: {}", e.getMessage());
                 persona.setFoto(null);
             }
         }
 
-        // 5) Persiste Persona
         personaService.save(persona);
 
-        // 6) Crea Responsable vinculado a la Entidad
         Responsable responsable = new Responsable();
         responsable.setPersona(persona);
         responsable.setEntidad(entidad);
 
-        // Auditoría básica
         responsable.setEstado("RESPONSABLE");
         responsable.setRegistro(ahora);
         responsable.setRegistroIdUsuario(idUsuario);
         responsable.setModificacion(ahora);
         responsable.setModificacionIdUsuario(idUsuario);
 
-        // 7) Persiste Responsable
         responsableService.save(responsable);
 
-        // 8) Redirige (ajusta a tu UX: listado o detalle)
         return ResponseEntity.ok("Se realizó el registro correctamente");
     }
 
-    /* RESPONSABLES RUEDA */
     @ValidarUsuarioAutenticado
     @GetMapping("/vistaRA")
     public String vista_responsablesR() {
@@ -158,191 +146,6 @@ public class ResponsablesController {
         model.addAttribute("responsables", responsableService.listarVista());
         return "responsable_rueda/tabla_registro";
     }
-
-    // @ValidarUsuarioAutenticado
-    // @PostMapping("/formulario")
-    // public String formulario(Model model, Usuario usuario) {
-    // model.addAttribute("usuario", new Usuario());
-    // // model.addAttribute("listaPersonas", personaService.listarPersonas());
-    // // model.addAttribute("listaRoles", rolService.findAll());
-
-    // return "publico/formulario";
-    // }
-
-    // @ValidarUsuarioAutenticado
-    // @PostMapping("/formulario-edit/{id_usuario}")
-    // public String formularioEdit(Model model, @PathVariable("id_usuario") String
-    // idUsuario) throws Exception {
-
-    // Long id = Long.parseLong(Encriptar.decrypt(idUsuario));
-    // // model.addAttribute("usuario", usuarioService.findById(id));
-    // // model.addAttribute("listaPersonas", personaService.listarPersonas());
-    // // model.addAttribute("listaRoles", rolService.findAll());
-    // model.addAttribute("edit", "true");
-
-    // return "publico/formulario";
-    // }
-
-    // @ValidarUsuarioAutenticado
-    // @GetMapping("/formulario-edit/{id_inscripcion}")
-    // public String modalResponsable(@PathVariable("id_inscripcion") Long
-    // id_inscripcion, Model model) {
-
-    // model.addAttribute("inscripcion",
-    // inscripcionService.findById(id_inscripcion));
-    // model.addAttribute("responsables", responsableService.listarVista());
-    // return "publico/formulario :: modalContent";
-    // }
-
-    // @ValidarUsuarioAutenticado
-    // @GetMapping("/formulario-edit/{id_inscripcion}")
-    // public String modalResponsable(@PathVariable("id_inscripcion") Long
-    // idInscripcion,
-    // Model model) {
-
-    // // 1) Buscar inscripción (404 si no existe)
-    // Inscripcion ins = inscripcionService.findById(idInscripcion);
-    // if (ins == null) {
-    // throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Inscripción no
-    // encontrada");
-    // }
-
-    // // 2) Asegurar entidad no nula
-    // if (ins.getEntidad() == null) {
-    // ins.setEntidad(new Entidad());
-    // }
-
-    // // 3) Cargar responsables de la entidad (si tiene ID)
-    // List<Responsable> responsables = Optional
-    // .ofNullable(ins.getEntidad().getId())
-    // .map(entidadId -> responsableService.findByEntidadIdWithPersona(entidadId))
-    // .orElseGet(List::of);
-
-    // // 4) Armar formulario/DTO
-    // ResponsablesEditForm respForm = new ResponsablesEditForm();
-    // respForm.setEntidadId(ins.getEntidad().getId());
-    // respForm.setInscripcionId(ins.getId());
-
-    // for (Responsable r : responsables) {
-    // ResponsablePersonaDTO dto = new ResponsablePersonaDTO();
-    // dto.setResponsableId(r.getId());
-
-    // Persona p = r.getPersona();
-    // if (p != null) {
-    // dto.setPersonaId(p.getId());
-    // dto.setNombre(p.getNombre());
-    // dto.setPaterno(p.getPaterno());
-    // dto.setMaterno(p.getMaterno());
-    // dto.setCi(p.getCi());
-    // dto.setCorreo(p.getCorreo());
-    // dto.setCelular(p.getCelular());
-    // }
-
-    // respForm.getResponsables().add(dto);
-    // }
-
-    // // 5) Rellenar hasta 2 slots para el UI
-    // while (respForm.getResponsables().size() < 2) {
-    // respForm.getResponsables().add(new ResponsablePersonaDTO());
-    // }
-
-    // // 6) Atributos para la vista
-    // model.addAttribute("inscripcion", ins);
-    // model.addAttribute("tipoEntidades", tipoEntidadService.findAll());
-    // model.addAttribute("responsablesForm", respForm);
-    // model.addAttribute("edit", "true");
-
-    // // 7) Fragmento a renderizar
-    // return "publico/formulario :: modalContent";
-    // }
-
-    // @PostMapping("/modificar-inscripcion")
-    // public ResponseEntity<String> modificar(
-    // @ModelAttribute Inscripcion inscripcion,
-    // @RequestParam(value = "comprobante", required = false) MultipartFile
-    // comprobante) {
-
-    // System.out.println(inscripcion.getId());
-
-    // Inscripcion existente = inscripcionService.findById(inscripcion.getId());
-
-    // // actualizar datos de la inscripción
-    // existente.setEntidadBancaria(inscripcion.getEntidadBancaria());
-    // existente.setNumComprobante(inscripcion.getNumComprobante());
-
-    // // actualizar datos de la entidad asociada
-    // Entidad entidadExistente = existente.getEntidad();
-    // if (entidadExistente == null) {
-    // entidadExistente = new Entidad();
-    // entidadExistente.setResponsables(new ArrayList<>()); // <- importante
-    // }
-
-    // entidadExistente.setNombre(inscripcion.getEntidad().getNombre());
-    // entidadExistente.setNit(inscripcion.getEntidad().getNit());
-    // entidadExistente.setDescripcion(inscripcion.getEntidad().getDescripcion());
-    // entidadExistente.setObjeto(inscripcion.getEntidad().getObjeto());
-    // existente.setEntidad(entidadExistente);
-
-    // // manejar comprobante
-    // if (comprobante != null && !comprobante.isEmpty()) {
-    // String fileName = comprobante.getOriginalFilename();
-    // existente.setImgComprobante(fileName);
-    // }
-
-    // List<Responsable> nuevosResponsables =
-    // inscripcion.getEntidad().getResponsables();
-    // if (nuevosResponsables != null) {
-    // List<Responsable> filtrados = nuevosResponsables.stream()
-    // .filter(r -> r.getPersona() != null && r.getPersona().getNombre() != null
-    // && !r.getPersona().getNombre().trim().isEmpty())
-    // .collect(Collectors.toList());
-
-    // if (entidadExistente.getResponsables() == null) {
-    // entidadExistente.setResponsables(new ArrayList<>());
-    // }
-
-    // // Map de existentes
-    // Map<Long, Responsable> responsablesExistentesMap =
-    // entidadExistente.getResponsables()
-    // .stream()
-    // .collect(Collectors.toMap(Responsable::getId, r -> r));
-
-    // List<Responsable> responsablesActualizados = new ArrayList<>();
-
-    // for (Responsable r : filtrados) {
-    // if (r.getId() != null) {
-    // // actualizar responsable existente
-    // Responsable respExistente = responsablesExistentesMap.get(r.getId());
-    // if (respExistente != null) {
-    // Persona p = r.getPersona();
-    // if (p != null && p.getId() != null) {
-    // Persona personaExistente = personaService.findById(p.getId());
-    // if (personaExistente != null) {
-    // personaExistente.setNombre(p.getNombre());
-    // respExistente.setPersona(personaExistente);
-    // }
-    // }
-    // responsablesActualizados.add(respExistente);
-    // }
-    // } else {
-    // // nuevo responsable válido
-    // Persona p = r.getPersona();
-    // if (p != null && (p.getId() == null || p.getId() == 0)) {
-    // personaService.save(p);
-    // }
-    // r.setEntidad(entidadExistente);
-    // responsablesActualizados.add(r);
-    // }
-    // }
-
-    // entidadExistente.setResponsables(responsablesActualizados);
-    // }
-
-    // inscripcionService.save(existente); // gracias a cascada también guarda
-    // entidad
-
-    // return ResponseEntity.ok("Se realizó la modificación correctamente");
-    // }
 
     @ValidarUsuarioAutenticado
     @GetMapping("/formulario-edit/{id_inscripcion}")
@@ -360,11 +163,9 @@ public class ResponsablesController {
 
         Inscripcion existente = inscripcionService.findById(inscripcion.getId());
 
-        // ---- Datos simples de la inscripción ----
         existente.setEntidadBancaria(inscripcion.getEntidadBancaria());
         existente.setNumComprobante(inscripcion.getNumComprobante());
 
-        // ---- Entidad ----
         Entidad entidad = existente.getEntidad();
         if (entidad == null)
             entidad = new Entidad();
@@ -378,7 +179,6 @@ public class ResponsablesController {
         }
         existente.setEntidad(entidad);
 
-        // ---- Comprobante ----
         if (comprobante != null && !comprobante.isEmpty()) {
             try {
                 String compRel = storage.save(comprobante, Bucket.COMPROBANTES, entidad.getNombre());
@@ -388,7 +188,6 @@ public class ResponsablesController {
             }
         }
 
-        // ---- Responsables ----
         List<Responsable> entrantes = (entidadReq != null && entidadReq.getResponsables() != null)
                 ? entidadReq.getResponsables()
                 : List.of();
@@ -396,7 +195,6 @@ public class ResponsablesController {
         if (entidad.getResponsables() == null)
             entidad.setResponsables(new ArrayList<>());
 
-        // Mapa de existentes (por ID de responsable)
         Map<Long, Responsable> mapExistentes = entidad.getResponsables().stream()
                 .filter(r -> r.getId() != null)
                 .collect(Collectors.toMap(Responsable::getId, r -> r));
@@ -407,16 +205,14 @@ public class ResponsablesController {
             Responsable rReq = entrantes.get(i);
             if (rReq.getPersona() == null || rReq.getPersona().getNombre() == null ||
                     rReq.getPersona().getNombre().trim().isEmpty()) {
-                continue; // *** exige al menos nombre
+                continue;
             }
 
-            MultipartFile foto = fotos.get("fotoResp_" + i); // *** índice intacto
+            MultipartFile foto = fotos.get("fotoResp_" + i);
 
             if (rReq.getId() != null && mapExistentes.containsKey(rReq.getId())) {
-                // ---- Actualizar existente ----
                 Responsable rDb = mapExistentes.get(rReq.getId());
 
-                // Usa la persona ya asociada en BD
                 Persona pDb = rDb.getPersona();
                 if (pDb == null)
                     pDb = new Persona();
@@ -435,20 +231,16 @@ public class ResponsablesController {
                                 (pDb.getNombre() + "_" + pDb.getPaterno() + "_" + pDb.getMaterno()).trim());
                         pDb.setFoto(path);
                     } catch (IOException e) {
-                        // deja la foto actual si falla
                     }
                 }
 
                 personaService.save(pDb);
                 rDb.setPersona(pDb);
                 rDb.setEntidad(entidad);
-                // copia otros campos de Responsable si existen (cargo, area, etc.)
-                // rDb.setCargo(rReq.getCargo()); ...
 
                 resultado.add(rDb);
 
             } else {
-                // ---- Crear nuevo ----
                 Persona pReq = rReq.getPersona();
                 Persona p = new Persona();
                 if (pReq != null) {
@@ -466,7 +258,6 @@ public class ResponsablesController {
                                 (p.getNombre() + "_" + p.getPaterno() + "_" + p.getMaterno()).trim());
                         p.setFoto(path);
                     } catch (IOException e) {
-                        // sin foto
                     }
                 }
 
@@ -475,22 +266,16 @@ public class ResponsablesController {
                 Responsable nuevo = new Responsable();
                 nuevo.setPersona(p);
                 nuevo.setEntidad(entidad);
-                // copia otros campos de Responsable si los tienes en el form
-                // nuevo.setCargo(rReq.getCargo()); ...
 
                 resultado.add(nuevo);
             }
         }
 
-        // Reemplaza la lista por la normalizada
         entidad.setResponsables(resultado);
 
-        // Persiste todo (cascadas)
         inscripcionService.save(existente);
 
         return ResponseEntity.ok("Se realizó la modificación correctamente");
     }
-
-    
 
 }

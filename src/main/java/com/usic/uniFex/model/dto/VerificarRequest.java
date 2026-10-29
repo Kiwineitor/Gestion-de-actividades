@@ -4,7 +4,6 @@ public class VerificarRequest {
     private String ci;
     private Integer idEntidad;
 
-    // Getters y Setters
     public String getCi() {
         return ci;
     }

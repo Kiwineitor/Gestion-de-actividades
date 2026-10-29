@@ -1,12 +1,11 @@
-<!-- Menu -->
 <aside th:fragment="sidebar" id="layout-menu" class="layout-menu menu-vertical menu bg-menu-theme" th:if="${session.nombre_rol == 'ADMINISTRADOR' or session.nombre_rol == 'SUPER USUARIO' or session.nombre_rol == 'CONTROL' or session.nombre_rol == 'ASESORIA'}">
     <style>
         .app-brand-logo {
-  height: auto !important;   /* evita altura fija */
-  width: auto !important;    /* evita recortes */
-  overflow: visible !important; /* deja que la imagen sobresalga */
+  height: auto !important;
+  width: auto !important;
+  overflow: visible !important;
   display: flex;
-  align-items: center;       /* centra verticalmente */
+  align-items: center;
 }
 
     </style>
@@ -21,9 +20,7 @@
         </a>
     </div>
 
-
     <ul class="menu-inner py-1">
-        <!-- VISTA ADMINISTRADOR Y SUPER USUARIO -->
          <li class="menu-header small text-uppercase" th:if="${session.nombre_rol == 'CONTROL'}">
             <span class="menu-header-text">No hay funciones</span>
             <span class="menu-header-text">para el rol que tienes</span>
@@ -52,7 +49,6 @@
             </ul>
             
         </li>
-        <!-- COMPLEMENTOS -->
         <li class="menu-header small text-uppercase" th:if="${session.nombre_rol == 'ADMINISTRADOR' or session.nombre_rol == 'SUPER USUARIO' or session.nombre_rol == 'ASESORIA'}">
             <span class="menu-header-text">GESTION</span>
         </li>
@@ -135,4 +131,3 @@
         </li>
     </ul>
 </aside>
-<!-- / Menu -->

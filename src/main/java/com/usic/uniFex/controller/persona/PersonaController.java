@@ -3,7 +3,6 @@ package com.usic.uniFex.controller.persona;
 import java.util.*;
 
 import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -93,9 +92,6 @@ public class PersonaController {
     public ResponseEntity<String> registrar(HttpServletRequest request, @Validated Persona persona) {
 
         if (personaService.buscarPersonaPorCI(persona.getCi()) == null) {
-            // Usuario usuario = (Usuario) request.getSession().getAttribute("usuario");
-            // persona.setRegistroIdUsuario(usuario.getIdUsuario());
-            // persona.setEstado("ACTIVO");
             personaService.save(persona);
 
             return ResponseEntity.ok("Se realizó el registro correctamente");
@@ -107,11 +103,6 @@ public class PersonaController {
     @PostMapping(value = "/modificar-persona")
     public ResponseEntity<String> modificar(HttpServletRequest request, Persona persona,
             RedirectAttributes redirectAttrs) {
-
-        // Usuario usuario = (Usuario) request.getSession().getAttribute("usuario");
-        // persona.setModificacionIdUsuario(usuario.getIdUsuario());
-        // persona.setEstado("ACTIVO");
-        // personaService.save(persona);
 
         return ResponseEntity.ok("Se realizó la modificación correctamente");
 
@@ -129,7 +120,6 @@ public class PersonaController {
         return ResponseEntity.ok("Registro Eliminado");
     }
 
-    /* registro amdinsitartivo */
     @PostMapping("/registrar-admin")
     @Transactional
     public ResponseEntity<String> registrarAdmin(
@@ -169,7 +159,6 @@ public class PersonaController {
         }
     }
 
-    /* API */
     private Administrativo obtenerAdministrativo(String codigoFuncionario, String ci) {
         Administrativo administrativo = administrativoService.findByCodigoFuncionario(codigoFuncionario).orElse(null);
         

@@ -15,27 +15,12 @@ import com.usic.uniFex.model.entity.InteresadoStand;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Personas interesadas en exponer: el alta llega del formulario publico "Quiero exponer" de
- * la SPA; el listado y la edicion, del panel "Interesados en exponer" (ver
- * InteresadoStandApiController).
- *
- * Reglas de los campos (las mismas que filtra la SPA mientras se escribe, ver
- * frontend/src/ui/filtroEntrada.js; aqui es donde de verdad se hacen cumplir, porque el alta
- * es un endpoint publico):
- * - nombre: letras, puntos y signos, sin numeros; empresa y rubro: solo letras y espacios.
- *   Los tres se guardan en MAYUSCULAS;
- * - celular: solo digitos, con un "+" opcional al inicio, de 7 a 15 digitos.
- */
 @Service
 @RequiredArgsConstructor
 public class InteresadoStandService {
 
-    /** Letras de cualquier alfabeto (tildes, ñ, ü incluidas) y espacios; ni numeros ni simbolos. */
     private static final Pattern SOLO_LETRAS = Pattern.compile("[\\p{L} ]+");
-    /** Nombre de persona: letras, puntos y signos (J. PÉREZ, O'HIGGINS); solo se excluyen numeros. */
     private static final Pattern SIN_NUMEROS = Pattern.compile("[^\\p{N}\\p{Cc}]+");
-    /** Solo digitos, con un "+" opcional al inicio (prefijo de pais): 7 a 15 digitos. */
     private static final Pattern CELULAR = Pattern.compile("\\+?\\d{7,15}");
     private static final Locale ES = Locale.forLanguageTag("es-BO");
 
@@ -46,7 +31,6 @@ public class InteresadoStandService {
         static Resultado error(String m) { return new Resultado(false, m, null); }
     }
 
-    /** Alta desde el formulario publico. */
     @Transactional
     public Resultado registrar(InteresadoStandRequest d) {
         String falta = validar(d);
@@ -59,19 +43,11 @@ public class InteresadoStandService {
         return new Resultado(true, "Registro enviado.", interesadoStandDao.save(interesado));
     }
 
-    /** Todos, los mas recientes primero. Sin filtro de edicion: la tabla no guarda edicion. */
     @Transactional(readOnly = true)
     public List<InteresadoStand> listar() {
         return interesadoStandDao.findAllByOrderByFechaRegistroDesc();
     }
 
-    /**
-     * Corrige los datos de un interesado desde el panel.
-     *
-     * Valida aqui, con un mensaje por campo, y no con {@code @Valid}: ante un {@code @Valid}
-     * fallido ManejadorErroresApi solo responde "Peticion invalida", y el modal tiene que poder
-     * decir QUE campo falta.
-     */
     @Transactional
     public Resultado editar(Long id, InteresadoStandRequest d) {
         InteresadoStand i = interesadoStandDao.findById(id).orElse(null);
@@ -98,7 +74,6 @@ public class InteresadoStandService {
         return (c == null || "X".equals(c.getEstado())) ? null : c;
     }
 
-    /** Los mismos limites que las columnas de V24 (y que InteresadoStandRequest). */
     private String validar(InteresadoStandRequest d) {
         String e = requerido(d.nombreCompleto(), "El nombre completo", 200);
         if (e == null && !SIN_NUMEROS.matcher(d.nombreCompleto().trim()).matches()) {

@@ -6,7 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Boletería — FEXPO UAP v1.0</title>
 
-    <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
@@ -165,7 +164,6 @@
             <div class="col-12 col-xl-10">
                 <div class="glass-card p-4 p-md-5">
                     <div class="row g-4 align-items-stretch">
-                        <!-- Izquierda: Encabezado + Form -->
                         <div class="col-12 col-lg-7 d-flex flex-column gap-3 minh">
                             <div>
                                 <h1 class="hero-title h2 h1-md mb-2 text-center text-lg-start">FEXPO UAP v1.0</h1>
@@ -330,35 +328,8 @@
      th:data-msg="${error}"
      style="display:none"></div>
 
-    <!-- JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        //ESATO ES DE VENTA NROMAL
-        // document.addEventListener('DOMContentLoaded', () => {
-        //     const ok = document.getElementById('flash-ok');
-        //     const err = document.getElementById('flash-error');
-
-        //     if (ok) {
-        //         const d = ok.dataset;
-        //         Swal.fire({
-        //         icon: 'success',
-        //         title: '¡Venta registrada!',
-        //         html: `
-        //             <div style="text-align:left">
-        //             <b>Venta #${d.ventaid}</b><br>
-        //             Cliente: ${d.cliente}<br>
-        //             ${d.categoria} × ${d.cantidad}<br>
-        //             Total: <b>${d.total}</b>
-        //             </div>`,
-        //         timer: 3500,
-        //         showConfirmButton: false
-        //         });
-        //     }
-
-        //     if (err) {
-        //         Swal.fire({ icon: 'error', title: 'Error', text: err.dataset.msg });
-        //     }
-        // });
 
         (() => {
             const form = document.getElementById('formVenta');
@@ -374,7 +345,6 @@
             }
 
             form.addEventListener('submit', async (e) => {
-                // Validación HTML5
                 if (!form.checkValidity()) {
                 e.preventDefault(); e.stopPropagation();
                 form.classList.add('was-validated');
@@ -388,21 +358,20 @@
                 const unit        = getUnitPrice();
                 const descripcion = getCategoriaTexto();
 
-                // Construye el request para /api/pagos/crear
                 const req = {
                 datosCliente: {
                     nombres: document.getElementById('nombre').value.trim(),
                     apellidos: (document.getElementById('paterno').value.trim() + ' ' + (document.getElementById('materno').value.trim() || '')).trim(),
                     ciNit: document.getElementById('ci').value.trim(),
-                    fechaNacimiento: null, // no lo estás pidiendo; si tu pasarela lo exige, pon "2000-01-01"
-                    correo: null // si tienes correo en el futuro, colócalo aquí
+                    fechaNacimiento: null,
+                    correo: null
                 },
                 items: [{
                     descripcion: descripcion,
                     precioUnitario: isNaN(unit) ? 0 : unit,
                     cantidad: cantidad
                 }],
-                metadata: { // clave: lo que luego necesitas para guardar la venta
+                metadata: {
                     categoriaId: categoriaId,
                     cantidad: cantidad,
                     ci: document.getElementById('ci').value.trim(),
@@ -414,7 +383,6 @@
                 };
 
                 try {
-                // Si usas CSRF, toma el token del input hidden
                 const csrfInput = document.querySelector('input[name="_csrf"]');
                 const headers = { 'Content-Type': 'application/json' };
                 if (csrfInput) headers['X-CSRF-TOKEN'] = csrfInput.value;
@@ -429,7 +397,6 @@
                 const data = await resp.json();
                 if (!data.ok) throw new Error('Pasarela rechazó la solicitud');
 
-                // Mensaje + abrir nueva pestaña
                 Swal.fire({
                     icon: 'info',
                     title: 'Redirigiendo a pasarela…',
@@ -437,11 +404,7 @@
                     showConfirmButton: false
                 });
 
-                // Abre la pasarela en una pestaña/ventana nueva
                 window.open(data.urlRedireccion, '_blank');
-
-                // (Opcional) Limpia o deja el form en espera
-                // form.reset();
 
                 } catch (err) {
                 Swal.fire({ icon: 'error', title: 'Error', text: err.message || 'No se pudo iniciar el pago' });
@@ -460,7 +423,6 @@
                 timer: 2200,
                 showConfirmButton: false
                 });
-                // Limpia el ?pagado=1 para que no se repita al recargar
                 history.replaceState({}, '', location.pathname);
             }
 
@@ -490,7 +452,6 @@
             const precioUnitarioHidden = $('#precioUnitario');
             const montoTotalHidden = $('#montoTotal');
 
-            // Resumen refs
             const rTitulo = $('#res-titulo'), rSub = $('#res-sub'), rPrecio = $('#res-precio');
             const rEvento = $('#res-evento'), rUnit = $('#res-unitario'), rCant = $('#res-cant');
             const rCI = $('#res-ci'), rCliente = $('#res-cliente'), rCel = $('#res-cel');
@@ -509,7 +470,6 @@
                 const unit = getUnitPrice();
                 const qty = Math.max(1, Math.min(parseInt(cantidad.value || '1', 10), parseInt(cantidad.max, 10)));
 
-                // Normaliza cantidad si está fuera de rango
                 if (String(qty) !== cantidad.value) cantidad.value = qty;
 
                 const total = (!isNaN(unit)) ? unit * qty : NaN;
@@ -526,12 +486,10 @@
                 rCliente.textContent = [nombre.value, paterno.value + ap2].filter(Boolean).join(' ').trim() || '—';
                 rCel.textContent = cel.value || '—';
 
-                // Setea ocultos para el backend (el backend debe validar/recalcular)
                 precioUnitarioHidden.value = isNaN(unit) ? '' : unit.toFixed(2);
                 montoTotalHidden.value = isNaN(total) ? '' : total.toFixed(2);
             }
 
-            // Listeners
             ['change', 'input'].forEach(ev => {
                 categoria.addEventListener(ev, updateResumen);
                 cantidad.addEventListener(ev, updateResumen);
@@ -554,19 +512,16 @@
                 updateResumen();
             });
 
-            // Validación Bootstrap
             form.addEventListener('submit', (e) => {
                 if (!form.checkValidity()) {
                     e.preventDefault(); e.stopPropagation();
                 } else {
-                    // recalcula justo antes de enviar por si hubo cambios
                     updateResumen();
                     loader.classList.add('show');
                 }
                 form.classList.add('was-validated');
             }, false);
 
-            // Inicial
             updateResumen();
         })();
     </script>

@@ -23,13 +23,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Panel "Interesados en exponer": listado y edicion de lo que llega del formulario publico
- * "Quiero exponer" (el alta anonima vive en {@code publico/InteresadoStandController}).
- *
- * Filtros y orden se resuelven en el cliente: son unos cientos de filas como mucho, y asi
- * cada cambio de filtro es instantaneo y no cuesta una peticion.
- */
 @RestController
 @RequestMapping("/api/app/interesados-stand")
 @RequiredArgsConstructor
@@ -45,16 +38,10 @@ public class InteresadoStandApiController {
         return servicio.listar().stream().map(InteresadoStandDTO::de).toList();
     }
 
-    /**
-     * Categorias vivas, para los filtros y el selector del modal. Aqui y no en
-     * /api/app/categorias: aquel exige EDITA_PLANO, y esta pantalla no tiene por que depender
-     * de poder rediseñar el plano (hoy son los mismos roles, pero estan separados a proposito).
-     */
     @GetMapping("/categorias")
     public List<Map<String, Object>> categorias() {
         return categorias.listar().stream()
                 .map(c -> {
-                    // LinkedHashMap y no Map.of: color puede ser null y Map.of no lo admite.
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", c.getId());
                     m.put("nombre", c.getNombre());
@@ -64,11 +51,9 @@ public class InteresadoStandApiController {
                 .toList();
     }
 
-    /** Sin @Valid a proposito: el servicio valida y devuelve el mensaje exacto del campo. */
     @PatchMapping("/{id}")
     public ResponseEntity<Map<String, Object>> editar(@PathVariable Long id, @RequestBody InteresadoStandRequest req) {
         Resultado r = servicio.editar(id, req);
-        // Los demas paneles abiertos ven la correccion sin recargar.
         if (r.ok()) publisher.publicar(r.interesado());
         Map<String, Object> cuerpo = new LinkedHashMap<>();
         cuerpo.put("ok", r.ok());

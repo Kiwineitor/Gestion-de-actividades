@@ -2,15 +2,10 @@
 import { ref, computed, watch, onUnmounted } from 'vue';
 
 const props = defineProps({
-  /** Archivo seleccionado (File object). */
   archivo: { type: File, default: null },
-  /** Texto del botón de confirmar. */
   textoConfirmar: { type: String, default: 'Confirmar y subir' },
-  /** Texto del botón de cancelar. */
   textoCancelar: { type: String, default: 'Cancelar' },
-  /** Si se muestra vista previa de imagen (para imágenes). */
   previsualizarImagen: { type: Boolean, default: true },
-  /** Tamaño máximo en bytes (default 25MB). */
   maxSize: { type: Number, default: 25 * 1024 * 1024 },
 });
 

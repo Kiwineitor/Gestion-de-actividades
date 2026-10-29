@@ -48,6 +48,7 @@ public class CredencialesApiController {
 
     private final FuncionesInscripcion funcionesInscripcion;
     private final ICategoriaService categoriaService;
+    private final com.usic.uniFex.model.dao.ICategoriaDao categoriaDao;
     private final CredencialService credencialService;
     private final CredencialPdfService pdfService;
     private final CredencialImagenService imagenService;
@@ -58,27 +59,9 @@ public class CredencialesApiController {
     private final com.usic.uniFex.model.dao.CredencialImpresionDao impresiones;
     private final com.usic.uniFex.model.service.CredencialDatosService datosService;
 
-    /**
-     * Raiz publica que se mete en el QR. Vacia = se deduce de la peticion.
-     *
-     * Se puede fijar porque detras de un proxy la peticion llega con el host interno, y un QR
-     * impreso con "http://localhost:7676" no lo abre nadie. Se imprime una vez y no hay vuelta
-     * atras, asi que conviene poder fijarlo en el despliegue.
-     */
     @Value("${unifex.publico.base-url:}")
     private String baseUrlPublica;
 
-    /**
-     * Las plantillas que se pueden elegir para imprimir.
-     *
-     * Viaja desde el servidor y no escrita a mano en la pantalla porque la lista tiene que ser
-     * LA MISMA que la que usa el generador: cuando estaban en dos sitios, una plantilla añadida
-     * solo en la pantalla salia en los botones pero llegaba al servidor sin existir, y una
-     * añadida solo en el servidor no habia forma de elegirla.
-     *
-     * `proporcion` (alto/ancho) es para la vista previa sobre la hoja carta, y sale de medir la
-     * imagen de verdad.
-     */
     @GetMapping("/plantillas")
     @PreAuthorize(Roles.USA_CREDENCIALES_O_PANTALLA)
     public List<Map<String, Object>> plantillas() {
@@ -93,13 +76,10 @@ public class CredencialesApiController {
         }).toList();
     }
 
-    /**
-     * Categorías disponibles para generar credenciales.
-     */
     @GetMapping("/categorias")
     @PreAuthorize(Roles.VERIFICA_CREDENCIALES)
     public List<Map<String, Object>> categorias() {
-        return categoriaService.findAll().stream()
+        return categoriaDao.deEdicionActiva().stream()
                 .map(c -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", c.getId());
@@ -109,20 +89,12 @@ public class CredencialesApiController {
                 .toList();
     }
 
-    /**
-     * Inscripciones agrupadas por categoría (edición activa).
-     * Devuelve la lista que usa el generador para filtrar por categoría.
-     */
     @GetMapping("/inscripciones-por-categoria")
     @PreAuthorize(Roles.VERIFICA_CREDENCIALES)
     public List<Map<String, Object>> inscripcionesPorCategoria() {
         return funcionesInscripcion.fn_inscripciones_por_categoria();
     }
 
-    /**
-     * Detalle de una inscripción para generar credenciales.
-     * Devuelve TODOS los responsables (uno por credencial).
-     */
     @GetMapping("/inscripciones/{id}")
     @PreAuthorize(Roles.VERIFICA_CREDENCIALES)
     public ResponseEntity<Map<String, Object>> detalleInscripcion(@PathVariable Long id) {
@@ -130,7 +102,6 @@ public class CredencialesApiController {
         if (lista == null || lista.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        // Datos comunes de la venta (tomamos del primer row)
         Map<String, Object> primera = lista.get(0);
         Map<String, Object> cuerpo = new LinkedHashMap<>();
         cuerpo.put("id", primera.get("id"));
@@ -142,7 +113,6 @@ public class CredencialesApiController {
         cuerpo.put("descripcion", primera.get("descripcion"));
         cuerpo.put("objeto", primera.get("objeto"));
         cuerpo.put("datoqr", primera.get("datoqr"));
-        // Responsables: uno por row (cada row = un responsable con su foto, CI, nombre)
         List<Map<String, Object>> responsables = lista.stream().map(row -> {
             Map<String, Object> r = new LinkedHashMap<>();
             r.put("nombrePersona", row.get("nombre_persona"));
@@ -157,19 +127,10 @@ public class CredencialesApiController {
         return ResponseEntity.ok(cuerpo);
     }
 
-    /**
-     * Todas las credenciales de la edicion activa, cumplan o no los requisitos.
-     *
-     * Salen TAMBIEN las que no se pueden imprimir, con el motivo: quien prepara las
-     * credenciales necesita ver a quien le falta la foto y a quien el comprobante, que es
-     * justo el trabajo pendiente. Una lista que solo enseñara las aptas escondería eso.
-     */
     @GetMapping
     @PreAuthorize(Roles.USA_CREDENCIALES_O_PANTALLA)
     public List<Map<String, Object>> listar() {
         Long soloMias = alcanceDelUsuario();
-        // El historial se trae de una vez y se cruza en memoria: una consulta por credencial
-        // serian ~800 viajes a la base para pintar una lista.
         Map<Long, Object[]> impresas = new LinkedHashMap<>();
         for (Object[] f : impresiones.resumen()) {
             impresas.put(((Number) f[0]).longValue(), f);
@@ -192,24 +153,11 @@ public class CredencialesApiController {
             m.put("inscripcionId", c.inscripcionId());
             m.put("conComprobante", c.conComprobante());
             m.put("conFoto", c.conFoto());
-            // El distintivo del que se agrego POR ENCIMA del derecho y pago (V34). Sin el, una
-            // credencial de pago se mezcla con las de derecho y no hay forma de saber cual hubo
-            // que cobrar. El detalle del cobro vive en la pantalla "Responsables extra".
-            //
-            // OJO: esta lista NO es el DTO, es un mapa armado a mano. Añadir el campo solo a
-            // `CredencialDTO` no cambia nada de lo que ve la pantalla — pasó, y costó encontrarlo.
             m.put("esExtra", c.esExtra());
             m.put("montoExtra", c.montoExtra());
             m.put("comprobanteExtraUrl", c.comprobanteExtraUrl());
-            // Para que la pantalla EXPLIQUE por que a esa fila no se le pide comprobante. Sin
-            // esto, una credencial sin recibo y marcada "Lista" al lado de otra bloqueada por
-            // lo mismo parece un fallo del sistema, y la diferencia —que una no cuesta nada—
-            // no se puede adivinar desde la lista.
             m.put("sinCosto", c.sinCosto());
             m.put("requiereComprobante", c.requiereComprobante());
-            // Se resuelve para LAS DOS plantillas en el servidor, en vez de mandar los dos
-            // booleanos y que el cliente aplique la regla: asi la regla vive en un solo sitio
-            // y cambiar de plantilla en pantalla no obliga a volver a pedir la lista.
             Map<String, Object> listo = new LinkedHashMap<>();
             Map<String, Object> falta = new LinkedHashMap<>();
             for (PlantillaCredencial p : PlantillaCredencial.catalogo()) {
@@ -228,18 +176,6 @@ public class CredencialesApiController {
         }).toList();
     }
 
-    /**
-     * Lo que se va a imprimir.
-     *
-     * @param responsables ids concretos; si viene vacio, TODAS las aptas de la edicion activa
-     * @param plantilla    "CON_ETIQUETAS" (por defecto) o "QR_GRANDE"
-     * @param anchoCm      ancho impreso de la credencial, centrada en una hoja carta
-     */
-    /**
-     * @param forzar imprimir aunque falte algo. Se permite a proposito —a veces el expositor
-     *               esta delante y su comprobante llega despues— pero **queda registrado**
-     *               quien lo hizo y que faltaba en ese momento.
-     */
     public record PeticionPdf(List<Long> responsables, String plantilla, Double anchoCm,
                               Boolean forzar) {
     }
@@ -251,9 +187,6 @@ public class CredencialesApiController {
     @PreAuthorize(Roles.USA_CREDENCIALES_O_PANTALLA)
     public ResponseEntity<byte[]> pdf(@RequestBody(required = false) PeticionPdf req) {
         String pedida = req == null ? null : req.plantilla();
-        // Una plantilla que no existe se rechaza en vez de caer en la de por defecto. Cuando
-        // caia, el PDF salia 200 y con la plantilla equivocada: eso solo se descubre mirando el
-        // papel, y para entonces ya se imprimieron trescientas.
         PlantillaCredencial disposicion;
         if (pedida == null || pedida.isBlank()) {
             disposicion = PlantillaCredencial.porDefecto();
@@ -273,14 +206,10 @@ public class CredencialesApiController {
         Long soloMias = alcanceDelUsuario();
 
         List<Long> ids = req == null ? null : req.responsables();
-        // Un vendedor que pide "todas" recibe todas LAS SUYAS. Sin acotar aqui, el boton de
-        // generacion masiva le imprimiria la feria entera.
         List<CredencialDTO> elegidas = (ids == null || ids.isEmpty())
                 ? credencialService.listarAptas(plantilla, soloMias)
                 : credencialService.porResponsables(ids);
 
-        // Y si manda ids concretos, se comprueban contra la base uno por uno. La lista que el
-        // cliente tiene no sirve de control: los ids los escribe quien llama.
         if (soloMias != null) {
             for (CredencialDTO c : elegidas) {
                 if (!credencialService.esDeUsuario(c.responsableId(), soloMias)) {
@@ -294,8 +223,6 @@ public class CredencialesApiController {
             }
         }
 
-        // Sin `forzar`, no se imprime lo incompleto: descubrir despues de imprimir 300 que
-        // media tanda no sirve es caro. Con `forzar`, se imprime igual y queda constancia.
         List<CredencialDTO> imprimibles = forzar
                 ? elegidas
                 : elegidas.stream().filter(c -> c.apto(plantilla)).toList();
@@ -316,8 +243,6 @@ public class CredencialesApiController {
                 raizPublica(),
                 codigos);
 
-        // Se registra DESPUES de generar: si el PDF falla, no queda una impresion que nunca
-        // llego al papel.
         Long quien = usuarioActual();
         for (CredencialDTO c : imprimibles) {
             impresiones.registrar(c.responsableId(), c.inscripcionId(), plantilla,
@@ -333,16 +258,6 @@ public class CredencialesApiController {
                 .body(pdf);
     }
 
-    /**
-     * Genera PDF duplex 2x2 (4 credenciales por hoja A4, con reversos espejados).
-     *
-     * Cada hoja A4 rinde 4 credenciales completas (frente + reverso) al imprimir a doble
-     * cara por borde largo. Usa la plantilla EXPOSITOR (10x13 cm).
-     *
-     * @param responsables ids concretos; si viene vacio, TODAS las aptas de la edicion activa
-     * @param plantilla    "EXPOSITOR" (por defecto)
-     * @param anchoCm      ancho impreso de cada credencial en cm (por defecto 10)
-     */
     @PostMapping(value = "/pdf-2up", produces = MediaType.APPLICATION_PDF_VALUE)
     @PreAuthorize(Roles.USA_CREDENCIALES_O_PANTALLA)
     public ResponseEntity<byte[]> pdf2up(@RequestBody(required = false) PeticionPdf2up req) {
@@ -385,17 +300,6 @@ public class CredencialesApiController {
     public record PeticionPdf2up(List<Long> responsables, String plantilla, Double anchoCm) {
     }
 
-    /**
-     * La credencial virtual de un responsable, como IMAGEN para el telefono.
-     *
-     * Va aparte del PDF a proposito. Esta credencial no se imprime: se manda al telefono del
-     * expositor y se enseña en la puerta desde la pantalla, asi que una hoja carta con la
-     * credencial centrada seria justo lo que no sirve. Es un PNG vertical, del tamaño de la
-     * plantilla.
-     *
-     * Se registra como impresion igual que el PDF: lo que importa del registro es que se
-     * ENTREGO una credencial, no en que soporte.
-     */
     @GetMapping("/{responsableId}/virtual")
     @PreAuthorize(Roles.USA_CREDENCIALES_O_PANTALLA)
     public ResponseEntity<byte[]> virtual(@PathVariable Long responsableId,
@@ -411,8 +315,6 @@ public class CredencialesApiController {
         if (!forzar && !c.apto(p.id())) {
             return ResponseEntity.status(409)
                     .contentType(MediaType.TEXT_PLAIN)
-                    // Los motivos ya vienen redactados ("sin comprobante", "sin foto"):
-                    // anteponerles "falta" daba "falta sin comprobante", que no se lee.
                     .body(("Todavía no se puede emitir esta credencial: "
                             + String.join(" y ", c.faltantes(p.id())) + ".")
                             .getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -429,12 +331,6 @@ public class CredencialesApiController {
                 .body(png);
     }
 
-    /**
-     * Reenvia credenciales con sus recibos de cupo extra. El recibo de venta es opcional.
-     *
-     * Si `responsables` viene vacio, se envian todas las credenciales listas de la inscripcion.
-     * Si trae ids, se envia solo esa seleccion. Un vendedor queda limitado a sus propias ventas.
-     */
     @PostMapping("/whatsapp")
     @PreAuthorize(Roles.USA_CREDENCIALES_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> whatsapp(@RequestBody(required = false) PeticionWhatsApp req) {
@@ -563,7 +459,6 @@ public class CredencialesApiController {
         return ResponseEntity.status(r.ok() ? 200 : 400).body(cuerpo);
     }
 
-    /** Quien imprimio esta credencial, cuando, con que plantilla y que faltaba entonces. */
     @GetMapping("/{responsableId}/impresiones")
     @PreAuthorize(Roles.USA_CREDENCIALES_O_PANTALLA)
     public List<Map<String, Object>> impresiones(@PathVariable Long responsableId) {
@@ -581,7 +476,6 @@ public class CredencialesApiController {
         }).toList();
     }
 
-    /** La raiz con la que se arma la URL del QR. */
     private String raizPublica() {
         if (baseUrlPublica != null && !baseUrlPublica.isBlank()) return baseUrlPublica.trim();
         return ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
@@ -599,14 +493,6 @@ public class CredencialesApiController {
         return (a != null && a.getPrincipal() instanceof JwtUser u) ? u.id() : null;
     }
 
-    /**
-     * Hasta donde llega este usuario: {@code null} = toda la feria, o su id = solo sus ventas.
-     *
-     * Administracion y VERIFICADOR preparan la acreditacion de todos. Cualquier otro —un
-     * ADMINISTRATIVO, o un usuario al que se le dio la pantalla (V49)— acredita a los
-     * expositores que el vendio, y nada mas: la lista completa lleva nombres, C.I. y telefonos
-     * de los clientes de sus compañeros.
-     */
     private Long alcanceDelUsuario() {
         return (esAdministracion() || esVerificador()) ? null : usuarioActual();
     }

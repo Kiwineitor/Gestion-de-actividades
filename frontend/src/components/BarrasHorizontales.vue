@@ -1,13 +1,8 @@
 <script setup>
 import { computed } from 'vue';
 
-/**
- * Barras horizontales de una sola serie (magnitud). Sin librería: divs con ancho en %.
- * Una serie => un solo color (el acento) y el valor como etiqueta directa; no necesita
- * leyenda ni paleta categórica (evita de raíz el problema de daltonismo).
- */
 const props = defineProps({
-  items: { type: Array, default: () => [] }, // [{ label, valor }]
+  items: { type: Array, default: () => [] },
   formato: { type: Function, default: (v) => v },
 });
 
@@ -37,6 +32,5 @@ const ancho = (v) => `${Math.max(2, ((v || 0) / max.value) * 100)}%`;
   height: 100%; background: var(--acento); border-radius: 4px; min-width: 4px;
   transition: width 0.4s ease;
 }
-/* El valor va en tinta de texto, nunca dentro de la barra en color: mantiene el contraste. */
 .val { font-size: 0.85rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 </style>

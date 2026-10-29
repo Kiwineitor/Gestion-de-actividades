@@ -1,21 +1,6 @@
 <script setup>
-/**
- * Seguimiento en vivo: quien esta dentro ahora mismo y que esta haciendo.
- *
- * Se refresca sola cada pocos segundos. Es un sondeo y no un WebSocket a proposito: esta
- * pantalla la miran una o dos personas de administracion, mientras que un canal de difusion
- * obligaria a mandar un mensaje a TODOS los conectados cada vez que cualquiera cambia de
- * pantalla. Barato para quien mira, gratis para los treinta y cinco que venden.
- *
- * El dato que de verdad se busca aqui es "casetas en carrito": son ventas EMPEZADAS y sin
- * cerrar, con las casetas bloqueadas para los demas mientras tanto. Sale de la base —de las
- * casetas reservadas a su nombre—, no de lo que el cliente diga estar haciendo.
- *
- * No hay historial: al reiniciar el servidor la lista se vacia y se rehace sola en un minuto.
- */
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { apiFetch } from '../api';
-import { toast } from '../ui/toast';
 
 const REFRESCO_MS = 5000;
 
@@ -29,22 +14,9 @@ const enLinea = computed(() => gente.value.filter((g) => g.enLinea));
 const ausentes = computed(() => gente.value.filter((g) => !g.enLinea));
 const vendiendo = computed(() => enLinea.value.filter((g) => g.registrando));
 
-/**
- * Casetas tomadas ahora mismo, sumando a todos los de la lista —tambien a los ausentes—.
- *
- * Los ausentes cuentan a proposito: sus casetas siguen bloqueadas para el resto de vendedores
- * hasta que venza la reserva, y son justamente las que hay que mirar.
- */
 const casetasEnTramite = computed(() =>
   gente.value.reduce((s, g) => s + (Number(g.casetasEnCarrito) || 0), 0));
 
-/**
- * Vendidas por la gente QUE APARECE EN ESTA LISTA, no por toda la feria.
- *
- * La lista solo tiene a quien dio señales en los ultimos quince minutos, asi que este total
- * sube y baja segun quien este conectado: no es el avance de la feria y por eso el rotulo
- * dice "de los listados". El total real de la feria esta en Reportes, que lee la base entera.
- */
 const vendidasTotal = computed(() =>
   gente.value.reduce((s, g) => s + (Number(g.vendidas) || 0), 0));
 
@@ -68,7 +40,6 @@ onMounted(() => {
 });
 onUnmounted(() => clearInterval(temporizador));
 
-/** "hace 8 s", "hace 4 min". Un reloj absoluto obligaria a restar mentalmente. */
 function hace(segundos) {
   const s = Number(segundos) || 0;
   if (s < 10) return 'ahora mismo';
@@ -92,7 +63,6 @@ const iniciales = (n) => (n || '?').split(/\s+/).slice(0, 2).map((x) => x[0]).jo
     <div class="card resumen"><strong>{{ enLinea.length }}</strong><span>en línea</span></div>
     <div class="card resumen"><strong>{{ vendiendo.length }}</strong><span>registrando una venta</span></div>
     <div class="card resumen"><strong>{{ ausentes.length }}</strong><span>sin actividad reciente</span></div>
-    <!-- Casetas, no ventas: una venta de tres casetas son tres, que es como se lee el plano. -->
     <div class="card resumen"><strong>{{ casetasEnTramite }}</strong><span>casetas en trámite</span></div>
     <div class="card resumen"><strong>{{ vendidasTotal }}</strong><span>casetas vendidas (de los listados)</span></div>
   </div>
@@ -119,15 +89,11 @@ const iniciales = (n) => (n || '?').split(/\s+/).slice(0, 2).map((x) => x[0]).jo
             <span class="pantalla">{{ g.titulo || g.pantalla || 'sin pantalla' }}</span>
             <span class="muted">· {{ hace(g.inactivoSegundos) }}</span>
           </div>
-          <!-- Las casetas, con su número: "3 casetas" no deja actuar; "7, 8 y 14" sí. -->
           <div v-if="g.registrando" class="linea3">
             <span class="badge badge-ok">registrando</span>
             <span>{{ g.casetasEnCarrito }} caseta{{ g.casetasEnCarrito === 1 ? '' : 's' }}
               en el carrito: {{ g.casetas.join(', ') }}</span>
           </div>
-          <!-- Cuánto lleva del formulario. Lo cuenta su propia aplicación, así que solo
-               aparece si la tiene abierta en Registrar venta: quien dejó el formulario y se
-               fue al mapa sigue teniendo la venta abierta, pero ya no informa avance. -->
           <div v-if="g.registrando && g.avance != null" class="avance">
             <div class="avance-cab">
               <span class="badge badge-muted">{{ g.avancePaso || 'formulario' }}</span>
@@ -169,9 +135,6 @@ const iniciales = (n) => (n || '?').split(/\s+/).slice(0, 2).map((x) => x[0]).jo
             <div v-if="g.registrando" class="linea3">
               <span class="badge badge-aviso">venta a medias</span>
               <span>{{ g.casetas.join(', ') }}</span>
-              <!-- Lo último que informó antes de callarse: dice si se fue con el formulario
-                   casi terminado o sin empezar, que es lo que decide si vale la pena
-                   llamarle o liberarle las casetas. -->
               <span v-if="g.avance != null" class="muted">· iba por el {{ g.avance }}%</span>
             </div>
           </div>
@@ -187,8 +150,6 @@ const iniciales = (n) => (n || '?').split(/\s+/).slice(0, 2).map((x) => x[0]).jo
 
 .tarjetas-resumen {
   display: grid; gap: 0.75rem; margin-bottom: 1.25rem;
-  /* auto-fit y no un numero fijo: con cinco tarjetas, repeat(3,1fr) dejaba dos solas
-     en una segunda fila ocupando media pantalla cada una. */
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 .resumen { padding: 0.8rem; display: flex; flex-direction: column; align-items: center; gap: 0.15rem; text-align: center; }
@@ -208,15 +169,12 @@ const iniciales = (n) => (n || '?').split(/\s+/).slice(0, 2).map((x) => x[0]).jo
   font-weight: 700; font-size: 0.9rem;
   background: var(--panel-2, rgba(128,128,128,0.15));
 }
-/* El punto verde va en el avatar y no en una columna aparte: en 400 px no sobra una columna. */
 .avatar.activo { box-shadow: 0 0 0 2px var(--ok, #16a34a); }
 
 .datos { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
 .linea1, .linea2, .linea3, .linea4 { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .linea4 { font-size: 0.85rem; }
 
-/* El avance del formulario. La barra es la que se lee de un vistazo desde lejos; el
-   porcentaje en numero esta para cuando hay que decidir si llamar a alguien. */
 .avance { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.15rem; }
 .avance-cab { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; font-size: 0.85rem; }
 .barra-avance {
@@ -227,7 +185,6 @@ const iniciales = (n) => (n || '?').split(/\s+/).slice(0, 2).map((x) => x[0]).jo
   display: block; height: 100%; border-radius: 999px;
   background: var(--tramite, #d97706); transition: width 0.3s ease;
 }
-/* Verde solo al llegar a 100: el ambar dice "a medias" y el verde, "ya puede registrar". */
 .barra-avance span.completo { background: var(--libre, #16a34a); }
 .pantalla { font-weight: 500; }
 .aviso-error { padding: 0.8rem; }

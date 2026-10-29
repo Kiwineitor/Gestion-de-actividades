@@ -1,123 +1,37 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from './stores/auth';
 import { usePermisosStore } from './stores/permisos';
-
-/*
- * Título de la pestaña del navegador. La vista pública de la feria lleva el nombre de marca; el
- * resto del sistema conserva el de index.html. index.html pone el de la feria ANTES de que cargue
- * Vue (ver su script del <head>), así no se ve "Casetas" ni un instante: si cambias este texto,
- * cámbialo también allí.
- */
-const TITULO_PESTANA_FERIA = 'Gestión de Ferias';
-const TITULO_PESTANA_SISTEMA = 'Gestión de Actividades — Puestos';
+import { EN_APK } from './config';
+import { marca } from './ui/marca';
+import { MODULOS, claveModulo, moduloActual, puedeAbrir, destinoAntiguo } from './modulos';
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: '/login', component: () => import('./views/Login.vue') },
-    /*
-     * La credencial que abre el QR. Fuera de AppLayout y SIN requiereAuth: la escanea quien
-     * controla la puerta, con su telefono y normalmente sin cuenta en el sistema. Lo que la
-     * hace de fiar es la firma del codigo, no que haya sesion.
-     */
-    {
-      path: '/credencial/:codigo',
-      component: () => import('./views/CredencialPublica.vue'),
-      meta: { titulo: 'Credencial' },
-    },
-    {
-      // Vista pública de la feria: sin autenticación, para QR, web pública, APK sin login
-      path: '/feria',
-      component: () => import('./views/FeriaPublica.vue'),
-      meta: { titulo: 'Gestión de Ferias', publico: true, tituloPestana: TITULO_PESTANA_FERIA }
-    },
-    {
-      // Layout global: AppShell (menu/cabecera fijos) con el router-view dentro.
-      // Cada vista se carga de forma diferida y asincrona en el contenedor central.
-      path: '/',
-      component: () => import('./components/AppLayout.vue'),
-      children: [
-        { path: '', component: () => import('./views/Inicio.vue'), meta: { titulo: 'Inicio', requiereAuth: true, pantalla: 'inicio'} },
-        { path: 'mapa', component: () => import('./views/Mapa.vue'), meta: { titulo: 'Mapa de ventas', inmersivo: true, requiereAuth: true, pantalla: 'mapa'} },
-        { path: 'venta', component: () => import('./views/Venta.vue'), meta: { titulo: 'Registrar venta', requiereAuth: true, pantalla: 'venta'} },
-        { path: 'mis-ventas', component: () => import('./views/MisVentas.vue'), meta: { titulo: 'Mis ventas', requiereAuth: true, pantalla: 'mis-ventas'} },
-        { path: 'catalogo', component: () => import('./views/Catalogo.vue'), meta: { titulo: 'Catalogo', requiereAuth: true, pantalla: 'catalogo'} },
-        { path: 'tablero', component: () => import('./views/Board.vue'), meta: { titulo: 'Tablero', requiereAuth: true, pantalla: 'tablero'} },
-        { path: 'editor', component: () => import('./views/Editor.vue'), meta: { titulo: 'Editor del plano', inmersivo: true, requiereAuth: true, pantalla: 'editor'} },
-        { path: 'categorias', component: () => import('./views/Categorias.vue'), meta: { titulo: 'Categorías', requiereAuth: true, pantalla: 'categorias'} },
-        { path: 'puestos', component: () => import('./views/Puestos.vue'), meta: { titulo: 'Puestos', requiereAuth: true, pantalla: 'puestos'} },
-        { path: 'seguimiento', component: () => import('./views/Seguimiento.vue'), meta: { titulo: 'Seguimiento en vivo', requiereAuth: true, pantalla: 'seguimiento'} },
-        { path: 'anuncios', component: () => import('./views/Anuncios.vue'), meta: { titulo: 'Anuncios', requiereAuth: true, pantalla: 'anuncios'} },
-        { path: 'responsables-extra', component: () => import('./views/ResponsablesExtra.vue'), meta: { titulo: 'Responsables extra', requiereAuth: true, pantalla: 'responsables-extra'} },
-        { path: 'usuarios', component: () => import('./views/Usuarios.vue'), meta: { titulo: 'Usuarios', requiereAuth: true, pantalla: 'usuarios'} },
-        { path: 'roles', component: () => import('./views/RolesPermisos.vue'), meta: { titulo: 'Roles y permisos', requiereAuth: true, pantalla: 'roles'} },
-        { path: 'mantenimiento', component: () => import('./views/Mantenimiento.vue'), meta: { titulo: 'Mantenimiento', requiereAuth: true, pantalla: 'mantenimiento'} },
-        { path: 'errores', component: () => import('./views/Errores.vue'), meta: { titulo: 'Registro de errores', requiereAuth: true, soloAdministracion: true } },
-        { path: 'whatsapp', component: () => import('./views/WhatsApp.vue'), meta: { titulo: 'Instancias de WhatsApp', requiereAuth: true, soloAdministracion: true } },
-        { path: 'personas', component: () => import('./views/Personas.vue'), meta: { titulo: 'Personas', requiereAuth: true, pantalla: 'personas'} },
-        { path: 'personal-apoyo', component: () => import('./views/PersonalApoyo.vue'), meta: { titulo: 'Personal de apoyo', requiereAuth: true, pantalla: 'personal-apoyo' } },
-        { path: 'dashboard', component: () => import('./views/Dashboard.vue'), meta: { titulo: 'Dashboard', requiereAuth: true, pantallas: ['direccion', 'control-ventas', 'reportes'] } },
-        { path: 'direccion', redirect: { path: '/dashboard', query: { tab: 'resumen' } } },
-        { path: 'reportes', redirect: { path: '/dashboard', query: { tab: 'reportes' } } },
-        { path: 'control-ventas', component: () => import('./views/ControlVentas.vue'), meta: { titulo: 'Ventas', requiereAuth: true, pantalla: 'control-ventas'} },
-        { path: 'reporte-responsables', component: () => import('./views/ReporteResponsables.vue'), meta: { titulo: 'Reporte de Responsables', requiereAuth: true, pantalla: 'reporte-responsables'} },
-        { path: 'inscripciones', component: () => import('./views/Inscripciones.vue'), meta: { titulo: 'Inscripciones', requiereAuth: true, pantalla: 'inscripciones'} },
-        { path: 'interesados', component: () => import('./views/Interesados.vue'), meta: { titulo: 'Interesados en exponer', requiereAuth: true, pantalla: 'interesados' } },
-        { path: 'notificaciones', component: () => import('./views/Notificaciones.vue'), meta: { titulo: 'Notificaciones', requiereAuth: true, pantalla: 'notificaciones'} },
-        { path: 'vendedores', component: () => import('./views/Vendedores.vue'), meta: { titulo: 'Vendedores', requiereAuth: true, pantalla: 'vendedores'} },
-        { path: 'credenciales', component: () => import('./views/Credenciales.vue'), meta: { titulo: 'Credenciales', requiereAuth: true, pantalla: 'credenciales' } },
-        { path: 'credenciales-diseno', component: () => import('./views/DisenoCredenciales.vue'), meta: { titulo: 'Diseño de credenciales', requiereAuth: true, soloAdministracion: true } },
-        { path: 'credenciales-apoyo', component: () => import('./views/CredencialesApoyo.vue'), meta: { titulo: 'Credenciales personal apoyo', requiereAuth: true, pantalla: 'credenciales-apoyo' } },
-        { path: 'impresion-masiva', component: () => import('./views/ImpresionMasiva.vue'), meta: { titulo: 'Impresión Masiva', requiereAuth: true, pantalla: 'impresion-masiva' } },
-        { path: 'escaner', component: () => import('./views/Escaner.vue'), meta: { titulo: 'Escanear credencial', requiereAuth: true, pantalla: 'escaner' } },
-        { path: 'control-acceso', component: () => import('./views/ControlAcceso.vue'), meta: { titulo: 'Control de acceso', requiereAuth: true, pantalla: 'control-acceso' } },
-        { path: 'permisos', component: () => import('./views/RolesPermisos.vue'), meta: { titulo: 'Roles y permisos', requiereAuth: true, pantalla: 'permisos' } },
-      ],
-    },
+    { path: '/', component: () => import('./views/Portal.vue'), meta: { publico: true } },
+    { path: '/admin', component: () => import('./components/PanelAdmin.vue') },
+    { path: '/:pathMatch(.*)*', redirect: (to) => destinoAntiguo(to.path, to.query) },
   ],
 });
 
 router.beforeEach(async (to) => {
+  if (to.path === '/' && EN_APK && !Object.keys(to.query).length) return '/admin';
+  if (to.path !== '/admin') return;
   const auth = useAuthStore();
-  // Rutas públicas: no requieren autenticación
-  if (to.meta.publico) return;
-  if (to.meta.requiereAuth && !auth.autenticado) return '/login';
-  if (to.meta.soloAdministracion && !auth.puedeEditarPlano) return '/';
-  if (to.path === '/login' && auth.autenticado) return '/';
-  /*
-   * `editaPlano` ya no decide quien entra a una pantalla.
-   *
-   * Hubo dos porteros para la misma puerta: este, que mira el ROL, y el de abajo, que mira los
-   * PERMISOS. Mientras coincidieron no se noto; en cuanto dejaron de coincidir, un VERIFICADOR
-   * tenia "Inscripciones" en su menu, la tocaba y este `if` lo devolvia al inicio sin decir
-   * nada. Ahora cada ruta declara su `pantalla` y manda la matriz de permisos, que es donde se
-   * configura. Lo que protege de verdad sigue siendo el servidor.
-   */
-
-  /*
-   * Permisos por rol. Igual que lo de arriba: es COMODIDAD, no seguridad — evita que a alguien
-   * le salga una pantalla que no le toca, pero lo que protege de verdad es el servidor.
-   *
-   * Se ESPERA a saberlos antes de decidir. `puedeVer` ya no responde que sí mientras no se
-   * sepa —eso hacía que el menú del APK saliera entero cuando la petición fallaba—, así que
-   * sin esta espera un enlace directo rebotaría a Inicio solo por llegar antes que la
-   * respuesta. `asegurar()` es idempotente y comparte la petición en vuelo, así que esto no
-   * añade una llamada por navegación.
-   */
-  if (to.meta.pantallas) {
-    const permisos = usePermisosStore();
-    await permisos.asegurar();
-    if (!to.meta.pantallas.some((p) => permisos.puedeVer(p))) return '/';
-  }
-  if (to.meta.pantalla) {
-    const permisos = usePermisosStore();
-    await permisos.asegurar();
-    if (!permisos.puedeVer(to.meta.pantalla)) return '/';
-  }
+  if (!auth.autenticado) return;
+  if (to.query.m && !MODULOS[to.query.m]) return '/admin';
+  const modulo = moduloActual(to);
+  if (claveModulo(to) === 'inicio') return;
+  const permisos = usePermisosStore();
+  await permisos.asegurar();
+  if (!puedeAbrir(modulo, auth, permisos)) return '/admin';
 });
 
 router.afterEach((to) => {
-  document.title = to.meta.tituloPestana || TITULO_PESTANA_SISTEMA;
+  if (to.path === '/admin') {
+    const auth = useAuthStore();
+    document.title = auth.autenticado ? `${moduloActual(to).titulo} · ${marca.nombre}` : marca.nombre;
+  }
 });
 
 export default router;

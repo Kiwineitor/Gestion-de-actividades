@@ -3,7 +3,6 @@ package com.usic.uniFex.model.dto;
 import com.usic.uniFex.model.entity.PersonalApoyo;
 import com.usic.uniFex.model.service.ApoyoCodigoService;
 
-/** Una ficha de apoyo lista para credencial: datos + su codigo QR (FXA-...). */
 public record ApoyoCredencialDTO(
         Long id,
         String codigo,
@@ -13,7 +12,6 @@ public record ApoyoCredencialDTO(
         String dependenciaNombre,
         String rol,
         String descripcionTarea,
-        /** URL servida en /files/**, o null si no tiene foto. */
         String fotoUrl) {
 
     public static ApoyoCredencialDTO de(PersonalApoyo p, ApoyoCodigoService codigos) {

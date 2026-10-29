@@ -7,10 +7,7 @@
 <link rel="stylesheet" href="../../assets/css/config_general_publico.css" />
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
 
-<!-- VISTA PUBLICA -->
-
 <body data-ctx="admin">
-    <!-- NAVBAR -->
     <div class="container" style="padding-top: 70px">
         <nav th:fragment="topbar"
             class="layout-navbar container-xxl navbar navbar-expand-xl navbar-detached align-items-center bg-navbar-theme"
@@ -25,14 +22,12 @@
                 </div>
 
                 <ul class="navbar-nav flex-row align-items-center ms-auto">
-                    <!-- Login -->
                     <li class="nav-item" th:if="${session.persona == null}">
                         <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#modalLogin">
                             <i class="ti ti-login me-2"></i> Iniciar sesión
                         </a>
                     </li>
 
-                    <!-- Usuario logueado -->
                     <li class="nav-item dropdown" th:if="${session.persona != null}">
                         <a class="nav-link dropdown-toggle d-flex align-items-center" href="#"
                             data-bs-toggle="dropdown">
@@ -70,7 +65,6 @@
         <br />
     </div>
 
-    <!-- MODAL DE LOGIN -->
     <div class="modal fade" id="modalLogin" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-lg modal-fullscreen-sm-down">
             <div class="modal-content glass-card animate__animated animate__fadeInDown">
@@ -118,7 +112,6 @@
         </div>
     </div>
 
-    <!-- CERRAR SESIÓN -->
     <div class="modal fade" id="modalConfirmLogout" tabindex="-1" aria-labelledby="modalConfirmLogoutLabel"
         aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -175,7 +168,6 @@
                         </button>
                     </div>
 
-                    <!-- Modal Buscar por CI -->
                     <div class="modal fade" id="modalBuscarCI" tabindex="-1" aria-hidden="true">
                         <div class="modal-dialog">
                             <form id="formBuscarCI" class="modal-content" method="post"
@@ -200,7 +192,6 @@
                         </div>
                     </div>
 
-                    <!-- Modal resultado -->
                     <div class="modal fade" id="modalResultado" tabindex="-1" aria-hidden="true">
                         <div class="modal-dialog modal-lg modal-dialog-scrollable">
                             <div class="modal-content">
@@ -210,7 +201,7 @@
                                     <button type="button" class="btn-close" data-bs-dismiss="modal"
                                         aria-label="Cerrar"></button>
                                 </div>
-                                <div class="modal-body" id="res-body"><!-- contenido dinámico --></div>
+                                <div class="modal-body" id="res-body"></div>
                                 <div class="modal-footer">
                                     <button class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
                                 </div>
@@ -237,7 +228,6 @@
     </table>
   </div>
 </div>
-
 
                     <footer th:replace="~{layout/footer :: footer}"></footer>
                 </div>
@@ -267,7 +257,6 @@
                     body: fd
                 });
 
-                // Si la respuesta no es JSON, mostramos error genérico
                 const ct = resp.headers.get('content-type') || '';
                 if (!ct.includes('application/json')) {
                     document.getElementById('res-body').innerHTML =
@@ -288,7 +277,6 @@
                 const d = json.data;
                 const puestos = Array.isArray(d.puestos) ? d.puestos : [];
 
-                // Si tu ruta de fotos es relativa, ajusta el prefijo si hace falta:
                 const fotoSrc = d.foto ? (d.foto.startsWith('http') ? d.foto : `/${d.foto}`) : '/assets/img/placeholder-user.png';
 
                 const filas = puestos.map(p => `
@@ -329,7 +317,7 @@
                                             </table>
                                         </div>
                                     `;
-                                    window.__ciActual = d.ci;                 // ⬅️ guarda el CI actual
+                                    window.__ciActual = d.ci;
 await cargarEstadoAcceso(d.ci); 
 
                 modalBuscar.hide();
@@ -356,7 +344,6 @@ await cargarEstadoAcceso(d.ci);
     return;
   }
 
-  // Botones
   if (json.dentro) {
     contBtns.innerHTML = `
       <button id="btnSalida" class="btn btn-danger">
@@ -369,7 +356,6 @@ await cargarEstadoAcceso(d.ci);
       </button>`;
   }
 
-  // Logs
   const logs = Array.isArray(json.logs) ? json.logs : [];
   if (logs.length) {
     tbody.innerHTML = logs.map((l, i) => `
@@ -382,7 +368,6 @@ await cargarEstadoAcceso(d.ci);
     `).join('');
   }
 
-  // Handlers de acción
   const submitAccion = async (url, ci) => {
     const resp2 = await fetch(url, {
       method: 'POST',
@@ -393,7 +378,6 @@ await cargarEstadoAcceso(d.ci);
     if (!resp2.ok || !j2?.ok) {
       alert(j2?.mensaje || 'Operación fallida');
     } else {
-      // refrescar estado
       await cargarEstadoAcceso(ci);
     }
   };
@@ -404,7 +388,6 @@ await cargarEstadoAcceso(d.ci);
 
 function formatFecha(s) {
   if (!s) return '';
-  // s puede venir como "2025-09-20T14:33:12.345"
   try {
     const d = new Date(s);
     const pad = n => String(n).padStart(2, '0');
@@ -412,7 +395,6 @@ function formatFecha(s) {
   } catch { return s; }
 }
     </script>
-
 
 </body>
 

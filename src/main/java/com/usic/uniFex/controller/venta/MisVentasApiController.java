@@ -16,22 +16,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.usic.uniFex.model.repository.FuncionesInscripcion;
 import com.usic.uniFex.security.JwtUser;
-import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * "Mis ventas" del vendedor (Fase F): las inscripciones que registró el usuario del token.
- *
- * No reimplementa nada: envuelve la stored function {@code fn_get_inscripciones(uid[, edicion])},
- * que ya agrupa por inscripcion y categoria y solo cuenta casetas confirmadas (estado 'O').
- * El parametro opcional {@code ?edicion=} filtra por edicion (V6): sin el, se usa la edicion
- * ACTIVA; con el, se ve el historico (p. ej. FEXPO 2025). El aislamiento es por diseño: el id
- * de usuario sale del JWT, nunca de un parametro, asi que un vendedor no puede pedir las ventas
- * de otro. Cualquier usuario autenticado ve las suyas (no necesita rol especial).
- *
- * <p>SUPER_USUARIO y ADMINISTRADOR ven TODAS las ventas (se pasa uid = null a la funcion).
- */
 @RestController
 @RequestMapping("/api/app/mis-ventas")
 @RequiredArgsConstructor
@@ -40,14 +27,12 @@ public class MisVentasApiController {
     private final FuncionesInscripcion funciones;
     private final com.usic.uniFex.model.dao.IInscripcionDao inscripcionDao;
 
-    /** Listado de ventas del usuario + un resumen (cuántas inscripciones y el total vendido). */
     @GetMapping
     public ResponseEntity<Map<String, Object>> mias(
             @RequestParam(value = "edicion", required = false) Long edicion) {
         Long uid = usuarioActual();
         if (uid == null) return noAutenticado();
 
-        // Solo SUPER_USUARIO ve todo: pasa null a la funcion
         boolean esSuper = esSuperUsuario();
         Long uidParaFuncion = esSuper ? null : uid;
 
@@ -63,13 +48,6 @@ public class MisVentasApiController {
                 .distinct()
                 .count();
 
-        /*
-         * Que le falta a cada venta, para que la LISTA lo pueda marcar.
-         *
-         * Sin esto habia que abrir cada venta para descubrir si tenia el comprobante o si a
-         * algun responsable le faltaba la foto, y en una feria con decenas de ventas eso es
-         * trabajo que nadie hace. Va en una sola consulta, no una por fila.
-         */
         List<Map<String, Object>> pendientes = new java.util.ArrayList<>();
         for (Object[] f : inscripcionDao.pendientesPorVenta(esSuper ? null : uid)) {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -79,8 +57,6 @@ public class MisVentasApiController {
             pendientes.add(m);
         }
 
-        // OJO: aqui NO se puede usar Map.of(). Rechaza valores null con NullPointerException,
-        // y `edicion` es null en el caso normal.
         Map<String, Object> cuerpo = new LinkedHashMap<>();
         cuerpo.put("cantidad", inscripciones);
         cuerpo.put("total", total);
@@ -90,7 +66,6 @@ public class MisVentasApiController {
         return ResponseEntity.ok(cuerpo);
     }
 
-    /** Puestos de una inscripción propia. Rechaza (404) si la inscripción no es del usuario. */
     @GetMapping("/{idInscripcion}/puestos")
     public ResponseEntity<?> puestos(@PathVariable Long idInscripcion,
             @RequestParam(value = "edicion", required = false) Long edicion) {
@@ -104,8 +79,6 @@ public class MisVentasApiController {
         }
         return ResponseEntity.ok(funciones.obtener_puestos_por_inscripcion(idInscripcion));
     }
-
-    // ===== helpers =====
 
     private Long usuarioActual() {
         Authentication a = SecurityContextHolder.getContext().getAuthentication();

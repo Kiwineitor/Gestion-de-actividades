@@ -1,31 +1,16 @@
--- =============================================================================
--- V17 — Tabla de notificaciones persistentes + bandeja por usuario.
---
--- La tabla guarda TODAS las notificaciones (sistema, admin->vendedor, observaciones)
--- para que la bandeja sobreviva a recargas, cambios de dispositivo y app cerrada.
--- El WebSocket (/topic/notificaciones/{userId}) solo avisa en tiempo real;
--- la tabla es la fuente de verdad.
---
--- Es idempotente: volver a ejecutarlo no cambia nada.
---
--- Ejecutar:
---   psql -h <host> -U postgres -d <base> -f V17__notificaciones.sql
--- =============================================================================
-
 CREATE TABLE IF NOT EXISTS notificacion (
     id                      BIGSERIAL PRIMARY KEY,
     id_usuario_destino      BIGINT NOT NULL REFERENCES usuario(id),
-    tipo                    VARCHAR(50) NOT NULL,           -- SOLICITUD_CANCELACION, APROBACION_CANCELACION, RECHAZO_CANCELACION, OBSERVACION_ADMIN, VENTA_REGISTRADA, SISTEMA, ...
+    tipo                    VARCHAR(50) NOT NULL,
     asunto                  VARCHAR(200) NOT NULL,
     cuerpo                  TEXT,
     id_inscripcion          BIGINT REFERENCES inscripcion(id),
     id_puesto               BIGINT REFERENCES puesto(id),
     leida                   BOOLEAN NOT NULL DEFAULT FALSE,
     leida_en                TIMESTAMP,
-    -- Para hilos de observación (admin escribe, vendedor responde, admin cierra)
     id_notificacion_padre   BIGINT REFERENCES notificacion(id),
-    estado_hilo             VARCHAR(20) DEFAULT 'ABIERTA',  -- ABIERTA | RESPONDIDA | RESUELTA
-    respuesta               TEXT,                           -- última respuesta del hilo
+    estado_hilo             VARCHAR(20) DEFAULT 'ABIERTA',
+    respuesta               TEXT,
     respondida_por_id_usuario BIGINT REFERENCES usuario(id),
     respondida_en           TIMESTAMP,
     _fecha_registro         TIMESTAMP NOT NULL DEFAULT NOW(),

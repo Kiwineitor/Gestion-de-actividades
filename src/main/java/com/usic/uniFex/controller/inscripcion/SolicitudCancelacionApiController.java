@@ -28,19 +28,6 @@ import com.usic.uniFex.security.Roles;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Flujo de cancelacion con aprobacion (V11), bajo /api/app.
- *
- * - El VENDEDOR que registro la venta solicita cancelarla con un motivo
- *   (POST /inscripciones/{id}/solicitar-cancelacion) y queda a la espera; se le
- *   notifica por WebSocket cuando administracion resuelve.
- * - La ADMINISTRACION ve la cola de pendientes, aprueba o rechaza, y su decision
- *   llega al vendedor al instante, sin que ninguno recargue la pagina.
- *
- * Autorizacion: la cola y la resolucion son de administracion (mismo rol que el
- * listado de inscripciones); solicitar es del dueño de la venta (o administracion),
- * misma regla que el recibo.
- */
 @RestController
 @RequestMapping("/api/app")
 @RequiredArgsConstructor
@@ -50,10 +37,6 @@ public class SolicitudCancelacionApiController {
     private final SolicitudCancelacionService solicitudService;
     private final IInscripcionService inscripcionService;
 
-    /**
-     * El vendedor solicita cancelar una venta propia, con el motivo obligatorio.
-     * La solicitud nace PENDIENTE y administracion recibe el aviso por WebSocket.
-     */
     @PostMapping("/inscripciones/{id}/solicitar-cancelacion")
     public ResponseEntity<Map<String, Object>> solicitar(
             @PathVariable Long id,
@@ -84,10 +67,6 @@ public class SolicitudCancelacionApiController {
         return ResponseEntity.ok(cuerpo);
     }
 
-    /**
-     * El vendedor consulta el estado de su solicitud para una venta concreta (en espera,
-     * aprobada o rechazada). Puede verla quien registro la venta, o administracion.
-     */
     @GetMapping("/inscripciones/{id}/solicitud-cancelacion")
     public ResponseEntity<?> estadoSolicitud(
             @PathVariable Long id,
@@ -106,24 +85,18 @@ public class SolicitudCancelacionApiController {
         return ResponseEntity.ok(solicitudService.estadoDeVenta(id));
     }
 
-    /**
-     * La cola de pendientes de administracion, en orden de llegada. Es lo que se ve al
-     * abrir la pestana "Solicitudes": cada pendiente trae la venta y quien la pidio.
-     */
     @GetMapping("/solicitudes-cancelacion/pendientes")
     @PreAuthorize(Roles.ADMINISTRA)
     public List<SolicitudCancelacionDTO> pendientes() {
         return solicitudService.pendientes();
     }
 
-    /** El historico de resueltas (aprobadas y rechazadas), las mas recientes primero. */
     @GetMapping("/solicitudes-cancelacion/resueltas")
     @PreAuthorize(Roles.ADMINISTRA)
     public List<SolicitudCancelacionDTO> resueltas() {
         return solicitudService.resueltas();
     }
 
-    /** Mis solicitudes de cancelacion (las que pidio este vendedor), de la mas reciente a la mas vieja. */
     @GetMapping("/mis-solicitudes-cancelacion")
     public ResponseEntity<?> misSolicitudes() {
         Long usuarioId = usuarioActual();
@@ -133,11 +106,6 @@ public class SolicitudCancelacionApiController {
         return ResponseEntity.ok(solicitudService.delVendedor(usuarioId));
     }
 
-    /**
-     * Administracion aprueba una solicitud pendiente: el vendedor queda habilitado para
-     * cancelar y recibe el aviso por WebSocket al instante. Solo se aprueba lo pendiente:
-     * si otro admin ya la resolvio, 400 "ya fue resuelta".
-     */
     @PostMapping("/solicitudes-cancelacion/{id}/aprobar")
     @PreAuthorize(Roles.ADMINISTRA)
     public ResponseEntity<Map<String, Object>> aprobar(
@@ -153,10 +121,6 @@ public class SolicitudCancelacionApiController {
                 : ResponseEntity.badRequest().body(Map.of("ok", false, "mensaje", r.mensaje()));
     }
 
-    /**
-     * Administracion rechaza una solicitud pendiente; la respuesta es obligatoria para que
-     * el vendedor sepa por que no procedio. El aviso le llega por WebSocket.
-     */
     @PostMapping("/solicitudes-cancelacion/{id}/rechazar")
     @PreAuthorize(Roles.ADMINISTRA)
     public ResponseEntity<Map<String, Object>> rechazar(
@@ -174,23 +138,17 @@ public class SolicitudCancelacionApiController {
                 : ResponseEntity.badRequest().body(Map.of("ok", false, "mensaje", r.mensaje()));
     }
 
-    /** Id del usuario del token, o null si no hay sesion valida. */
     private Long usuarioActual() {
         Authentication a = SecurityContextHolder.getContext().getAuthentication();
         return (a != null && a.getPrincipal() instanceof JwtUser u) ? u.id() : null;
     }
 
-    /**
-     * De donde llega la peticion, para la auditoria: WEB por defecto, o APK si el
-     * cliente envia el header {@code X-Origen}.
-     */
     private static String origenDe(String origen) {
         return AuditoriaService.ORIGEN_APK.equalsIgnoreCase(origen == null ? "" : origen.trim())
                 ? AuditoriaService.ORIGEN_APK
                 : AuditoriaService.ORIGEN_WEB;
     }
 
-    /** ¿El usuario del token pertenece a administracion? (ver Roles.AUTORIDADES_ADMINISTRA) */
     private boolean esAdministracion() {
         Authentication a = SecurityContextHolder.getContext().getAuthentication();
         if (a == null) return false;

@@ -7,7 +7,6 @@ import org.springframework.stereotype.Component;
 import com.usic.uniFex.model.service.InstanciaWhatsAppService;
 import lombok.RequiredArgsConstructor;
 
-/** Compatibilidad de primer arranque; los envios solo consultan la base de datos. */
 @Component
 @RequiredArgsConstructor
 public class ImportarInstanciaWhatsApp {
@@ -17,7 +16,6 @@ public class ImportarInstanciaWhatsApp {
     @Value("${whatsapp.api.key:}") private String clave;
     @Value("${whatsapp.instance:}") private String instancia;
 
-    // Despues del inicializador del esquema cuando se arranca sobre una base nueva.
     @EventListener(ApplicationReadyEvent.class)
     public void importar() {
         if (habilitada && !url.isBlank() && !clave.isBlank() && !instancia.isBlank()) {

@@ -21,23 +21,6 @@ import com.usic.uniFex.security.RolesSistema;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Altas, bajas y cambios de los usuarios del sistema (la version API/JWT de lo que hace el
- * UsuarioController de Thymeleaf, con las validaciones centralizadas en un solo sitio).
- *
- * Estados de {@code _estado}: ACTIVO (puede entrar), INACTIVO (login rechazado por AuthController)
- * y ELIMINADO (baja logica; no se lista ni cuenta). No hay borrado fisico: otras filas
- * (inscripciones, auditoria) referencian al usuario.
- *
- * Dos reglas de privilegio que no son burocracia:
- *
- * 1. **Solo un SUPER USUARIO toca a otro SUPER USUARIO** (y solo el concede ese rol). Sin esto,
- *    un ADMINISTRADOR —que tambien entra a este modulo— podria cambiarle la contrasena al super
- *    usuario y entrar como el, o simplemente ascenderse a si mismo. Seria un escalado de
- *    privilegios por la puerta principal.
- * 2. **Siempre queda al menos un SUPER USUARIO activo.** De ese agujero no se sale desde la
- *    aplicacion: el modulo que arregla usuarios y roles exige justamente ese rol.
- */
 @Service
 @RequiredArgsConstructor
 public class GestionUsuarioService {
@@ -46,13 +29,10 @@ public class GestionUsuarioService {
     public static final String INACTIVO = "INACTIVO";
     public static final String ELIMINADO = "ELIMINADO";
 
-    /** Longitud minima de contrasena. Corta, pero deja fuera "123" y el nombre del usuario. */
     public static final int PASSWORD_MIN = 8;
 
-    /** Letras, digitos, punto, guion y guion bajo: lo que se puede teclear sin dudar en un login. */
     private static final Pattern USERNAME_VALIDO = Pattern.compile("^[a-zA-Z0-9._-]{3,50}$");
 
-    /** Valor de {@code exceptoId} cuando no hay que excluir a nadie (ver IUsuarioDao). */
     private static final long NINGUNO = -1L;
 
     private static final Logger logger = LoggerFactory.getLogger(GestionUsuarioService.class);
@@ -65,40 +45,24 @@ public class GestionUsuarioService {
     private final VendedorAsignacionService vendedorAsignacion;
     private final WhatsAppService whatsApp;
 
-    /** Enlace de la plataforma que se manda junto con la clave (en prod: https://fexpo-uapv2.uap.edu.bo/app/). */
     @Value("${app.base-url:https://fexpo-uapv2.uap.edu.bo/app/}")
     private String baseUrl;
 
-    /**
-     * Quien ejecuta la operacion. El rol viaja junto al id porque las reglas de privilegio de
-     * arriba dependen de el, y leerlo del JWT en el controlador evita una consulta por peticion.
-     */
     public record Actor(Long id, String rol) {
         public boolean esSuperUsuario() {
             return RolesSistema.SUPER_USUARIO.getNombre().equals(RolesSistema.normalizar(rol));
         }
     }
 
-    /** Resultado de una operacion: ok + mensaje, y el usuario cuando aplica. */
     public record Resultado(boolean ok, String mensaje, Usuario usuario) {
         static Resultado error(String m) { return new Resultado(false, m, null); }
         static Resultado exito(String m, Usuario u) { return new Resultado(true, m, u); }
     }
 
-    /** Usuarios no eliminados (los que se muestran en la gestion), con persona y rol ya cargados. */
     public List<Usuario> listar() {
         return usuarioDao.listarGestionables();
     }
 
-    /**
-     * Alta de usuario. La persona puede venir ya elegida ({@code personaId}) o crearse en el mismo
-     * paso ({@code personaNueva}) — eso ultimo es lo que evita el ir y venir entre dos modulos para
-     * dar de alta a un vendedor.
-     *
-     * Las dos escrituras van en la MISMA transaccion: si el usuario falla despues (nombre repetido,
-     * rol inexistente), la persona recien creada se deshace con el. Sin eso, cada intento fallido
-     * dejaria una persona huerfana en la tabla y el segundo intento chocaria con su propio C.I.
-     */
     @Transactional
     public Resultado crear(String username, String password, Long personaId,
                            GestionPersonaService.Datos personaNueva, Long rolId, Actor actor) {
@@ -138,8 +102,6 @@ public class GestionUsuarioService {
         u.setPersona(persona);
         u.setRol(rol);
         u.setEstado(ACTIVO);
-        // La auditoria automatica de JPA esta apagada en este proyecto: las fechas y los ids de
-        // quien registra se ponen a mano o quedan nulos.
         u.setRegistro(new Date());
         u.setModificacion(new Date());
         u.setRegistroIdUsuario(actor.id());
@@ -175,7 +137,6 @@ public class GestionUsuarioService {
             }
             problema = validarConcesionDeRol(rol, actor);
             if (problema != null) return Resultado.error(problema);
-            // Bajarle el rol al ultimo super usuario activo deja el sistema sin quien lo administre.
             if (esSuperUsuario(u) && ultimoSuperUsuarioActivo(u)) {
                 return Resultado.error("Es el unico SUPER USUARIO activo: nombra otro antes de cambiarle el rol.");
             }
@@ -198,10 +159,6 @@ public class GestionUsuarioService {
         problema = validarPassword(nueva, u.getUsername());
         if (problema != null) return Resultado.error(problema);
 
-        // La clave en texto plano solo existe en `nueva`: una vez encriptada ya no se recupera.
-        // Se guarda primero y se avisa despues con la misma variable, que sigue en memoria.
-        // Asi nunca se avisa una clave que no quedo persistida (si el guardado falla, no se
-        // manda nada y el admin lo reintenta).
         u.setPassword(passwordEncoder.encode(nueva));
         u.setModificacion(new Date());
         u.setModificacionIdUsuario(actor.id());
@@ -210,15 +167,6 @@ public class GestionUsuarioService {
         return Resultado.exito("Contrasena actualizada." + avisarClavePorWhatsApp(guardado, nueva), guardado);
     }
 
-    /**
-     * Manda la clave recien reseteada al WhatsApp del usuario, con el enlace de la plataforma.
-     *
-     * El numero sale de la persona (su celular), no de un parametro: el admin no lo teclea y no
-     * puede mandarlo a otro lado por error. Si no hay numero o el servicio esta deshabilitado,
-     * igual se guarda la clave y solo se informa, para que el admin la dicte por otro medio.
-     *
-     * @return el sufijo para el mensaje al admin (siempre empieza con espacio o es vacio).
-     */
     private String avisarClavePorWhatsApp(Usuario u, String clavePlana) {
         String celular = u.getPersona() != null ? u.getPersona().getCelular() : null;
         String numero = normalizarCelular(celular);
@@ -249,10 +197,6 @@ public class GestionUsuarioService {
         return " No se pudo enviar por WhatsApp al " + numero + ".";
     }
 
-    /**
-     * Celular a formato internacional sin +, espacios ni guiones. Asume Bolivia (591) cuando
-     * llega con 8 digitos, igual que el envio post-venta.
-     */
     private static String normalizarCelular(String celular) {
         if (celular == null || celular.isBlank()) return null;
         String n = celular.replaceAll("[^0-9]", "");
@@ -261,7 +205,6 @@ public class GestionUsuarioService {
         return n.length() >= 8 ? n : null;
     }
 
-    /** Activa o desactiva. No permite que un admin se desactive a si mismo (se quedaria fuera). */
     @Transactional
     public Resultado cambiarEstado(Long id, boolean activo, Actor actor) {
         if (id.equals(actor.id()) && !activo) return Resultado.error("No puedes desactivar tu propio usuario.");
@@ -280,7 +223,6 @@ public class GestionUsuarioService {
         return Resultado.exito(activo ? "Usuario activado." : "Usuario desactivado.", usuarioDao.save(u));
     }
 
-    /** Baja logica. Tampoco puedes eliminarte a ti mismo. */
     @Transactional
     public Resultado eliminar(Long id, Actor actor) {
         if (id.equals(actor.id())) return Resultado.error("No puedes eliminar tu propio usuario.");
@@ -296,19 +238,11 @@ public class GestionUsuarioService {
         u.setEstado(ELIMINADO);
         u.setModificacion(new Date());
         u.setModificacionIdUsuario(actor.id());
-        // Si era vendedor, sus casetas vuelven al catalogo. Sin esto quedan asignadas a alguien
-        // que ya no existe: nadie las ve y nadie puede tomarlas (son exclusivas desde V20).
         vendedorAsignacion.liberarAsignacionesDe(id);
         logger.info("Usuario eliminado (baja logica): {} por usuario {}", u.getUsername(), actor.id());
         return Resultado.exito("Usuario eliminado.", usuarioDao.save(u));
     }
 
-    // ===== validaciones =====
-
-    /**
-     * La persona, siempre que no este dada de baja. Una persona ELIMINADA no aparece en ningun
-     * listado, asi que colgarle un usuario dejaria una cuenta con un titular invisible.
-     */
     private Persona personaViva(Long personaId) {
         Persona p = personaService.findById(personaId);
         return (p != null && !GestionPersonaService.ELIMINADO.equalsIgnoreCase(p.getEstado())) ? p : null;
@@ -337,7 +271,6 @@ public class GestionUsuarioService {
         return null;
     }
 
-    /** Regla 1: conceder SUPER USUARIO es privilegio de un SUPER USUARIO. */
     private String validarConcesionDeRol(Rol rol, Actor actor) {
         boolean esSuper = RolesSistema.SUPER_USUARIO.getNombre().equals(RolesSistema.normalizar(rol.getNombre()));
         if (esSuper && !actor.esSuperUsuario()) {
@@ -346,7 +279,6 @@ public class GestionUsuarioService {
         return null;
     }
 
-    /** Regla 1, el otro lado: una cuenta SUPER USUARIO solo la toca otro SUPER USUARIO. */
     private String protegerSuperUsuario(Usuario objetivo, Actor actor, String accion) {
         if (esSuperUsuario(objetivo) && !actor.esSuperUsuario() && !objetivo.getId().equals(actor.id())) {
             return "Solo un SUPER USUARIO puede " + accion + " una cuenta SUPER USUARIO.";
@@ -359,7 +291,6 @@ public class GestionUsuarioService {
                 && RolesSistema.SUPER_USUARIO.getNombre().equals(RolesSistema.normalizar(u.getRol().getNombre()));
     }
 
-    /** Regla 2: ¿es el ultimo SUPER USUARIO que puede entrar? */
     private boolean ultimoSuperUsuarioActivo(Usuario u) {
         return usuarioDao.contarActivosPorRol(RolesSistema.SUPER_USUARIO.getNombre(), u.getId()) == 0;
     }

@@ -1,14 +1,4 @@
 <script setup>
-/**
- * La ficha de una venta en Control de ventas: todas sus celdas, su comprobante y la credencial
- * de cada responsable.
- *
- * <h2>Rendir una venta = adjuntar su comprobante</h2>
- * La foto del depósito, el voucher o el recibo basta; banco y número son opcionales. Se usa el
- * MISMO endpoint que Mis ventas e Inscripciones (`/api/app/inscripciones/{id}/comprobante`): así
- * la venta queda con comprobante para todo el sistema —credenciales, tablero de dirección—, y no
- * solo para esta pantalla.
- */
 import { ref, computed, onMounted } from 'vue';
 import UiModal from '../UiModal.vue';
 import { apiFetch } from '../../api';
@@ -48,7 +38,6 @@ async function cargar() {
 }
 onMounted(cargar);
 
-// ---------------------------------------------------------------- adjuntar comprobante
 const puedeAdjuntar = computed(() => !!props.opciones.puedeAdjuntar
   && v.value && !v.value.conComprobante && n(v.value.importePuestos) > 0);
 const form = ref(null);
@@ -65,7 +54,6 @@ async function guardar() {
   }
   const datos = new FormData();
   datos.append('archivo', f.archivo);
-  // Opcionales: muchos comprobantes son una foto sin número legible, y eso basta.
   if (f.entidadBancaria.trim()) datos.append('entidadBancaria', f.entidadBancaria.trim());
   if (f.numComprobante.trim()) datos.append('numComprobante', f.numComprobante.trim());
   guardando.value = true;
@@ -91,7 +79,6 @@ async function guardar() {
     <div v-else-if="cargando" class="vacio">Cargando…</div>
 
     <template v-else-if="v">
-      <!-- Las tres cifras que se buscan al abrir una venta. -->
       <section class="cifras">
         <div><span class="rotulo">Total vendido</span><strong>{{ bs(v.totalVendido) }} Bs</strong>
           <span class="muted chico">{{ bs(v.importePuestos) }} puestos + {{ bs(v.importeExtras) }} extras</span></div>
@@ -101,7 +88,6 @@ async function guardar() {
           <span class="badge" :class="ESTADOS[v.estadoPago]?.clase">{{ ESTADOS[v.estadoPago]?.texto }}</span></div>
       </section>
 
-      <!-- Comprobante: lo que decide si la venta está rendida. -->
       <section class="comprobante" :class="{ falta: !v.conComprobante && n(v.importePuestos) > 0 }">
         <div class="cab-seccion">
           <div>
@@ -142,7 +128,6 @@ async function guardar() {
         </form>
       </section>
 
-      <!-- Todas las celdas del registro, agrupadas. -->
       <section class="datos">
         <div class="grupo">
           <h4>Venta</h4>
@@ -189,7 +174,6 @@ async function guardar() {
         </div>
       </section>
 
-      <!-- Puestos -->
       <section class="seccion">
         <h4>Puestos adquiridos</h4>
         <div class="tabla-scroll">
@@ -207,7 +191,6 @@ async function guardar() {
         </div>
       </section>
 
-      <!-- Responsables y su credencial -->
       <section class="seccion">
         <h4>Responsables y credenciales ({{ ficha.responsables.length }})</h4>
         <p class="muted chico">
@@ -262,7 +245,6 @@ async function guardar() {
 .cifras .badge { align-self: flex-start; }
 
 .comprobante { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.75rem 0.85rem; border: 1px solid var(--border); border-radius: var(--radio-sm); }
-/* Ámbar y no rojo: falta un papel, no hay una avería. */
 .comprobante.falta { border-left: 3px solid var(--tramite); }
 .comprobante h4 { margin: 0; font-size: 0.9rem; }
 .comprobante p { margin: 0.2rem 0 0; }

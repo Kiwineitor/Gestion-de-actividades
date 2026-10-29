@@ -16,44 +16,15 @@ import com.usic.uniFex.model.dto.AnalisisDTO;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 
-/**
- * Los analisis que mira quien dirige la feria: cuanto queda por vender, quien vende, cuanto se
- * cobro de verdad y a que ritmo se avanza.
- *
- * <h2>Dos reglas que comparten las cuatro consultas</h2>
- *
- * <b>1. Solo la edicion activa.</b> Todas filtran por
- * {@code id_edicion = (select id from edicion where activa)}. Sin eso, en cuanto exista FEXPO
- * 2027 los totales sumarian los dos años y el error no se veria hasta que la cifra fuera
- * absurda. El reporte de ventas que ya existia no lo hacia; se corrigio al escribir esto.
- *
- * <b>2. Nada anulado.</b> Se descartan las inscripciones y los detalles con {@code _estado='X'}
- * y las casetas dadas de baja. Una venta cancelada no es dinero, y una caseta anulada no es
- * inventario: contarlas da un plano mas grande del que existe.
- *
- * <h2>Por que SQL nativo y no JPQL</h2>
- * Son agregados sobre cuatro o cinco tablas con conteos condicionales
- * ({@code count(*) filter (where ...)}). Escribirlos con entidades traeria las filas a memoria
- * para contarlas en Java: 555 casetas y 106 detalles hoy, y toda la feria el dia de mañana.
- */
 @Service
 public class AnalisisVentasService {
 
     @PersistenceContext
     private EntityManager em;
 
-    /** La edicion activa, como subconsulta. Se repite en todas: es la regla, no un adorno. */
     private static final String EDICION_ACTIVA =
             "(select ed.id from edicion ed where ed.activa limit 1)";
 
-    /**
-     * Las tablas de una venta que cuenta. Va SIN el {@code where} para que quien lo use pueda
-     * añadir sus propios JOIN detras: un WHERE en medio dejaria la consulta mal formada, y eso
-     * no lo caza el compilador — revienta en ejecucion.
-     *
-     * Existen {@code inscripcion_puesto} con {@code id_puesto} nulo —ventas huerfanas, ya
-     * documentadas— y colarlas descuadra el total contra el desglose.
-     */
     private static final String DESDE_VENTAS = """
               from inscripcion i
               join inscripcion_puesto ip on ip.id_inscripcion = i.id and ip.id_puesto is not null
@@ -61,25 +32,10 @@ public class AnalisisVentasService {
               join puesto p on p.id = ip.id_puesto
             """;
 
-    /** Vivas y de la edicion activa. Se pega detras de los JOIN que añada cada consulta. */
     private static final String SOLO_VIVAS_EDICION_ACTIVA = """
              where (i."_estado" is null or i."_estado" <> 'X')
                and i.id_edicion = """ + EDICION_ACTIVA;
 
-    // ------------------------------------------------------------------ ocupacion del plano
-
-    /**
-     * Cuanto queda por vender, por categoria.
-     *
-     * El dinero se calcula de dos formas distintas a proposito:
-     * <ul>
-     *   <li><b>vendido</b>: de {@code inscripcion_puesto.costo}, que es el precio CONGELADO el
-     *       dia de la venta. Es lo que de verdad se cobro.</li>
-     *   <li><b>por vender</b>: del precio VIGENTE de cada caseta libre —el suyo propio si lo
-     *       tiene (V37), si no el de su categoria—. Es lo que entraria hoy.</li>
-     * </ul>
-     * Usar el precio de hoy para lo ya vendido haria que subir una tarifa cambiara el historico.
-     */
     @Transactional(readOnly = true)
     public List<AnalisisDTO.Ocupacion> ocupacion() {
         String sql = """
@@ -107,6 +63,7 @@ public class AnalisisVentasService {
                   left join vendido v on v.id_categoria = c.id
                  where (p."_estado" is null or p."_estado" <> 'X')
                    and (c."_estado" is null or c."_estado" <> 'X')
+                   and c.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
                  group by c.id, c.nombre, v.bs
                  order by c.nombre
                 """.formatted(EDICION_ACTIVA);
@@ -120,9 +77,6 @@ public class AnalisisVentasService {
             int libres = entero(f[3]);
             int bloqueadas = entero(f[4]);
             int total = entero(f[5]);
-            // El porcentaje se mide sobre lo VENDIBLE, no sobre el total: una categoria con la
-            // mitad bloqueada por obra no esta al 50 % de sus ventas, esta al 100 % de lo que
-            // se podia vender, y presentarla como floja seria acusar al vendedor de algo ajeno.
             int vendible = total - bloqueadas;
             BigDecimal pct = vendible <= 0
                     ? BigDecimal.ZERO
@@ -133,15 +87,6 @@ public class AnalisisVentasService {
         return r;
     }
 
-    // ------------------------------------------------------------------ ranking de vendedores
-
-    /**
-     * Quien vende cuanto, con su area y carrera (V35).
-     *
-     * `ventas` cuenta inscripciones DISTINTAS y `casetas` cuenta detalles: una venta de tres
-     * casetas es una venta y tres casetas. Sin el {@code distinct}, cada caseta contaria como
-     * una venta y el ranking premiaria a quien vende lotes grandes dos veces.
-     */
     @Transactional(readOnly = true)
     public List<AnalisisDTO.Vendedor> vendedores() {
         String sql = """
@@ -175,21 +120,6 @@ public class AnalisisVentasService {
         return r;
     }
 
-    // ------------------------------------------------------------------ por facultad
-
-    /**
-     * Lo vendido por la facultad (area academica) del vendedor que registro cada venta.
-     *
-     * El area se deduce por la carrera de la persona (V35) y no se copia a ningun sitio: por eso
-     * mover una carrera de area corrige el historico entero sin tocar una sola venta.
-     *
-     * <b>Quien no tiene carrera asignada sale agrupado aparte, no se descarta.</b> Descartarlo
-     * haria que la suma del reporte no cuadrara con el total de la feria, y un descuadre asi es
-     * el que nadie sabe explicar tres meses despues. Ademas hoy es el caso MAYORITARIO: el
-     * catalogo se sembro con V35 pero las carreras se asignan a mano desde la pantalla de
-     * Vendedores, asi que mientras nadie lo haga este reporte sale entero en esa fila. No es un
-     * fallo del reporte; es que falta el dato.
-     */
     @Transactional(readOnly = true)
     public List<AnalisisDTO.Facultad> porFacultad() {
         String sql = """
@@ -223,34 +153,18 @@ public class AnalisisVentasService {
             String sigla = texto(f[0]);
             r.add(new AnalisisDTO.Facultad(
                     sigla == null ? "SIN CARRERA" : sigla,
-                    // El nombre largo arranca igual que la sigla a proposito (V35): los oficiales
-                    // no estaban confirmados. Si siguen iguales, no se repite en pantalla.
                     nombreArea(sigla, texto(f[1])),
                     entero(f[2]), entero(f[3]), entero(f[4]), bs, pct));
         }
         return r;
     }
 
-    /** El nombre del area solo cuando aporta algo sobre la sigla. */
     private static String nombreArea(String sigla, String nombre) {
         if (sigla == null) return "Sin carrera asignada";
         if (nombre == null || nombre.equalsIgnoreCase(sigla)) return null;
         return nombre;
     }
 
-    // ------------------------------------------------------------------ vendido por categoria
-
-    /**
-     * Lo VENDIDO de cada categoria, en casetas y en dinero.
-     *
-     * Se deriva de {@link #ocupacion()} en vez de consultar aparte: es el mismo dato mirado sin
-     * lo que queda por vender. Con dos consultas distintas, el dia que una cambie de criterio
-     * —un filtro de estado, una anulacion— las dos pantallas diran numeros distintos y no habra
-     * forma de saber cual creer.
-     *
-     * Salen tambien las categorias con CERO vendidas. Es informacion: una categoria que no ha
-     * vendido nada es justamente la que hay que mirar, y esconderla la vuelve invisible.
-     */
     @Transactional(readOnly = true)
     public List<AnalisisDTO.VendidoCategoria> vendidoPorCategoria() {
         List<AnalisisDTO.Ocupacion> base = ocupacion();
@@ -268,15 +182,6 @@ public class AnalisisVentasService {
                 .toList();
     }
 
-    // ------------------------------------------------------------------ cobros
-
-    /**
-     * Cuanto se cobro de verdad y cuanto falta.
-     *
-     * <b>Con comprobante</b> es el corte que manda, no la forma de pago: marcar "contado" dice
-     * COMO se pago, no que el recibo exista. Mientras eso conto como pagado se emitieron
-     * credenciales a gente que nunca entrego el papel.
-     */
     @Transactional(readOnly = true)
     public AnalisisDTO.Cobros cobros() {
         String cortes = """
@@ -329,18 +234,6 @@ public class AnalisisVentasService {
         return new AnalisisDTO.Cobros(lista, pendientes, cobrado, pendiente);
     }
 
-    // ------------------------------------------------------------------ avance en el tiempo
-
-    /**
-     * Lo vendido cada dia, con el acumulado.
-     *
-     * Solo salen los dias CON ventas: rellenar los vacios con ceros duplicaria las filas de una
-     * feria que se prepara durante meses y vende en semanas, y la grafica del cliente ya
-     * dibuja el hueco por las fechas.
-     *
-     * El acumulado se suma aqui y no en SQL con una ventana: son decenas de filas y asi la
-     * consulta se lee de un vistazo.
-     */
     @Transactional(readOnly = true)
     public List<AnalisisDTO.Dia> avance() {
         String sql = """
@@ -366,8 +259,6 @@ public class AnalisisVentasService {
         }
         return r;
     }
-
-    // ------------------------------------------------------------------ conversiones
 
     private static int entero(Object v) {
         return v instanceof Number n ? n.intValue() : 0;

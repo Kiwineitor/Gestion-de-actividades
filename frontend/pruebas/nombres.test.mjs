@@ -1,12 +1,3 @@
-/**
- * Partir un nombre completo en nombre y apellidos.
- *
- * Se prueba aparte porque es una regla de datos, no de pantalla: lo que salga de aqui acaba
- * IMPRESO en la credencial que el expositor enseña en la puerta. El fallo que lo motivo metia
- * el nombre completo entero en la casilla "nombre" y dejaba los apellidos vacios.
- *
- * Ejecutar:  npm --prefix frontend test
- */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { partirNombre } from '../src/ui/nombres.js';

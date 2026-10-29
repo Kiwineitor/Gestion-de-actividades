@@ -13,13 +13,6 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
-/**
- * Persona interesada en exponer un stand, capturada desde el formulario público "Quiero
- * exponer" de la SPA (sin autenticación — quien la crea es siempre un visitante anónimo).
- *
- * No extiende {@link com.usic.uniFex.Config.AuditoriaConfig}: esas columnas asumen un
- * usuario logueado que registra/modifica, y aquí no lo hay.
- */
 @Entity
 @Table(name = "interesado_stand")
 @Getter

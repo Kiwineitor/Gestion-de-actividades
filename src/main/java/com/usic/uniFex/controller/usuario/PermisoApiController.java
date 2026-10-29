@@ -22,12 +22,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Que pantallas ve cada rol.
- *
- * {@code /mias} lo llama CUALQUIER usuario autenticado al entrar: es lo que arma su menu. El
- * resto es de administracion.
- */
 @RestController
 @RequestMapping("/api/app/permisos")
 @RequiredArgsConstructor
@@ -35,7 +29,6 @@ public class PermisoApiController {
 
     private final PermisoPantallaService permisos;
 
-    /** El catalogo de pantallas, con su nombre y su grupo, para pintar la matriz. */
     @GetMapping("/catalogo")
     @PreAuthorize(Roles.GESTIONA_USUARIOS)
     public List<Map<String, Object>> catalogo() {
@@ -74,16 +67,12 @@ public class PermisoApiController {
         }
     }
 
-    // ------------------------------------------------------------------ por usuario (V49)
-
-    /** Los usuarios, para elegir a quien darle pantallas aparte de su rol. */
     @GetMapping("/usuarios")
     @PreAuthorize(Roles.GESTIONA_USUARIOS)
     public List<Map<String, Object>> usuarios() {
         return permisos.usuarios();
     }
 
-    /** Lo que ve un usuario: lo de su rol y lo que se le dio a el. */
     @GetMapping("/usuario/{usuarioId}")
     @PreAuthorize(Roles.GESTIONA_USUARIOS)
     public ResponseEntity<Map<String, Object>> deUsuario(@PathVariable Long usuarioId) {
@@ -97,7 +86,6 @@ public class PermisoApiController {
     public record SeleccionUsuario(List<String> pantallas) {
     }
 
-    /** Guarda las pantallas propias de un usuario (las que tiene aparte de su rol). */
     @PutMapping("/usuario/{usuarioId}")
     @PreAuthorize(Roles.GESTIONA_USUARIOS)
     public ResponseEntity<Map<String, Object>> guardarDeUsuario(@PathVariable Long usuarioId,
@@ -112,10 +100,6 @@ public class PermisoApiController {
         }
     }
 
-    /**
-     * Las pantallas del que esta dentro —las de su rol mas las suyas propias—. Es lo que la SPA
-     * necesita para armar el menu y decidir a que rutas deja entrar.
-     */
     @GetMapping("/mias")
     public Map<String, Object> mias() {
         Authentication a = SecurityContextHolder.getContext().getAuthentication();

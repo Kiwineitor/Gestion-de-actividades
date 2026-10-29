@@ -2,67 +2,34 @@
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue';
 import { url as urlApi } from '../config.js';
 import { apiFetch } from '../api';
-import { alerta } from '../ui/alerta.js';
 import UiModal from '../components/UiModal.vue';
-
-/*
- * Verificar una credencial en la puerta.
- *
- * Dos formas de leer el codigo, y las dos hacen falta:
- *
- *   - la CAMARA, que es como se trabaja de verdad con una fila delante;
- *   - el CODIGO TECLEADO, que no es un resto de la version anterior sino el respaldo. Va
- *     impreso debajo del QR precisamente para cuando la camara no lee: papel arrugado, sol de
- *     frente, telefono sin permiso, o un equipo prestado sin camara.
- *
- * Para decodificar se prefiere BarcodeDetector, que lo resuelve el propio sistema: no gasta un
- * fotograma entero de JavaScript por lectura y es notablemente mas rapido en telefonos
- * modestos, que es lo que habra en la puerta. Donde no existe se cae a jsQR, que se carga con
- * import() DINAMICO: asi los equipos que nunca lo necesitan no arrastran su peso en el paquete
- * inicial, y el APK abre igual de rapido.
- *
- * Se consulta el endpoint publico, el mismo que abre el QR, asi que funciona con o sin sesion.
- */
 
 const codigo = ref('');
 const buscando = ref(false);
 const resultado = ref(null);
 const error = ref('');
 
-// Modal para aviso de entrada/salida repetida
 const modalRepetido = ref(false);
 const datosRepetido = ref(null);
 
-/*
- * Cada apertura comienza en Entrada. Quien escanea puede habilitar Salida desde las opciones.
- *
- * La alternativa era alternar solo —primer escaneo entrada, segundo salida— y parece mas
- * comodo hasta que alguien escanea dos veces por nerviosismo o porque el telefono no respondio
- * a la primera: a partir de ahi todo queda invertido y nadie se entera hasta mirar los numeros
- * al cierre. Con el sentido elegido, un escaneo de mas es un movimiento de mas.
- *
- * La eleccion dura durante esta visita a la pantalla porque en la puerta se trabaja por
- * tandas. Al volver a entrar, se restablece Entrada para no heredar una Salida olvidada.
- */
 const sentido = ref('E');
 
-const dentro = ref(null);   // cuanta gente hay dentro ahora
+const dentro = ref(null);
 
 async function cuantosDentro() {
   try {
     const r = await apiFetch('/api/app/accesos/dentro');
     if (r.ok) dentro.value = (await r.json()).dentro;
-  } catch { /* el contador es informativo: sin el la puerta sigue funcionando */ }
+  } catch { }
 }
 
-// ------------------------------------------------------------------ camara
 const video = ref(null);
 const camara = ref(false);
 const avisoCamara = ref('');
 const linterna = ref(false);
-let flujo = null;          // MediaStream
-let lector = null;         // BarcodeDetector, si lo hay
-let decodificaJs = null;   // jsQR, si hizo falta
+let flujo = null;
+let lector = null;
+let decodificaJs = null;
 let lienzo = null;
 let animacion = 0;
 let ultimoLeido = '';
@@ -72,11 +39,6 @@ const puedeLinterna = computed(() => {
   return !!p && 'torch' in p;
 });
 
-/**
- * El QR lleva la URL publica completa, no el codigo suelto: asi cualquier telefono que lo
- * enfoque con su camara normal abre la pagina. Aqui se extrae el codigo de esa URL, pero se
- * acepta tambien el codigo pelado por si alguien pega solo esa parte.
- */
 function codigoDe(texto) {
   const t = (texto || '').trim();
   const m = t.match(/FX[CA]-[0-9A-Z]+-[0-9A-Za-z_-]{12}/i);
@@ -88,8 +50,6 @@ async function encender() {
   limpiar();
   try {
     flujo = await navigator.mediaDevices.getUserMedia({
-      // La trasera. `ideal` y no `exact`: en una tablet con una sola camara, `exact` falla
-      // en vez de usar la que hay.
       video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false,
     });
@@ -101,12 +61,12 @@ async function encender() {
   }
 
   camara.value = true;
-  await new Promise((r) => setTimeout(r));   // que el <video> exista ya en el DOM
+  await new Promise((r) => setTimeout(r));
   const v = video.value;
   if (!v) { apagar(); return; }
   v.srcObject = flujo;
-  v.setAttribute('playsinline', '');         // iOS abriria el reproductor a pantalla completa
-  try { await v.play(); } catch { /* algunos navegadores lo rechazan y siguen funcionando */ }
+  v.setAttribute('playsinline', '');
+  try { await v.play(); } catch { }
 
   if ('BarcodeDetector' in window) {
     try {
@@ -137,15 +97,11 @@ async function alternarLinterna() {
   try {
     await pista.applyConstraints({ advanced: [{ torch: !linterna.value }] });
     linterna.value = !linterna.value;
-  } catch { /* no todos los telefonos la dejan encender desde la web */ }
+  } catch { }
 }
 
 let ultimoIntento = 0;
 
-/**
- * Un fotograma por vuelta, pero se decodifica como mucho cada 120 ms: a 30 fps y con jsQR el
- * telefono se calienta y la vista previa se entrecorta sin leer antes por ello.
- */
 async function mirar(ahora) {
   if (!camara.value) return;
   const v = video.value;
@@ -157,9 +113,6 @@ async function mirar(ahora) {
         const hallado = await lector.detect(v);
         texto = hallado[0]?.rawValue || null;
       } else if (decodificaJs) {
-        // Se reduce a 480 px de ancho antes de decodificar. Un fotograma de 1280x720 entero por
-        // jsQR son decenas de milisegundos en un telefono de gama baja, y a esa distancia el QR
-        // sigue ocupando pixeles de sobra para leerse.
         lienzo ||= document.createElement('canvas');
         const escala = Math.min(1, 480 / (v.videoWidth || 480));
         lienzo.width = Math.round(v.videoWidth * escala);
@@ -172,45 +125,31 @@ async function mirar(ahora) {
       }
       if (texto) {
         const c = codigoDe(texto);
-        // El mismo codigo delante de la camara se lee muchas veces por segundo; sin esto se
-        // dispararia una consulta por fotograma mientras el papel siga ahi.
         if (c !== ultimoLeido) {
           ultimoLeido = c;
           leido(c);
           return;
         }
       }
-    } catch { /* un fotograma ilegible no es motivo para parar */ }
+    } catch { }
   }
   animacion = requestAnimationFrame(mirar);
 }
 
 function leido(c) {
-  // Aviso corto: en la puerta se mira al expositor, no a la pantalla.
-  try { navigator.vibrate?.(120); } catch { /* el escritorio no vibra */ }
+  try { navigator.vibrate?.(120); } catch { }
   apagar();
   codigo.value = c;
   verificar();
 }
 
-// Salir de la pantalla sin esto deja la camara encendida: se nota en la bateria y el LED
-// del telefono se queda prendido, que es lo que hace pensar que la aplicacion espia.
 onBeforeUnmount(apagar);
 onMounted(() => {
-  // Asegurar estado limpio al entrar (el componente puede ser reutilizado por Vue Router)
   modalRepetido.value = false;
   datosRepetido.value = null;
   cuantosDentro();
 });
 
-// ------------------------------------------------------------------ consulta
-/**
- * Comprueba la credencial y ANOTA el movimiento.
- *
- * Las dos cosas van juntas a proposito: en la puerta, verificar sin registrar deja el mismo
- * vacio de antes —se sabe que la credencial vale, pero no quien entro ni cuanta gente hay
- * dentro—, y son el mismo gesto para quien esta ahi.
- */
 async function verificar() {
   const c = codigoDe(codigo.value);
   if (!c || buscando.value) return;
@@ -226,7 +165,6 @@ async function verificar() {
     if (r.ok && d.ok) {
       resultado.value = d;
       cuantosDentro();
-      // Si es un movimiento repetido, mostrar modal de confirmación
       if (d.repetido) {
         datosRepetido.value = d;
         modalRepetido.value = true;
@@ -252,7 +190,6 @@ function limpiar() {
   datosRepetido.value = null;
 }
 
-/** Volver a escanear: lo normal es una fila de gente, no una credencial suelta. */
 function siguiente() {
   limpiar();
   encender();
@@ -273,7 +210,6 @@ const mensajeRepetido = computed(() =>
 
 <template>
   <div class="escaner">
-    <!-- Entrada es el flujo inicial; el operador autorizado puede habilitar Salida. -->
     <section class="modo card" :class="sentido === 'E' ? 'es-entrada' : 'es-salida'">
       <div class="modo-resumen">
         <strong>{{ sentido === 'E' ? '⬇️ Registrando entradas' : '⬆️ Registrando salidas' }}</strong>
@@ -295,10 +231,6 @@ const mensajeRepetido = computed(() =>
     <section class="entrada card">
       <h2>{{ sentido === 'E' ? 'Registrar entrada' : 'Registrar salida' }}</h2>
 
-      <!-- La camara ocupa el sitio principal porque es como se trabaja con una fila delante.
-           Se enciende con un toque y no sola: pedir el permiso al entrar a la pantalla es lo
-           que hace que la gente lo niegue "por si acaso" y luego no haya forma de volver a
-           pedirlo. -->
       <div v-if="camara" class="visor">
         <video ref="video" muted playsinline></video>
         <div class="mira" aria-hidden="true"></div>
@@ -343,15 +275,12 @@ const mensajeRepetido = computed(() =>
         <h3>{{ resultado.sentido === 'E' ? 'Entrada registrada' : 'Salida registrada' }}</h3>
       </header>
 
-<!-- El aviso de movimiento repetido se muestra en un MODAL, no en texto pequeño.
-            Así el controlador lo ve GRANDE y debe confirmar que vio el aviso antes de seguir. -->
       <div class="persona">
         <img v-if="resultado.fotoUrl" :src="urlApi(resultado.fotoUrl)" :alt="resultado.nombre" class="foto" />
         <div v-else class="foto sinfoto">Sin foto</div>
         <div>
           <strong>{{ resultado.nombre }}</strong>
           <p class="ci">C.I. {{ resultado.ci || '—' }}</p>
-          <!-- El apoyo no tiene entidad: muestra su dependencia y su rol. -->
           <p v-if="resultado.tipo === 'apoyo'" class="muted">
             {{ resultado.dependencia || '—' }} · {{ resultado.rol || '—' }}
           </p>
@@ -388,7 +317,6 @@ const mensajeRepetido = computed(() =>
       </div>
     </section>
 
-    <!-- Modal para aviso de movimiento repetido -->
     <UiModal v-if="modalRepetido" :titulo="tituloRepetido" :ancho="480" @cerrar="modalRepetido = false">
       <div class="modal-repetido">
         <div class="icono-advertencia">⚠️</div>
@@ -420,7 +348,6 @@ const mensajeRepetido = computed(() =>
 <style scoped>
 .escaner { display: flex; flex-direction: column; gap: 1rem; max-width: 560px; margin: 0 auto; }
 
-/* ---- entrada o salida ---- */
 .modo { padding: 0.8rem; display: flex; flex-direction: column; gap: 0.6rem; border-top: 5px solid var(--border); }
 .modo.es-entrada { border-top-color: var(--ok); }
 .modo.es-salida { border-top-color: var(--tramite); }
@@ -458,17 +385,13 @@ const mensajeRepetido = computed(() =>
 .entrada h2 { margin: 0; font-size: 1.1rem; }
 .ayuda { margin: 0; font-size: 0.86rem; color: var(--muted); line-height: 1.5; }
 .fila { display: flex; gap: 0.6rem; }
-/* El codigo se teclea con prisa y en un movil: monoespaciado, grande y sin autocorrector. */
 .codigo { flex: 1; font-family: ui-monospace, monospace; letter-spacing: 0.04em; text-transform: uppercase; }
 .fila .btn { min-height: 48px; }
 .btn-camara { min-height: 52px; font-size: 1rem; }
 .aviso { margin: 0; font-size: 0.86rem; color: var(--tramite); line-height: 1.45; }
 
-/* El visor manda en la pantalla: apuntar es la tarea, todo lo demas es respaldo. */
 .visor { position: relative; border-radius: var(--radio-sm); overflow: hidden; background: #000; }
 .visor video { display: block; width: 100%; max-height: 60vh; object-fit: cover; }
-/* Un recuadro a donde apuntar. Sin el, la gente acerca el telefono hasta pegarlo al papel y
-   el QR se sale del encuadre o queda desenfocado. */
 .mira {
   position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%);
   width: min(62%, 240px); aspect-ratio: 1; border: 3px solid rgba(255, 255, 255, 0.9);
@@ -508,7 +431,6 @@ const mensajeRepetido = computed(() =>
 .datos dd { margin: 0.15rem 0 0; font-size: 0.95rem; }
 .datos .casetas { font-size: 1.4rem; font-weight: 800; color: var(--acento); font-variant-numeric: tabular-nums; }
 
-/* Modal repetido */
 .modal-repetido { display: flex; flex-direction: column; gap: 1rem; }
 .icono-advertencia { font-size: 3rem; text-align: center; line-height: 1; }
 .modal-repetido h3 { margin: 0; text-align: center; font-size: 1.1rem; color: var(--tramite); }

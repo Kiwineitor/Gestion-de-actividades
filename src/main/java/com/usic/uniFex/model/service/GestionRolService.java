@@ -19,25 +19,6 @@ import com.usic.uniFex.security.RolesSistema;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Alta, baja y edicion de los roles del sistema.
- *
- * Un rol es lo que decide que puede hacer cada usuario, asi que este modulo tiene dos reglas que
- * no son estetica sino correccion:
- *
- * 1. **Los cinco roles de {@link RolesSistema} no se renombran ni se eliminan.** Sus nombres
- *    viajan literales por las expresiones de {@code security.Roles}, por
- *    {@code IUsuarioDao.idsDeAdministracion()} y por el {@code if} por rol de AdminController.
- *    Renombrar "SUPER USUARIO" no daria ningun error de compilacion: dejaria a la administracion
- *    sin permisos, y sin manera de recuperarlos, porque este mismo modulo exige ese rol.
- *
- * 2. **Un rol con usuarios no se elimina.** {@code usuario.rol_id} es NOT NULL: la fila quedaria
- *    apuntando a un rol dado de baja y esos usuarios entrarian con una autoridad fantasma.
- *
- * El nombre se guarda siempre en forma canonica (MAYUSCULAS, sin espacios dobles) porque la
- * autoridad de Spring se deriva de el; "Administrador" y "ADMINISTRADOR" tienen que ser el mismo
- * rol y no dos filas que conceden permisos distintos.
- */
 @Service
 @RequiredArgsConstructor
 public class GestionRolService {
@@ -45,17 +26,11 @@ public class GestionRolService {
     public static final String ACTIVO = "ACTIVO";
     public static final String ELIMINADO = "ELIMINADO";
 
-    /**
-     * Solo letras, digitos y espacios simples. Se prohiben acentos y signos a proposito: el
-     * nombre se convierte en la autoridad {@code ROLE_<nombre>} y un rol llamado "ASESORÍA (2)"
-     * produce una autoridad que nadie va a poder escribir bien en un {@code hasRole(...)}.
-     */
     private static final Pattern NOMBRE_VALIDO = Pattern.compile("^[A-ZÑ0-9]+( [A-ZÑ0-9]+)*$");
 
     private static final int NOMBRE_MIN = 3;
     private static final int NOMBRE_MAX = 40;
 
-    /** Lo que cabe en rol.descripcion (varchar(255)). Se valida aqui para no devolver un 500. */
     private static final int DESCRIPCION_MAX = 255;
 
     private static final Logger logger = LoggerFactory.getLogger(GestionRolService.class);
@@ -71,7 +46,6 @@ public class GestionRolService {
         static Resultado exito(String m, Rol r) { return new Resultado(true, m, r); }
     }
 
-    /** Roles vivos con cuantos usuarios tiene cada uno, en una sola consulta de conteo. */
     public List<RolDTO> listar() {
         Map<Long, Long> porRol = new HashMap<>();
         for (Object[] fila : usuarioDao.contarUsuariosPorRol()) {
@@ -95,7 +69,6 @@ public class GestionRolService {
         r.setNombre(nombre);
         r.setDescripcion(limpiar(d.descripcion()));
         r.setEstado(ACTIVO);
-        // La auditoria JPA esta apagada en este proyecto: estas cuatro se ponen a mano o quedan nulas.
         r.setRegistro(new Date());
         r.setModificacion(new Date());
         r.setRegistroIdUsuario(actorId);
@@ -105,11 +78,6 @@ public class GestionRolService {
         return Resultado.exito("Rol creado.", guardado);
     }
 
-    /**
-     * De un rol del sistema solo se puede cambiar la descripcion; el nombre esta congelado por la
-     * regla 1 de arriba. Se acepta que venga el mismo nombre para no obligar a la interfaz a
-     * mandar formularios distintos segun el rol.
-     */
     @Transactional
     public Resultado editar(Long id, Datos d, Long actorId) {
         Rol r = rolDao.findById(id).orElse(null);
@@ -141,7 +109,6 @@ public class GestionRolService {
         return Resultado.exito("Rol actualizado.", rolDao.save(r));
     }
 
-    /** Baja logica. Nunca fisica: usuario.rol_id es NOT NULL y hay filas historicas apuntando. */
     @Transactional
     public Resultado eliminar(Long id, Long actorId) {
         Rol r = rolDao.findById(id).orElse(null);
@@ -161,11 +128,6 @@ public class GestionRolService {
         return Resultado.exito("Rol eliminado.", rolDao.save(r));
     }
 
-    /**
-     * Siembra los cinco roles del sistema si faltan y les repone la descripcion si estan sin ella.
-     * Lo llama el arranque (UniFexApplication). Es idempotente y nunca pisa una descripcion que
-     * alguien haya escrito a mano desde el modulo de roles.
-     */
     @Transactional
     public void asegurarRolesDelSistema() {
         for (RolesSistema definicion : RolesSistema.values()) {
@@ -182,7 +144,7 @@ public class GestionRolService {
                 continue;
             }
             boolean cambio = false;
-            if (!definicion.getNombre().equals(r.getNombre())) { // "Administrador" -> "ADMINISTRADOR"
+            if (!definicion.getNombre().equals(r.getNombre())) {
                 r.setNombre(definicion.getNombre());
                 cambio = true;
             }
@@ -190,8 +152,6 @@ public class GestionRolService {
                 r.setDescripcion(definicion.getDescripcion());
                 cambio = true;
             }
-            // Un rol del sistema dado de baja dejaria a sus usuarios sin poder iniciar sesion
-            // con permisos; se reactiva.
             if (ELIMINADO.equalsIgnoreCase(r.getEstado()) || r.getEstado() == null || r.getEstado().isBlank()) {
                 r.setEstado(ACTIVO);
                 cambio = true;
@@ -203,12 +163,9 @@ public class GestionRolService {
         }
     }
 
-    /** El rol del sistema por su definicion, para el sembrado de usuarios del arranque. */
     public Rol delSistema(RolesSistema definicion) {
         return rolDao.findFirstByNombreIgnoreCase(definicion.getNombre()).orElse(null);
     }
-
-    // ===== helpers =====
 
     private String validarNombre(String nombre) {
         if (nombre == null || nombre.isBlank()) return "El nombre del rol es obligatorio.";

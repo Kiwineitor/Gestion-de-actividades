@@ -30,13 +30,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Alta, edicion, ajuste de cantidad y baja de categorias para el diseñador de plano (Fase 3).
- *
- * Rediseñar el plano no es una operacion de venta: crear una categoria crea N casetas, y
- * cambiarle el color, la forma o el tamaño altera lo que ven todos los vendedores. Por eso este
- * controlador entero se reserva a la administracion, no a cualquier usuario autenticado.
- */
 @RestController
 @RequestMapping("/api/app/categorias")
 @RequiredArgsConstructor
@@ -48,23 +41,6 @@ public class CategoriaApiController {
     private final PuestoEventPublisher publisher;
     private final IPuestoDao puestoDao;
 
-    /**
-     * Las categorias vivas del plano.
-     *
-     * Faltaba: este controlador solo tenia POST, PATCH y DELETE, asi que un GET a
-     * /api/app/categorias no lo atendia nadie, caia en /error y volvia al cliente como un 302 al
-     * login. La pantalla de Vendedores lo pedia para llenar su desplegable y se quedaba vacio
-     * sin dar ningun error entendible.
-     *
-     * El Editor no lo necesita porque saca las categorias de la propia lista de casetas, pero eso
-     * solo muestra las que YA tienen casetas: para asignar una categoria recien creada hace falta
-     * la lista de verdad.
-     */
-    /*
-     * Lo LEE cualquier usuario autenticado, no solo administracion: el formulario de venta
-     * necesita las opciones de precio para poder elegir una, y quien vende es precisamente
-     * quien no edita el plano. Escribir sigue reservado (el @PreAuthorize de la clase).
-     */
     @GetMapping
     @PreAuthorize("isAuthenticated()")
     public List<Map<String, Object>> listar() {
@@ -98,15 +74,6 @@ public class CategoriaApiController {
         return m;
     }
 
-    // ===== Opciones de precio =====
-
-    /**
-     * Agrega una opcion de precio a la categoria.
-     *
-     * Si pasa a ser la predeterminada hay que REDIFUNDIR las casetas: el mapa pinta el precio de
-     * cada caseta en su ficha, y ese precio sale de la predeterminada. Sin la difusion, los demas
-     * mapas seguirian cantando el precio viejo hasta recargar — con un cliente delante.
-     */
     @PostMapping("/{id}/opciones")
     public ResponseEntity<Map<String, Object>> crearOpcion(
             @PathVariable Long id, @RequestBody CategoriaOpcionService.CambioOpcion req) {
@@ -119,7 +86,6 @@ public class CategoriaApiController {
         }
     }
 
-    /** Cambia nombre, precio, orden o cual es la predeterminada. Campos nulos: no se tocan. */
     @PatchMapping("/{id}/opciones/{opcionId}")
     public ResponseEntity<Map<String, Object>> actualizarOpcion(
             @PathVariable Long id, @PathVariable Long opcionId,
@@ -130,7 +96,6 @@ public class CategoriaApiController {
         return ResponseEntity.ok(Map.<String, Object>of("ok", true, "opcion", opcionComoMapa(o)));
     }
 
-    /** Baja logica. Una opcion ya usada en ventas nunca se borra: el recibo tiene que seguir leyendose. */
     @DeleteMapping("/{id}/opciones/{opcionId}")
     public ResponseEntity<Map<String, Object>> eliminarOpcion(
             @PathVariable Long id, @PathVariable Long opcionId) {
@@ -142,23 +107,14 @@ public class CategoriaApiController {
         return ResponseEntity.ok(Map.<String, Object>of("ok", true));
     }
 
-    /** Crea la categoria y sus N casetas, y las difunde para que aparezcan en los mapas abiertos. */
     @PostMapping
     public ResponseEntity<Map<String, Object>> crear(@RequestBody CategoriaMapaService.NuevaCategoria req) {
         Categoria c = service.crear(req, usuarioActual());
-        // Toda categoria nace con su opcion predeterminada, con su mismo nombre y su precio.
-        // Sin ella el formulario de venta no tendria nada que elegir y el precio caeria al
-        // calculo de respaldo, que para una categoria nueva da CERO: se venderia gratis.
         opciones.asegurarPredeterminada(c.getId(), c.getNombre(), c.getPrecioBase(), usuarioActual());
         publisher.publicarVarios(puestoDao.idsActivosDeCategoria(c.getId()));
         return ResponseEntity.ok(Map.<String, Object>of("ok", true, "id", c.getId(), "nombre", c.getNombre()));
     }
 
-    /**
-     * Cambia nombre/color/forma/tamaño. La apariencia de una caseta la hereda de su categoria,
-     * asi que hay que redifundir todas sus casetas o los otros mapas seguirian pintandolas
-     * con el color viejo.
-     */
     @PatchMapping("/{id}")
     public ResponseEntity<Map<String, Object>> actualizar(
             @PathVariable Long id, @RequestBody CategoriaMapaService.CambioCategoria cambio) {
@@ -168,11 +124,6 @@ public class CategoriaApiController {
         return ResponseEntity.ok(Map.<String, Object>of("ok", true));
     }
 
-    /**
-     * Ajusta la cantidad de casetas de la categoria (subir crea, bajar anula las libres de codigo
-     * mas alto). Difunde las creadas y las anuladas. Si al bajar quedan casetas vendidas que no se
-     * pudieron quitar, lo informa en {@code noQuitadas} — no es un error, es informacion.
-     */
     @PatchMapping("/{id}/cantidad")
     public ResponseEntity<Map<String, Object>> ajustarCantidad(
             @PathVariable Long id, @RequestBody CantidadRequest req) {
@@ -186,10 +137,6 @@ public class CategoriaApiController {
                 "ok", true, "creadas", r.creadas(), "anuladas", r.anuladas(), "noQuitadas", r.noQuitadas()));
     }
 
-    /**
-     * Elimina (baja logica) la categoria entera. Solo si ninguna de sus casetas tiene ventas ni
-     * esta ocupada/reservada; si no, 409 sin tocar nada.
-     */
     @DeleteMapping("/{id}")
     public ResponseEntity<Map<String, Object>> eliminar(@PathVariable Long id) {
         List<Long> anuladas = service.eliminar(id, usuarioActual());
@@ -197,7 +144,7 @@ public class CategoriaApiController {
             return ResponseEntity.status(409).body(Map.<String, Object>of(
                     "ok", false, "mensaje", "No se puede eliminar: la categoria tiene casetas vendidas o reservadas"));
         }
-        publisher.publicarVarios(anuladas); // llegan con activo=false: los clientes las quitan
+        publisher.publicarVarios(anuladas);
         return ResponseEntity.ok(Map.<String, Object>of("ok", true, "eliminadas", anuladas.size()));
     }
 

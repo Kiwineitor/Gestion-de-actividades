@@ -16,23 +16,6 @@ import com.usic.uniFex.model.IService.ICategoriaService;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Las opciones de precio de cada categoria.
- *
- * Dos reglas que no pueden romperse y por eso viven aqui y no en el controlador:
- *
- * 1. **Siempre hay exactamente una opcion predeterminada viva por categoria.** Es la que se
- *    aplica cuando nadie elige, asi que una categoria sin ella dejaria ventas sin precio. Marcar
- *    una nueva desmarca la anterior en la misma transaccion; la predeterminada no se puede
- *    borrar mientras haya otras (hay que nombrar sucesora antes).
- *
- * 2. **El precio de la predeterminada se copia a `categoria.precio_base`.** Esa columna la leen
- *    la funcion almacenada `obtenercostopuesto` y el mapa, que no saben de esta tabla. Si se
- *    dejaran desincronizados, el mapa cantaria un precio y la venta cobraria otro.
- *
- * Una opcion con ventas registradas NO se borra: se da de baja logica. El recibo de una venta
- * de hace un mes tiene que poder seguir diciendo por que costo lo que costo.
- */
 @Service
 @RequiredArgsConstructor
 public class CategoriaOpcionService {
@@ -40,7 +23,6 @@ public class CategoriaOpcionService {
     private final ICategoriaOpcionDao dao;
     private final ICategoriaService categoriaService;
 
-    /** Alta o cambio de una opcion. Los campos nulos no se tocan (semantica PATCH). */
     public record CambioOpcion(String nombre, BigDecimal precio, Boolean predeterminada, Integer orden) {
     }
 
@@ -49,7 +31,6 @@ public class CategoriaOpcionService {
         return dao.vivasDe(categoriaId);
     }
 
-    /** Todas las opciones vivas agrupadas por categoria: una consulta para todo el catalogo. */
     @Transactional(readOnly = true)
     public Map<Long, List<CategoriaOpcion>> porCategoria() {
         return dao.todasVivas().stream()
@@ -57,14 +38,6 @@ public class CategoriaOpcionService {
                         java.util.LinkedHashMap::new, Collectors.toList()));
     }
 
-    /**
-     * Le da a una categoria su opcion predeterminada si todavia no tiene ninguna.
-     *
-     * La llama el alta de categorias. Sin esto, una categoria recien creada no tenia NINGUNA
-     * opcion: el formulario de venta no ofrecia nada que elegir y la venta caia al calculo de
-     * respaldo, que para una categoria nueva da cero. Es decir, se vendia gratis y sin avisar.
-     * La migracion sembro las que ya existian; esto cubre las que se creen de aqui en adelante.
-     */
     @Transactional
     public CategoriaOpcion asegurarPredeterminada(Long categoriaId, String nombre,
                                                   BigDecimal precio, Long usuarioId) {
@@ -88,8 +61,6 @@ public class CategoriaOpcionService {
         o.setRegistro(new Date());
         o.setRegistroIdUsuario(usuarioId);
         o.setEstado(CategoriaOpcion.REGISTRO_ACTIVO);
-        // La primera opcion de una categoria es forzosamente la predeterminada: si no, la
-        // categoria se quedaria sin precio por defecto.
         boolean primera = dao.vivasDe(categoriaId).isEmpty();
         o = dao.save(o);
         if (primera || Boolean.TRUE.equals(req.predeterminada())) marcarPredeterminada(categoriaId, o.getId());
@@ -109,18 +80,11 @@ public class CategoriaOpcionService {
         if (Boolean.TRUE.equals(req.predeterminada())) {
             marcarPredeterminada(o.getCategoria().getId(), o.getId());
         } else if (Boolean.TRUE.equals(o.getPredeterminada())) {
-            // Cambio el precio de la predeterminada: la copia de `categoria` tiene que seguirlo.
             sincronizarPrecioBase(o.getCategoria().getId(), o.getPrecio());
         }
         return o;
     }
 
-    /**
-     * Deja esta como la unica predeterminada de su categoria.
-     *
-     * El desmarcado va ANTES del marcado: el indice unico de V33 solo admite una viva, asi que
-     * marcar primero chocaria contra el indice con la anterior todavia puesta.
-     */
     @Transactional
     public void marcarPredeterminada(Long categoriaId, Long opcionId) {
         for (CategoriaOpcion otra : dao.vivasDe(categoriaId)) {
@@ -136,11 +100,6 @@ public class CategoriaOpcionService {
         sincronizarPrecioBase(categoriaId, o.getPrecio());
     }
 
-    /**
-     * Baja logica de una opcion.
-     *
-     * @return null si no existe; un texto con el motivo si no se puede; "" si se dio de baja.
-     */
     @Transactional
     public String eliminar(Long id, Long usuarioId) {
         CategoriaOpcion o = dao.findById(id).orElse(null);
@@ -160,13 +119,6 @@ public class CategoriaOpcionService {
         return "";
     }
 
-    /**
-     * La opcion que se le aplica a una categoria en una venta.
-     *
-     * Se valida CONTRA LA BASE que la opcion pedida sea de esa categoria: el id lo escribe el
-     * cliente, y sin esta comprobacion se podria pagar una caseta de PYMES al precio de la
-     * opcion mas barata de otra categoria. Si no se pide ninguna, se usa la predeterminada.
-     */
     @Transactional(readOnly = true)
     public CategoriaOpcion resolverParaVenta(Long categoriaId, Long opcionPedida) {
         if (opcionPedida != null) {

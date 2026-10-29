@@ -24,11 +24,11 @@ public class RegistroErroresApiController {
     private final Map<Long, long[]> limites = new LinkedHashMap<>();
 
     @GetMapping("/archivos")
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.SOLO_SUPER_USUARIO)
     public Object archivos() throws IOException { return registros.archivos(); }
 
     @GetMapping("/descargar")
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.SOLO_SUPER_USUARIO)
     public ResponseEntity<?> descargar(@RequestParam(defaultValue = "errores.txt") String archivo) throws IOException {
         try {
             byte[] texto = registros.descargar(archivo);
@@ -45,7 +45,7 @@ public class RegistroErroresApiController {
     }
 
     @DeleteMapping
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.SOLO_SUPER_USUARIO)
     public ResponseEntity<?> vaciar(@RequestParam String archivo,
             @RequestParam(defaultValue = "false") boolean confirmar, @AuthenticationPrincipal JwtUser usuario) throws IOException {
         if (!confirmar) return ResponseEntity.badRequest().body(Map.of("mensaje", "Debes confirmar el vaciado"));
@@ -61,7 +61,7 @@ public class RegistroErroresApiController {
     }
 
     @GetMapping
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.SOLO_SUPER_USUARIO)
     public ResponseEntity<?> listar(@RequestParam(defaultValue = "errores.txt") String archivo,
             @RequestParam(required = false) Long antes, @RequestParam(defaultValue = "") String buscar,
             @RequestParam(defaultValue = "") String usuario) throws IOException {
@@ -74,7 +74,6 @@ public class RegistroErroresApiController {
 
     public record ErrorCliente(String mensaje, String detalle, String ruta, String origen) {}
 
-    /** Cualquier usuario autenticado puede informar de SU error; la identidad sale del JWT. */
     @PostMapping("/cliente")
     public ResponseEntity<?> cliente(@AuthenticationPrincipal JwtUser usuario, @RequestBody ErrorCliente error) {
         if (usuario == null) return ResponseEntity.status(401).build();

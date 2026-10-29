@@ -5,8 +5,6 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -40,10 +38,6 @@ public class UniFexApplication {
 
 	@Autowired PasswordEncoder passwordEncoder;
 
-	// Contrasenas iniciales de admin1/admin2. Solo se usan la primera vez que cada usuario
-	// se crea (ver mas abajo); en produccion vienen de ADMIN1_PASSWORD/ADMIN2_PASSWORD y no
-	// tienen default, para no recrear con una contrasena publica si el arranque encuentra
-	// la tabla de usuarios vacia.
 	@Value("${unifex.admin.admin1-password}")
 	private String admin1Password;
 
@@ -63,18 +57,10 @@ public class UniFexApplication {
 
 			aplicarEsquemaSiFalta(dataSource);
 
-			logger.info("SISTEMA UNIFEXPO...");
+			logger.info("Sistema iniciado");
 
-			// Los CINCO roles del sistema, no dos. Antes solo se sembraban SUPER USUARIO y
-			// ADMINISTRADOR, con lo que en una base nueva era imposible dar de alta a un
-			// vendedor (ADMINISTRATIVO), a un control de puerta (CONTROL) o a asesoria: el
-			// selector del modulo de usuarios solo ofrecia esos dos. La definicion vive en
-			// security/RolesSistema y el sembrado es idempotente.
 			gestionRol.asegurarRolesDelSistema();
 
-			// admin1 es el SUPER USUARIO y admin2 el ADMINISTRADOR. Se nombran explicitamente
-			// en vez de indexar el arreglo de roles: al crecer el catalogo, un "i % roles.length"
-			// repartiria las cuentas semilla entre roles que no les tocan.
 			Rol[] rolObjects = {
 					gestionRol.delSistema(RolesSistema.SUPER_USUARIO),
 					gestionRol.delSistema(RolesSistema.ADMINISTRADOR)
@@ -111,17 +97,6 @@ public class UniFexApplication {
 		};
 	}
 
-	/**
-	 * Si la base esta completamente vacia (no existe la tabla "rol"), la construye sola:
-	 * corre en orden todos los V*.sql de db/reserva (esquema base + migraciones), leidos del
-	 * classpath. No hace nada si la tabla ya existe -- nunca toca una base con datos, ni
-	 * vuelve a correr algo ya aplicado.
-	 *
-	 * Por que aqui y no con Hibernate (hbm2ddl.auto=update/create): buena parte de la logica
-	 * del sistema (precios, disponibilidad, listados) vive en funciones y un trigger de
-	 * PostgreSQL, no en las entidades JPA -- Hibernate no tiene forma de generarlas porque
-	 * nunca existieron como codigo Java. Los propios V*.sql ya las traen.
-	 */
 	private void aplicarEsquemaSiFalta(DataSource dataSource) throws Exception {
 		try (Connection con = dataSource.getConnection()) {
 			boolean faltaEsquema;
@@ -138,11 +113,6 @@ public class UniFexApplication {
 			Resource[] scripts = resolver.getResources("classpath:db/reserva/V*.sql");
 			Arrays.sort(scripts, Comparator.comparingInt(r -> numeroDeVersion(r.getFilename())));
 
-			// Cada archivo se manda ENTERO en un solo Statement.execute(), sin que Spring lo
-			// trocee por ";": ScriptUtils corta las funciones PL/pgSQL a la mitad porque no
-			// entiende el $$...$$ de Postgres (hay ";" sueltos dentro del cuerpo). Mandando el
-			// texto completo, es el propio Postgres el que separa las sentencias -- igual que
-			// hace "psql -f", que es contra lo que estos archivos ya estan probados.
 			try (var stmt = con.createStatement()) {
 				for (Resource script : scripts) {
 					logger.info("Aplicando esquema: {}", script.getFilename());
@@ -157,7 +127,6 @@ public class UniFexApplication {
 
 	private static final Pattern VERSION_SCRIPT = Pattern.compile("^V(\\d+)__");
 
-	/** V0, V1, V2... V10, V11 -- nunca alfabetico (si no, V10 quedaria antes que V2). */
 	private static int numeroDeVersion(String nombreArchivo) {
 		Matcher m = VERSION_SCRIPT.matcher(nombreArchivo == null ? "" : nombreArchivo);
 		return m.find() ? Integer.parseInt(m.group(1)) : Integer.MAX_VALUE;

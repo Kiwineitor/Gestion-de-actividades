@@ -24,7 +24,7 @@ public class PrecioController {
     public ResponseEntity<Map<String, Object>> costoPuesto(
             @RequestParam Long tipoEntidad,
             @RequestParam Long categoriaId,
-            @RequestParam(required = false, defaultValue = "3x3") String tamano,  // ajusta si manejas otros tamaños
+            @RequestParam(required = false, defaultValue = "3x3") String tamano,
             @RequestParam(required = false, defaultValue = "1") Integer cantidad
     ) {
         BigDecimal unitPrice = funcionesInscripcion.obtenerCostoPuesto(tipoEntidad, tamano, categoriaId);

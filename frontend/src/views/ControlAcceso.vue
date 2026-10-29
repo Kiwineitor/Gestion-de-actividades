@@ -1,12 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { apiFetch } from '../api.js';
-import { alerta } from '../ui/alerta.js';
 import { useAccesosStore } from '../stores/accesos.js';
 import BarrasHorizontales from '../components/BarrasHorizontales.vue';
-import LineaTiempo from '../components/LineaTiempo.vue';
-import BarraProgreso from '../components/BarraProgreso.vue';
-import UiModal from '../components/UiModal.vue';
 
 const accesos = useAccesosStore();
 
@@ -35,7 +31,7 @@ async function cargarCategorias() {
   try {
     const r = await apiFetch('/api/app/categorias');
     if (r.ok) categorias.value = await r.json();
-  } catch { /* silencioso */ }
+  } catch { }
 }
 
 async function cargarTodo() {
@@ -58,7 +54,6 @@ async function buscar() {
 async function pagina(direccion) {
   const nuevo = offset.value + direccion * limite.value;
   if (nuevo < 0 || nuevo >= accesos.movimientos.length && !accesos.movimientos.length) return;
-  // Para paginacion, recargar con nuevo offset
   const filtros = {
     categoriaId: categoriaId.value || null,
     desde: desde.value || null,
@@ -117,7 +112,6 @@ watch([desde, hasta], () => {
 
 <template>
   <div class="control-acceso">
-    <!-- Indicador tiempo real -->
     <div v-if="accesos.enVivo" class="en-vivo-indicador" title="Conectado en tiempo real">
       <span class="punto"></span> EN VIVO
     </div>
@@ -125,7 +119,6 @@ watch([desde, hasta], () => {
       <span class="punto"></span> SIN TIEMPO REAL
     </div>
 
-    <!-- Cabecera con KPIs -->
     <section class="kpis card">
       <div class="kpi-grid">
         <div class="kpi-item">
@@ -147,7 +140,6 @@ watch([desde, hasta], () => {
       </div>
     </section>
 
-    <!-- Filtros -->
     <section class="filtros card">
       <form class="filtros-form" @submit.prevent="buscar">
         <div class="fila-filtros">
@@ -182,7 +174,6 @@ watch([desde, hasta], () => {
       </form>
     </section>
 
-    <!-- Gráficos -->
     <section class="graficos">
       <div class="grafico-card card">
         <h3>Movimientos por categoría</h3>
@@ -213,7 +204,6 @@ watch([desde, hasta], () => {
       </div>
     </section>
 
-    <!-- Personas dentro ahora -->
     <section class="dentro-ahora card" v-if="accesos.dentroDetalle.length">
       <div class="dentro-header">
         <h3>🟢 Dentro ahora ({{ accesos.dentroDetalle.length }})</h3>
@@ -229,7 +219,6 @@ watch([desde, hasta], () => {
       </div>
     </section>
 
-    <!-- Tabla de movimientos -->
     <section class="movimientos card">
       <div class="movimientos-header">
         <h3>Historial de movimientos</h3>
@@ -275,7 +264,6 @@ watch([desde, hasta], () => {
         </table>
       </div>
 
-      <!-- Paginación -->
       <div v-if="accesos.movimientos.length >= limite" class="paginacion">
         <button class="btn btn-fantasma btn-sm" @click="pagina(-1)" :disabled="offset === 0">Anterior</button>
         <span class="paginacion-info">
@@ -290,7 +278,6 @@ watch([desde, hasta], () => {
 <style scoped>
 .control-acceso { display: flex; flex-direction: column; gap: 1.2rem; }
 
-/* Indicador tiempo real */
 .en-vivo-indicador {
   display: inline-flex; align-items: center; gap: 0.4rem;
   padding: 0.3rem 0.8rem; border-radius: 999px; font-size: 0.7rem;
@@ -307,7 +294,6 @@ watch([desde, hasta], () => {
 }
 @keyframes pulso { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-/* KPIs */
 .kpis { padding: 1rem 1.2rem; }
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; }
 .kpi-item { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.8rem; background: var(--panel-2); border-radius: var(--radio-sm); }
@@ -318,7 +304,6 @@ watch([desde, hasta], () => {
 .kpi-valor.dentro { color: var(--acento); }
 .kpi-valor.total { color: var(--texto); }
 
-/* Filtros */
 .filtros { padding: 1rem 1.2rem; }
 .filtros-form { display: flex; flex-direction: column; gap: 1rem; }
 .fila-filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; align-items: end; }
@@ -327,13 +312,11 @@ watch([desde, hasta], () => {
 .campo .control { padding: 0.5rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radio-sm); background: var(--panel); color: var(--texto); font: inherit; }
 .acciones-filtros { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 
-/* Gráficos */
 .graficos { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1.2rem; }
 .grafico-card { padding: 1rem 1.2rem; }
 .grafico-card h3 { margin: 0 0 1rem; font-size: 1rem; font-weight: 700; }
 .vacio { margin: 1rem 0 0; text-align: center; color: var(--muted); font-size: 0.9rem; }
 
-/* Dentro ahora */
 .dentro-ahora { padding: 1rem 1.2rem; border-top: 4px solid var(--ok); }
 .dentro-header { margin: 0 0 0.8rem; }
 .dentro-header h3 { margin: 0; font-size: 1rem; }
@@ -343,7 +326,6 @@ watch([desde, hasta], () => {
 .dentro-meta { font-size: 0.8rem; color: var(--muted); }
 .dentro-hora { font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* Tabla */
 .movimientos { padding: 1rem 1.2rem; }
 .movimientos-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
 .movimientos-header h3 { margin: 0; font-size: 1rem; }
@@ -363,11 +345,9 @@ watch([desde, hasta], () => {
 .origen-apk { color: var(--acento); }
 .origen-web { color: var(--muted); }
 
-/* Paginación */
 .paginacion { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
 .paginacion-info { font-size: 0.85rem; color: var(--muted); }
 
-/* Estados */
 .cargando-tabla { display: flex; align-items: center; justify-content: center; gap: 0.6rem; padding: 2rem; color: var(--muted); }
 .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--acento); border-radius: 50%; animation: girar 0.8s linear infinite; }
 @keyframes girar { to { transform: rotate(360deg); } }

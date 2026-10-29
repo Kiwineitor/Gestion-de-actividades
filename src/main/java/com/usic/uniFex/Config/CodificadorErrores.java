@@ -11,7 +11,6 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.ThrowableProxyUtil;
 import ch.qos.logback.core.encoder.EncoderBase;
 
-/** Texto UTF-8: un objeto JSON por linea, incluso cuando la traza tiene saltos de linea. */
 public class CodificadorErrores extends EncoderBase<ILoggingEvent> {
     private final ObjectMapper json = new ObjectMapper();
     private static final Pattern SECRETOS = Pattern.compile(

@@ -3,9 +3,6 @@ package com.usic.uniFex.controller;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 
-/**
- * Sirve la SPA Vue compilada bajo /app sin reemplazar el sitio Thymeleaf legacy.
- */
 @Controller
 public class SpaController {
 

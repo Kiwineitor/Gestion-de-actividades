@@ -5,10 +5,6 @@ import java.time.LocalDateTime;
 import com.usic.uniFex.model.entity.Categoria;
 import com.usic.uniFex.model.entity.InteresadoStand;
 
-/**
- * Un interesado en exponer, tal como lo lista y edita el panel "Interesados en exponer".
- * La categoria viaja aplanada (id, nombre, color) para filtrar y pintar sin otra consulta.
- */
 public record InteresadoStandDTO(
         Long id,
         String nombreCompleto,

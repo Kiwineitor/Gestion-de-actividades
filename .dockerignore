@@ -1,4 +1,3 @@
-# Lo que NO se manda al build de Docker: pesado, generado o con secretos locales.
 .git
 .github
 .vscode
@@ -10,7 +9,6 @@ logs
 screenshots
 backups
 .env
-# Claves locales del perfil dev: nunca dentro de una imagen
 src/main/resources/application-dev.properties
 **/*.log
 

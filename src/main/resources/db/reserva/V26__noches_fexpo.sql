@@ -1,16 +1,3 @@
--- V26: contenido administrable de "Noches de FEXPO" (la seccion de artistas de la vista publica).
---
--- Hasta aqui las 3 noches (dia, fecha, titulo, descripcion) estaban hardcodeadas en el array
--- `nochesFexpo` de FeriaPublica.vue, sin nombre de artista ni foto/video de fondo -- cambiar
--- cualquier dato exigia tocar codigo y volver a compilar el frontend. Esta tabla las saca de ahi
--- y las deja editables desde el panel de admin, igual que ya se hizo con el plano (V13): el
--- archivo de foto/video vive en disco (FileStorageService, bucket "noches") y aqui solo se guarda
--- la ruta relativa, servida en /files/**.
---
--- Por edicion (id_edicion), igual que inscripcion y venta_boleto: la cartelera de FEXPO 2026 no
--- debe aparecer cuando se cree la edicion 2027. La vista publica lista solo las de la edicion
--- activa, ordenadas por fecha.
-
 CREATE TABLE IF NOT EXISTS noche_fexpo (
     id                       BIGSERIAL PRIMARY KEY,
     id_edicion               BIGINT NOT NULL REFERENCES edicion(id),

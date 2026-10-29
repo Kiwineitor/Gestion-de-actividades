@@ -18,20 +18,6 @@ import com.usic.uniFex.model.service.CredencialService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Lo que se ve al escanear el QR de una credencial. <b>Sin login</b>: lo escanea quien
- * controla la puerta, con su propio telefono y sin cuenta en el sistema.
- *
- * <h2>Que protege esto y que no</h2>
- * El codigo va firmado con el secreto del servidor, asi que <b>no se puede inventar</b> uno
- * valido: sin la firma correcta no se llega ni a consultar la base. Lo que NO impide es que
- * quien tenga la credencial (o una foto de ella) abra el enlace, y por decision del cliente
- * esta vista muestra el C.I. completo. Es deliberado: en la puerta hay que poder contrastar el
- * documento. Si algun dia quiere restringirse, el unico cambio es lo que devuelve este metodo.
- *
- * Devuelve 404 tanto si el codigo es falso como si el responsable ya no existe: al de fuera no
- * se le cuenta cual de las dos cosas es.
- */
 @RestController
 @RequestMapping("/api/publico/credencial")
 @RequiredArgsConstructor
@@ -44,7 +30,6 @@ public class CredencialPublicaController {
 
     @GetMapping("/{codigo}")
     public ResponseEntity<Map<String, Object>> ver(@PathVariable String codigo) {
-        // Los QR de apoyo (FXA-...) muestran la ficha: nombre, CI, dependencia, rol y tarea.
         if (codigo != null && codigo.trim().toUpperCase().startsWith("FXA")) {
             return verApoyo(codigo);
         }
@@ -66,12 +51,9 @@ public class CredencialPublicaController {
         m.put("rubro", c.rubro());
         m.put("categoria", c.categoria());
         m.put("casetas", c.casetas());
-        // No se expone el id del responsable ni el de la inscripcion: no aportan nada a quien
-        // mira la credencial y son las llaves con las que se pediria mas cosas al sistema.
         return ResponseEntity.ok(m);
     }
 
-    /** Vista publica de una credencial de apoyo. Mismo trato que expositores. */
     private ResponseEntity<Map<String, Object>> verApoyo(String codigo) {
         Long apoyoId = codigosApoyo.apoyoDe(codigo);
         PersonalApoyo p = apoyoId == null ? null : apoyo.findById(apoyoId);

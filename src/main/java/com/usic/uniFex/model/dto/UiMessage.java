@@ -1,7 +1,7 @@
 package com.usic.uniFex.model.dto;
 
 public class UiMessage {
-      private final String type;  // success | info | warning | danger  (Bootstrap)
+      private final String type;
   private final String title;
   private final String text;
 

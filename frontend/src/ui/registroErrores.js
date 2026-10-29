@@ -12,7 +12,6 @@ function limpiar(valor, limite) {
     .slice(0, limite);
 }
 
-/** Nunca interrumpe la accion original. Cola en memoria, acotada y ligada a la sesion. */
 export function registrarError(error, detalle = '') {
   try {
     const token = localStorage.getItem('token');
@@ -31,7 +30,7 @@ export function registrarError(error, detalle = '') {
       ruta: ruta.slice(0, 500), origen: EN_APK ? 'APK' : 'WEB',
     } });
     void enviarPendientes();
-  } catch { /* registrar no debe causar otro error */ }
+  } catch { }
 }
 
 export async function enviarPendientes() {
@@ -50,7 +49,7 @@ export async function enviarPendientes() {
       if (respuesta.status >= 500) break;
       pendientes.shift();
     }
-  } catch { /* sin red: se reintenta al recuperar conexion, mientras siga abierta la app */ }
+  } catch { }
   finally { enviando = false; }
 }
 

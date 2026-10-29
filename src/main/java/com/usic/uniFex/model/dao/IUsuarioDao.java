@@ -13,101 +13,48 @@ import com.usic.uniFex.model.entity.Usuario;
 public interface IUsuarioDao extends JpaRepository<Usuario, Long> {
       Optional<Usuario> findByUsername(String username);
 
-      /** Los ids de administracion (roles SUPER USUARIO y ADMINISTRADOR), para notificarles. */
       @Query("select u.id from Usuario u where u.rol.nombre in ('SUPER USUARIO','ADMINISTRADOR') "
               + "and (u.estado is null or u.estado <> 'ELIMINADO')")
       List<Long> idsDeAdministracion();
 
-      /**
-       * Los usuarios que muestra la gestion: todos menos los dados de baja logica.
-       *
-       * El EntityGraph trae persona y rol en la misma consulta. Sin el son dos SELECT extra por
-       * fila al construir el UsuarioDTO (rol es LAZY), y encima solo funciona mientras
-       * open-in-view siga activo: en el perfil que lo apague, el listado reventaria con
-       * LazyInitializationException en vez de ir lento.
-       */
       @EntityGraph(attributePaths = { "persona", "rol" })
       @Query("select u from Usuario u where u.estado is null or u.estado <> 'ELIMINADO' order by u.username")
       List<Usuario> listarGestionables();
 
-      /**
-       * Cuantos usuarios vivos usan ese nombre de login, sin contar el que se esta editando.
-       *
-       * Las comprobaciones de unicidad se hacen contando en la BD y no filtrando findAll() en
-       * memoria: son 35+ usuarios hoy y cada validacion traia la tabla entera.
-       *
-       * {@code exceptoId} nunca es null (quien llama pasa -1 cuando no excluye a nadie): un
-       * parametro nulo en una comparacion JPQL obliga a Hibernate a adivinar el tipo y falla
-       * en tiempo de ejecucion, no de compilacion.
-       *
-       * <p><b>Cuenta tambien los usuarios dados de baja</b>, y no es un descuido. La baja es
-       * LOGICA: la fila se queda, y {@code usuario_username_key} es un indice unico sobre toda
-       * la tabla. Cuando esto filtraba por estado, crear un usuario con el nombre de uno
-       * borrado pasaba la validacion y reventaba contra el indice: al administrador le llegaba
-       * un 500 con el nombre de una restriccion de PostgreSQL dentro, en vez de "ese nombre ya
-       * esta en uso". El precio es que un nombre no se reaprovecha; para permitirlo habria que
-       * hacer el indice parcial Y filtrar tambien en {@code findByUsername}, que si no
-       * encontraria dos filas al entrar y tiraria el login.
-       */
       @Query("select count(u) from Usuario u where upper(u.username) = upper(:username) "
               + "and u.id <> :exceptoId")
       long contarPorUsername(@Param("username") String username, @Param("exceptoId") Long exceptoId);
 
-      /** Cuantos usuarios vivos cuelgan de esa persona (una persona, un login). */
       @Query("select count(u) from Usuario u where u.persona.id = :personaId "
               + "and (u.estado is null or u.estado <> 'ELIMINADO') and u.id <> :exceptoId")
       long contarPorPersona(@Param("personaId") Long personaId, @Param("exceptoId") Long exceptoId);
 
-      /** Ids de las personas que ya tienen un login vivo (una persona, un usuario). */
       @Query("select u.persona.id from Usuario u where (u.estado is null or u.estado <> 'ELIMINADO') "
               + "and u.persona is not null")
       List<Long> idsDePersonasConUsuario();
 
-      /**
-       * Los usuarios vivos de un rol, para avisarles cuando cambia lo que pueden ver.
-       *
-       * Sin este aviso, cambiar los permisos de un rol no llegaba a quien ya estaba dentro:
-       * el menu se queda con la copia en disco hasta cerrar y volver a abrir la aplicacion. Es
-       * el mismo fallo que se arreglo en su dia con las habilitaciones de casetas.
-       */
       @Query("select u.id from Usuario u where u.rol.id = :rolId "
               + "and (u.estado is null or u.estado <> 'ELIMINADO')")
       List<Long> idsPorRol(@Param("rolId") Long rolId);
 
-      /** Cuantos usuarios vivos tiene un rol. Un rol con usuarios no se puede eliminar. */
       @Query("select count(u) from Usuario u where u.rol.id = :rolId "
               + "and (u.estado is null or u.estado <> 'ELIMINADO')")
       long contarPorRol(@Param("rolId") Long rolId);
 
-      /** Cuantos usuarios por rol, para el listado del modulo de roles (una sola consulta). */
       @Query("select u.rol.id, count(u) from Usuario u "
               + "where (u.estado is null or u.estado <> 'ELIMINADO') group by u.rol.id")
       List<Object[]> contarUsuariosPorRol();
 
-      /**
-       * Usuarios vivos con un rol dado (por nombre del rol), con persona, carrera y area ya
-       * cargadas: el listado de vendedores las pinta todas en la misma tabla.
-       *
-       * Los fetch de carrera y area son LEFT a proposito. Con INNER, el listado de vendedores
-       * se quedaria solo con los que ya tienen carrera asignada — que al aplicar V35 no es
-       * ninguno — y la pantalla saldria vacia sin explicar por que.
-       */
       @Query("select u from Usuario u join fetch u.rol r left join fetch u.persona p "
               + "left join fetch p.carrera c left join fetch c.area "
               + "where r.nombre = :rolNombre and (u.estado is null or u.estado <> 'ELIMINADO') "
               + "order by u.username")
       List<Usuario> findByRolNombre(@Param("rolNombre") String rolNombre);
 
-      /** Usuarios conectables que deben ser expulsados cuando se activa mantenimiento. */
       @Query("select u.id from Usuario u where u.rol.nombre <> 'SUPER USUARIO' "
               + "and (u.estado is null or u.estado = 'ACTIVO')")
       List<Long> idsNoSuperUsuario();
 
-      /**
-       * Usuarios que pueden entrar HOY con ese rol, sin contar a uno dado. Sirve para no dejar
-       * el sistema sin ningun SUPER USUARIO activo, que es un estado del que no se sale desde
-       * la propia aplicacion: el modulo que arregla los roles exige ese rol para entrar.
-       */
       @Query("select count(u) from Usuario u where u.rol.nombre = :rol "
               + "and u.estado = 'ACTIVO' and u.id <> :exceptoId")
       long contarActivosPorRol(@Param("rol") String rol, @Param("exceptoId") Long exceptoId);

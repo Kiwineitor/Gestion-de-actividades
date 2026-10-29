@@ -17,7 +17,6 @@ import com.usic.uniFex.model.repository.FuncionesInscripcion;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 
-
 @Controller
 @RequiredArgsConstructor
 public class HomeController {
@@ -34,7 +33,6 @@ public class HomeController {
         model.addAttribute("puestos", puestoService.findAll());
 
         List<Map<String, Object>> puestosLibres = funcionesInscripcion.fn_lista_puestos();
-        // Mantén el orden del SQL (c.nombre, p.codigo)
         Map<String, List<Map<String, Object>>> puestosPorCategoria =
             puestosLibres.stream().collect(Collectors.groupingBy(
                 m -> (String) m.get("categoria"),
@@ -46,7 +44,7 @@ public class HomeController {
 
         System.out.println("vista inicial");
         model.addAttribute("mapaPdf", "mapa.pdf");
-        return "publico/index"; // templates/publico/index.html
+        return "publico/index";
     }
 
 }

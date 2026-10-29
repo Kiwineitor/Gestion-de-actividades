@@ -91,11 +91,10 @@ public class ReporteVentasService {
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("categorias", opciones("""
                 select c.id, c.nombre from categoria c
-                 where c."_estado" is null or c."_estado" <> 'X'
+                 where (c."_estado" is null or c."_estado" <> 'X')
+                   and c.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
                  order by c.nombre
                 """));
-        // Misma edicion que el listado que filtran. Si el desplegable ofreciera promotores de
-        // otros años, elegir uno daria una tabla vacia sin explicar por que.
         r.put("promotores", opciones("""
                 select distinct u.id, coalesce(nullif(btrim(concat_ws(' ', p.nombre, p.paterno, p.materno)), ''), u.username) as nombre
                   from inscripcion i

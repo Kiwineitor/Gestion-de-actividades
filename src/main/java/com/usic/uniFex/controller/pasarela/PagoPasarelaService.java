@@ -25,19 +25,18 @@ public class PagoPasarelaService {
     @Value("${pasarela.key}")
     private String accessKey;
 
-    @Value("${pasarela.successUrl}") // e.g. https://tu-dominio/pagos/retorno
+    @Value("${pasarela.successUrl}")
     private String successUrl;
 
-    @Value("${pasarela.cancelUrl}")  // e.g. https://tu-dominio/pagos/cancelado
+    @Value("${pasarela.cancelUrl}")
     private String cancelUrl;
 
-    @Value("${pasarela.notifyUrl}")  // e.g. https://tu-dominio/api/pagos/notificacion
+    @Value("${pasarela.notifyUrl}")
     private String notifyUrl;
 
     private final RestTemplate rest = new RestTemplate();
 
     public Map<String, Object> crearTransaccion(PagoRequest req) {
-        // ---- datosPago ----
         Map<String, Object> datosPago = new HashMap<>();
         datosPago.put("nombresCliente",  req.getDatosCliente().getNombres());
         datosPago.put("apellidosCliente",req.getDatosCliente().getApellidos());
@@ -51,7 +50,6 @@ public class PagoPasarelaService {
         datosPago.put("montoTotal", montoTotal);
         datosPago.put("correo", req.getDatosCliente().getCorreo());
 
-        // ---- productos ----
         List<Map<String, Object>> productos = new ArrayList<>();
         for (var it : req.getItems()) {
             Map<String, Object> p = new HashMap<>();
@@ -62,7 +60,6 @@ public class PagoPasarelaService {
             productos.add(p);
         }
 
-        // ---- request raíz ----
         Map<String, Object> requests = new HashMap<>();
         requests.put("descripcion", "Compra FEXPO UAP");
         requests.put("datosPago", datosPago);
@@ -70,9 +67,8 @@ public class PagoPasarelaService {
         requests.put("successUrl", successUrl);
         requests.put("cancelUrl", cancelUrl);
         requests.put("notifyUrl", notifyUrl);
-        requests.put("metadata", req.getMetadata()); // lo que necesitamos para cerrar la venta
+        requests.put("metadata", req.getMetadata());
 
-        // ---- headers ----
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("Authorization", accessKey);

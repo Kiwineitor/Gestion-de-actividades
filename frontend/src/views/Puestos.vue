@@ -22,8 +22,6 @@ const visibles = computed(() => {
   return puestos.value.filter((p) => {
     if (filtro.value.categoria && String(p.categoriaId) !== filtro.value.categoria) return false;
     if (filtro.value.estado && p.estado !== filtro.value.estado) return false;
-    // "¿a cuáles les puse precio especial?" es la pregunta que se hace al volver a esta
-    // pantalla, y sin este filtro había que recorrer 500 filas a ojo para contestarla.
     if (filtro.value.soloPropio && !p.precioPropio) return false;
     if (!q) return true;
     return [p.codigo, p.categoria, p.tamano, p.referencia]
@@ -31,32 +29,19 @@ const visibles = computed(() => {
   });
 });
 
-/** Cuántas casetas llevan precio propio, en toda la feria y no solo en lo filtrado. */
 const conPrecioPropio = computed(() => puestos.value.filter((p) => p.precioPropio).length);
 
 const cambios = computed(() => puestos.value
   .filter((p) => codigoEditado(p) !== codigoOriginal(p))
   .map((p) => ({ id: p.id, codigo: codigoEditado(p) })));
 
-/*
- * ---- precio propio de cada caseta (V37) ----
- *
- * El caso: se crea la categoría con su precio y se colocan todas sus casetas; después resulta
- * que algunas valen distinto. Aquí se les pone su precio sin tocar las demás.
- *
- * Se edita como TEXTO y no como número porque hay tres estados y un número solo distingue dos:
- * vacío = "usa el de tu categoría", 0 = "esta es gratis, lo digo a propósito", y cualquier otro
- * = ese precio. Con un `Number`, el vacío se vuelve 0 y regalaría la caseta.
- */
 const precios = ref({});
 
-/** Lo que vale la categoría de esta caseta, para enseñarlo al lado de la casilla vacía. */
 function precioCategoria(p) {
   const c = categorias.value.find((x) => x.id === p.categoriaId);
   return Number(c?.precioBase ?? 0).toLocaleString('es-BO');
 }
 
-/** El precio propio ORIGINAL, como texto. Vacío si la caseta no tenía uno. */
 function precioOriginal(p) {
   return p.precioPropio ? String(p.precio ?? '') : '';
 }
@@ -68,12 +53,6 @@ function precioEditado(p) {
 const tocado = (p) => codigoEditado(p) !== codigoOriginal(p)
   || precioEditado(p) !== precioOriginal(p);
 
-/**
- * Los precios que de verdad cambiaron.
- *
- * `precio: null` es lo que se manda al vaciar la casilla, y significa "devuélvela al precio de
- * su categoría". No es un campo que falte: es la orden. El servidor lo escribe tal cual.
- */
 const cambiosPrecio = computed(() => puestos.value
   .filter((p) => precioEditado(p) !== precioOriginal(p))
   .map((p) => ({
@@ -81,7 +60,6 @@ const cambiosPrecio = computed(() => puestos.value
     precio: precioEditado(p) === '' ? null : Number(precioEditado(p)),
   })));
 
-/** Precios mal escritos. Se avisa antes de mandar nada, no después de un 409. */
 const preciosInvalidos = computed(() => puestos.value
   .filter((p) => {
     const v = precioEditado(p);
@@ -135,17 +113,6 @@ function descartar() {
 
 const hayCambios = computed(() => cambios.value.length > 0 || cambiosPrecio.value.length > 0);
 
-/**
- * Guarda numeración y precios.
- *
- * Son DOS peticiones porque son dos operaciones con reglas distintas: renumerar es todo o nada
- * (una permutación con un número repetido a medias deja el plano incoherente), y los precios
- * son independientes entre sí. Meterlos en un solo endpoint obligaría a que el fallo de un
- * número tirase también los precios, que no tienen nada que ver.
- *
- * Los precios van PRIMERO: si algo falla, lo que queda sin guardar son los números, y esos se
- * ven en pantalla. Un precio a medias no se nota hasta que alguien vende.
- */
 async function guardar() {
   if (guardando.value || !hayCambios.value) return;
 
@@ -205,8 +172,6 @@ onMounted(cargar);
       </div>
       <div class="resumen">
         <div><span>Puestos</span><strong>{{ visibles.length }}</strong></div>
-        <!-- Cuenta las dos cosas: con solo los números, cambiar un precio dejaba el contador
-             en 0 y el botón de guardar parecía no tener nada que hacer. -->
         <div><span>Cambios</span><strong>{{ cambios.length + cambiosPrecio.length }}</strong></div>
         <div><span>Precio propio</span><strong>{{ conPrecioPropio }}</strong></div>
       </div>
@@ -243,8 +208,6 @@ onMounted(cargar);
             <th>Nuevo número</th>
             <th>Estado</th>
             <th>Tamaño</th>
-            <!-- Vacío = usa el de su categoría. Es la columna entera la que lo explica, no
-                 cada celda: repetir "usa el de la categoría" en 500 filas es ruido. -->
             <th class="col-precio">Precio propio<span class="ayuda-th">vacío = el de su categoría</span></th>
             <th>Referencia</th>
           </tr>
@@ -262,8 +225,6 @@ onMounted(cargar);
               <input v-model="precios[p.id]" class="control control-precio" type="number"
                      min="0" step="0.01" inputmode="decimal"
                      :placeholder="precioCategoria(p)" />
-              <!-- El precio de la categoría, al lado: sin él, dejar la casilla vacía es decidir
-                   a ciegas. El del marcador de posición se ve al escribir y desaparece. -->
               <span class="pie-precio">
                 {{ precioEditado(p) === '' ? `categoría: ${precioCategoria(p)} Bs` : 'propio' }}
               </span>
@@ -290,8 +251,6 @@ onMounted(cargar);
 .resumen strong { display: block; margin-top: 0.25rem; color: var(--acento); font-size: 1.45rem; }
 .filtros {
   padding: 1rem; display: grid; gap: 0.65rem; align-items: center;
-  /* auto-fit: con el filtro nuevo eran siete columnas fijas y en una pantalla mediana la
-     ultima se salia de la tarjeta. */
   grid-template-columns: minmax(200px, 1fr) repeat(auto-fit, minmax(150px, auto));
 }
 .solo-propio { display: flex; align-items: center; gap: 0.4rem; white-space: nowrap; font-size: 0.9rem; }
@@ -304,8 +263,6 @@ onMounted(cargar);
 .codigo { display: inline-flex; min-width: 3rem; justify-content: center; padding: 0.25rem 0.55rem; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); font-weight: 900; }
 .control-codigo { max-width: 140px; font-weight: 900; text-align: center; }
 
-/* Precio propio. La columna se lee de arriba abajo comparando importes, asi que el numero va
-   alineado a la derecha: con el texto centrado, 800 y 1200 no se pueden comparar de un vistazo. */
 .col-precio { white-space: nowrap; }
 .control-precio { max-width: 120px; text-align: right; font-variant-numeric: tabular-nums; }
 .ayuda-th { display: block; font-weight: 400; font-size: 0.72rem; color: var(--muted); }

@@ -8,43 +8,12 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Service;
 
-/**
- * Quien esta usando la aplicacion AHORA MISMO.
- *
- * Vive **solo en memoria**, a proposito. Esto responde "¿quien esta conectado en este momento?",
- * que es una pregunta del presente: guardarlo en la base significaria una fila por latido —miles
- * al dia— para contestar algo que dentro de un minuto ya no vale. Si algun dia hace falta el
- * historial ("¿quien estuvo conectado el martes?"), eso es otra cosa y necesita su propia tabla.
- *
- * Consecuencia que hay que tener presente: **al reiniciar el servidor la lista se vacia** y se
- * vuelve a llenar sola con el siguiente latido de cada cliente, en menos de un minuto. No es un
- * fallo, es el precio de no escribir en la base.
- *
- * Tampoco hay evento de "se fue": cerrar la aplicacion de golpe, quedarse sin bateria o perder la
- * señal no avisan de nada. Por eso la ausencia se deduce del SILENCIO: quien no late en
- * {@link #VENTANA_VIVO_S} segundos deja de contar como conectado. Es la unica forma fiable.
- */
 @Service
 public class PresenciaService {
 
-    /** Sin latido en este tiempo, se deja de considerar conectado. */
     public static final long VENTANA_VIVO_S = 75;
-    /** Pasado esto, la entrada se olvida del todo para no acumular usuarios de ayer. */
     private static final long VENTANA_OLVIDO_S = 15 * 60;
 
-    /**
-     * Lo que se sabe de un usuario conectado.
-     *
-     * Los tres ultimos campos son el avance del formulario de venta que tenga abierto:
-     * {@code avance} de 0 a 100, {@code avancePaso} en que paso va ("Responsables") y
-     * {@code avanceFaltan} que campos le faltan, ya en palabras.
-     *
-     * Vienen del CLIENTE, como la pantalla, y por el mismo motivo se aceptan tal cual: es
-     * informacion para mirar, no autoriza nada. El formulario se rellena en el navegador del
-     * vendedor y en ningun otro sitio existe —no hay borrador en la base—, asi que o lo cuenta
-     * el, o no se sabe. Lo que si se comprueba contra la base es si tiene una venta abierta:
-     * eso son las casetas reservadas a su nombre, y esas no mienten.
-     */
     public record Presencia(Long usuarioId, String usuario, String nombre, String rol,
                             String pantalla, String titulo, Instant visto, String origen,
                             Integer avance, String avancePaso, String avanceFaltan) {
@@ -52,13 +21,6 @@ public class PresenciaService {
 
     private final Map<Long, Presencia> vistos = new ConcurrentHashMap<>();
 
-    /**
-     * Anota un latido. Lo llama el cliente cada pocos segundos y al cambiar de pantalla.
-     *
-     * Se guarda la pantalla que DICE el cliente, y eso basta: es informacion para mirar, no una
-     * decision de permisos. Lo que no se cree bajo palabra es si esta vendiendo algo — eso se
-     * mira en la base, que es donde estan las casetas reservadas de verdad.
-     */
     public void latir(Long usuarioId, String usuario, String nombre, String rol,
                       String pantalla, String titulo, String origen,
                       Integer avance, String avancePaso, String avanceFaltan) {
@@ -68,31 +30,15 @@ public class PresenciaService {
                 acotado(avance), avancePaso, avanceFaltan));
     }
 
-    /**
-     * El porcentaje, encajado en 0..100.
-     *
-     * Lo manda el cliente, asi que puede llegar cualquier cosa —un 320 por un calculo mal
-     * hecho tras un cambio en el formulario, o un negativo—. Un numero fuera de rango no
-     * rompe nada aqui, pero pinta una barra de progreso que se sale de su caja y deja la
-     * pantalla de seguimiento con aspecto de averiada.
-     */
     private static Integer acotado(Integer v) {
         if (v == null) return null;
         return Math.max(0, Math.min(100, v));
     }
 
-    /** Se fue por la puerta: cerro sesion. Distinto de quedarse callado. */
     public void olvidar(Long usuarioId) {
         if (usuarioId != null) vistos.remove(usuarioId);
     }
 
-    /**
-     * Los vistos recientemente, el mas activo primero.
-     *
-     * Devuelve tambien a los que llevan un rato callados —hasta {@link #VENTANA_OLVIDO_S}— con su
-     * marca de tiempo: "Ana, sin actividad hace 4 minutos" dice mas que hacerla desaparecer,
-     * sobre todo cuando lo que se quiere saber es si alguien dejo una venta a medias.
-     */
     public List<Presencia> listar() {
         Instant limite = Instant.now().minusSeconds(VENTANA_OLVIDO_S);
         vistos.values().removeIf(p -> p.visto().isBefore(limite));

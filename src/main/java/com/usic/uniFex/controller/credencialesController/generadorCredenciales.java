@@ -6,14 +6,10 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 
-import com.usic.uniFex.anotacion.ValidarUsuarioAutenticado;
 import com.usic.uniFex.model.IService.ICategoriaService;
-import com.usic.uniFex.model.entity.Persona;
-import com.usic.uniFex.model.entity.Usuario;
 import com.usic.uniFex.model.repository.FuncionesInscripcion;
 
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.RequiredArgsConstructor;
 
 @Controller
 public class generadorCredenciales {
@@ -23,8 +19,6 @@ public class generadorCredenciales {
 
     @Autowired
     private ICategoriaService iCategoriaService;
-
-
 
     
     @GetMapping(value = "/vistaGenerarCredenciales/")

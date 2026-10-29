@@ -7,7 +7,7 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 
 public class Encriptar {
-    private static final String SECRET_KEY = "MiClaveSecreta23"; // Cambia por tu propia clave secreta
+    private static final String SECRET_KEY = "MiClaveSecreta23";
 
     public static String encrypt(String url) throws Exception {
         SecretKeySpec secretKey = generateSecretKey();

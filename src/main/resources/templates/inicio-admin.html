@@ -6,7 +6,6 @@
 <head th:replace="~{layout/head :: head}"></head>
 <link rel="stylesheet" href="../../assets/css/config_general_publico.css">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-<!-- VISTA PARA FUNCIONARIOS CON USUARIO -->
 
 <body>
 <style>
@@ -20,7 +19,6 @@
         width: auto;
     }
 
-    /* En pantallas pequeñas reducimos el logo */
     @media (max-width: 576px) {
         .logo-expo {
             max-height: 100px;
@@ -203,7 +201,6 @@
                                                     </div>
                                                 </div>
 
-                                                <!-- Personal Info -->
                                                 <div id="personal-info-validation" class="content">
                                                     <div class="content-header mb-3 text-center">
                                                         <h6 class="mb-0">REGISTRO DE LOS RESPONSABLES</h6>
@@ -252,7 +249,6 @@
                                                                 name="celularResponsable1" class="form-control" />
                                                         </div>
 
-                                                        <!-- 📸 Campo para subir foto -->
                                                         <div class="col-sm-4">
                                                             <label class="form-label"
                                                                 for="fotoResponsable1">Foto</label>
@@ -303,7 +299,6 @@
                                                                 name="celularResponsable2" class="form-control" />
                                                         </div>
 
-                                                        <!-- 📸 Campo para foto opcional -->
                                                         <div class="col-sm-4">
                                                             <label class="form-label" for="fotoResponsable2">Foto
                                                                 (opcional)</label>
@@ -329,7 +324,6 @@
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <!-- Social Links -->
                                                 <div id="social-links-validation" class="content">
                                                     <div class="content-header mb-3">
                                                         <h6 class="mb-0">REGISTRO DE LOS PUESTOS</h6>
@@ -357,7 +351,6 @@
                                                             <select name="puestosSeleccionados"
                                                                 id="formValidationPuestosDisponibles"
                                                                 class="select2 form-select" multiple>
-                                                                <!-- Se cargan dinámicamente con JS -->
                                                             </select>
                                                         </div>
 
@@ -424,47 +417,36 @@
 <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
 
-<!-- Buttons core + Bootstrap -->
 <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap5.min.js"></script>
 
-<!-- DEPENDENCIAS DE EXPORTACIÓN -->
-<!-- Excel necesita JSZip -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
-<!-- PDF necesita pdfmake (si quieres mantener el botón PDF) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
 
-<!-- Botones HTML5 (Excel / CSV / PDF) y Print -->
 <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.print.min.js"></script>
     <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
     <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
     <script th:inline="javascript">
-        /*<![CDATA[*/
-        // Thymeleaf inyecta todos los puestos en un array JS
         let puestos = /*[[${puestos}]]*/[];
 
-        // convertir cada puesto en objeto limpio
         puestos = puestos.map(p => ({
             id: p.id,
             codigo: p.codigo,
             tamano: p.tamano,
             categoriaId: p.categoria.id
         }));
-        /*]]>*/
     </script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // timestamp para nombres de archivo
             const now = new Date();
             const pad = n => String(n).padStart(2, '0');
             const stamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
 
             const table = $('#data-table').DataTable({
                 responsive: true,
-                // Barra superior: buscador a la izquierda y botones a la derecha
                 dom: "<'row align-items-center'<'col-12 col-md-6'f><'col-12 col-md-6 text-md-end'B>>" +
                     "<'row'<'col-12'tr>>" +
                     "<'row'<'col-md-5'i><'col-md-7'p>>",
@@ -476,7 +458,6 @@
                     title: 'Responsables inscritos',
                     filename: `responsables_${stamp}`,
                     exportOptions: {
-                    // columnas a exportar (#, Entidad, Tipo, Categoría, Nombre, CI, Celular)
                     columns: [0,1,2,3,4,5,6,1,8]
                     }
                 },
@@ -490,7 +471,6 @@
                     pageSize: 'A4',
                     exportOptions: { columns: [0,1,2,3,4,5,6] },
                     customize: function (doc) {
-                    // pequeño tuning visual del PDF
                     doc.styles.tableHeader.alignment = 'left';
                     doc.defaultStyle.fontSize = 9;
                     if (doc.content[1] && doc.content[1].table) {
@@ -518,11 +498,9 @@
                 let categoriaId = $(this).val();
                 let $puestosSelect = $('#formValidationPuestosDisponibles');
 
-                // limpiar antes de cargar
                 $puestosSelect.empty();
 
                 if (categoriaId) {
-                    // filtrar los puestos por categoría
                     let filtrados = puestos.filter(p => p.categoriaId == categoriaId);
 
                     filtrados.forEach(function (p) {
@@ -530,7 +508,7 @@
                     });
                 }
 
-                $puestosSelect.trigger('change'); // refrescar select2
+                $puestosSelect.trigger('change');
             });
         });
 
@@ -550,7 +528,6 @@
         inicio.addEventListener("change", mostrarRango);
         fin.addEventListener("change", mostrarRango);
 
-        // Si quieres mostrar directamente “18 a 22 de septiembre”
         inicio.value = "2025-09-18";
         fin.value = "2025-09-22";
         mostrarRango();

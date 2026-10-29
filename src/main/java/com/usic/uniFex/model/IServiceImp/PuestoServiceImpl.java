@@ -9,8 +9,6 @@ import com.usic.uniFex.model.IService.IPuestoService;
 import com.usic.uniFex.model.dao.IPuestoDao;
 import com.usic.uniFex.model.entity.Puesto;
 
-import jakarta.transaction.Transactional;
-
 @Service
 public class PuestoServiceImpl implements IPuestoService {
     
@@ -19,25 +17,21 @@ public class PuestoServiceImpl implements IPuestoService {
 
     @Override
     public List<Puesto> findAll() {
-        // TODO Auto-generated method stub
         return puestoDao.findAll();
     }
 
     @Override
     public Puesto findById(Long idEntidad) {
-        // TODO Auto-generated method stub
         return puestoDao.findById(idEntidad).orElse(null);
     }
 
     @Override
     public Puesto save(Puesto entidad) {
-        // TODO Auto-generated method stub
         return puestoDao.save(entidad);
     }
 
     @Override
     public void deleteById(Long idEntidad) {
-        // TODO Auto-generated method stub
         puestoDao.deleteById(idEntidad);
     }
 

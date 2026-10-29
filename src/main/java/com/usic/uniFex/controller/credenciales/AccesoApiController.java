@@ -32,21 +32,6 @@ import com.usic.uniFex.security.Roles;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Control de entradas y salidas en la puerta.
- *
- * <h2>El sentido lo elige quien escanea</h2>
- * No se alterna solo. Alternar parece mas comodo —el primer escaneo entrada, el segundo
- * salida— hasta que alguien escanea dos veces seguidas por nerviosismo o porque el telefono no
- * respondio a la primera: a partir de ahi TODO queda invertido, y nadie se entera hasta que
- * alguien mira los numeros al final del dia. Con el sentido explicito, un escaneo de mas es un
- * movimiento de mas y se arregla registrando el contrario.
- *
- * <h2>Registrar exige sesion; mirar la credencial no</h2>
- * La vista publica del QR sigue abierta, porque la abre cualquiera con la camara de su
- * telefono. Anotar un movimiento es otra cosa: es un acto de control, queda firmado con quien
- * lo hizo, y solo lo hace quien esta en la puerta.
- */
 @RestController
 @RequestMapping("/api/app/accesos")
 @RequiredArgsConstructor
@@ -63,7 +48,6 @@ public class AccesoApiController {
     private final ApoyoAccesoDao accesosApoyo;
     private final SimpMessagingTemplate messaging;
 
-    /** `codigo` es el del QR; `sentido` es "E" o "S". */
     public record Movimiento(String codigo, String sentido) {}
 
     @PostMapping
@@ -78,15 +62,11 @@ public class AccesoApiController {
                     "ok", false, "mensaje", "Hay que decir si es entrada o salida"));
         }
 
-        // Los QR de apoyo (FXA-...) van por su propia tabla: sus ids viven en
-        // personal_apoyo, no en responsable, y mezclarlos rompería los conteos de expositores.
         if (req.codigo() != null && req.codigo().trim().toUpperCase().startsWith("FXA")) {
             return registrarApoyo(req.codigo(), sentido,
                     "APK".equalsIgnoreCase(origen) ? "APK" : "WEB");
         }
 
-        // Se valida la FIRMA antes de tocar la base: un codigo inventado no llega a consultar
-        // nada, igual que en la vista publica.
         Long responsableId = codigos.responsableDe(req.codigo());
         CredencialDTO c = responsableId == null
                 ? null : credenciales.porResponsable(responsableId).orElse(null);
@@ -96,23 +76,14 @@ public class AccesoApiController {
                     "ok", false, "valida", false, "mensaje", "Esta credencial no es válida"));
         }
 
-        /*
-         * Se avisa si el movimiento repite el anterior —dos entradas seguidas, dos salidas—
-         * pero NO se rechaza. En la puerta puede pasar por mil motivos razonables: alguien
-         * salio por otra puerta sin escanear, o el control cambio de turno. Bloquearlo dejaria
-         * a una persona fuera por un fallo de registro; avisarlo deja que quien esta ahi
-         * decida, que es quien esta viendo lo que pasa.
-         */
         String previo = accesos.ultimoSentido(c.responsableId());
         boolean repetido = sentido.equals(previo);
 
         accesos.registrar(c.responsableId(), sentido, usuarioActual(),
                 "APK".equalsIgnoreCase(origen) ? "APK" : "WEB");
 
-        // Calcular conteo ANTES de difundir
         int[] conteo = accesos.conteo(c.responsableId());
 
-        // Difundir el movimiento en tiempo real
         difundirMovimiento(c, sentido, conteo[0], conteo[1], repetido);
 
         Map<String, Object> m = new LinkedHashMap<>();
@@ -133,18 +104,12 @@ public class AccesoApiController {
         return ResponseEntity.ok(m);
     }
 
-    /** Cuanta gente hay dentro ahora mismo: el numero que importa en una evacuacion. */
     @GetMapping("/dentro")
     @PreAuthorize(Roles.CONTROLA_ACCESO_O_ESCANER)
     public Map<String, Object> dentro() {
         return Map.of("dentro", accesos.dentroAhora());
     }
 
-    /**
-     * Movimiento de personal de apoyo. Misma regla que expositores —se avisa el repetido
-     * pero no se bloquea— y misma forma de respuesta, con los campos del apoyo
-     * (dependencia, rol, tarea) en vez de los de la venta.
-     */
     private ResponseEntity<Map<String, Object>> registrarApoyo(
             String codigo, String sentido, String origen) {
         Long apoyoId = codigosApoyo.apoyoDe(codigo);
@@ -179,12 +144,6 @@ public class AccesoApiController {
         return ResponseEntity.ok(m);
     }
 
-    /**
-     * Lista movimientos de acceso con filtros y paginacion.
-     *
-     * Filtros: categoriaId, desde, hasta, sentido (E/S), limite, offset.
-     * Requiere permiso CONTROLA_ACCESO.
-     */
     @GetMapping("/movimientos")
     @PreAuthorize(Roles.CONTROLA_ACCESO)
     public Map<String, Object> movimientos(
@@ -205,9 +164,6 @@ public class AccesoApiController {
         return Map.of("datos", datos, "total", total, "limite", limite, "offset", offset);
     }
 
-    /**
-     * Resumen de movimientos por categoria.
-     */
     @GetMapping("/resumen/categoria")
     @PreAuthorize(Roles.CONTROLA_ACCESO)
     public List<Map<String, Object>> resumenPorCategoria(
@@ -219,9 +175,6 @@ public class AccesoApiController {
         return accesos.resumenPorCategoria(d, h);
     }
 
-    /**
-     * Resumen de movimientos por usuario (quien escaneo).
-     */
     @GetMapping("/resumen/usuario")
     @PreAuthorize(Roles.CONTROLA_ACCESO)
     public List<Map<String, Object>> resumenPorUsuario(
@@ -233,9 +186,6 @@ public class AccesoApiController {
         return accesos.resumenPorUsuario(d, h);
     }
 
-    /**
-     * Personas que estan DENTRO ahora, con su categoria.
-     */
     @GetMapping("/dentro/detalle")
     @PreAuthorize(Roles.CONTROLA_ACCESO)
     public List<Map<String, Object>> quienesEstanDentro() {

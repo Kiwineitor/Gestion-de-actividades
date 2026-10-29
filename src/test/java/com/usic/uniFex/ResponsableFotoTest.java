@@ -23,16 +23,6 @@ import com.usic.uniFex.model.service.RegistroVentaService.DatosPersona;
 import com.usic.uniFex.model.service.RegistroVentaService.NuevaVenta;
 import com.usic.uniFex.model.service.ResponsableFotoService;
 
-/**
- * Fotos de los responsables: lo que despues va impreso en su credencial.
- *
- * Lo que se protege aqui es la regla que separa a un vendedor de otro. Los endpoints validan
- * el permiso sobre la INSCRIPCION, asi que si el servicio no comprobara ademas que el
- * responsable pertenece a esa venta, cualquiera con una venta propia podria cambiarle la foto
- * al responsable de otro pasando su id — y esa foto acaba en una credencial de acceso.
- *
- * Ejecutar:  mvnw.cmd test "-Dtest=ResponsableFotoTest"
- */
 @SpringBootTest
 @ActiveProfiles("dev")
 class ResponsableFotoTest {
@@ -100,7 +90,6 @@ class ResponsableFotoTest {
     }
 
     private MockMultipartFile imagen() {
-        // PNG minimo valido: basta para ejercitar el guardado, no se valida el contenido.
         byte[] png = java.util.Base64.getDecoder().decode(
                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
         return new MockMultipartFile("archivo", "foto.png", "image/png", png);
@@ -113,10 +102,8 @@ class ResponsableFotoTest {
         List<ResponsableFotoDTO> antes = fotos.listar(inscripcion);
         assertThat(antes).hasSize(2);
         assertThat(antes).allSatisfy(r -> assertThat(r.tieneFoto()).isFalse());
-        // Una venta sin ninguna foto no puede emitir credenciales.
         assertThat(fotos.fotosCompletas(inscripcion)).isFalse();
 
-        // El titular tiene que salir primero: es el orden con el que se revisa en la feria.
         assertThat(antes.get(0).esTitular()).isTrue();
 
         fotos.guardar(inscripcion, antes.get(0).id(), imagen(), 1L);
@@ -129,7 +116,6 @@ class ResponsableFotoTest {
         List<ResponsableFotoDTO> despues = fotos.listar(inscripcion);
         assertThat(despues).allSatisfy(r -> {
             assertThat(r.tieneFoto()).isTrue();
-            // La url tiene que servir por /files/**, no ser la ruta cruda del disco.
             assertThat(r.fotoUrl()).startsWith("/files/responsables/");
         });
     }
@@ -146,11 +132,6 @@ class ResponsableFotoTest {
         assertThat(fotos.fotosCompletas(inscripcion)).isFalse();
     }
 
-    /**
-     * La comprobacion que impide cambiarle la foto al cliente de otro vendedor. El permiso del
-     * endpoint se valida sobre la inscripcion, asi que sin esto bastaria con tener una venta
-     * propia y adivinar el id del responsable ajeno.
-     */
     @Test
     void noSePuedeTocarUnResponsableDeOtraVenta() {
         Long ventaA = registrarVenta(ENTIDAD_A, libres.get(0).getId());
@@ -162,7 +143,6 @@ class ResponsableFotoTest {
         assertThat(r.ok()).isFalse();
         assertThat(r.mensaje()).contains("no es de esta venta");
 
-        // Y no se le coló la foto por el camino.
         assertThat(fotos.listar(ventaB).get(0).tieneFoto()).isFalse();
 
         assertThat(fotos.quitar(ventaA, responsableDeB, 1L).ok()).isFalse();
@@ -188,7 +168,6 @@ class ResponsableFotoTest {
         }
         assertThat(fotos.fotosCompletas(inscripcion)).isTrue();
 
-        // La foto queda registrada en la persona, no en el vinculo: es la cara de alguien.
         Integer conFoto = jdbc.queryForObject(
                 "SELECT count(*) FROM persona p JOIN responsable r ON r.id_persona=p.id "
                 + "JOIN entidad e ON e.id=r.id_entidad WHERE e.nombre=? AND p.foto IS NOT NULL",
@@ -198,8 +177,6 @@ class ResponsableFotoTest {
 
     @Test
     void unaVentaSinResponsablesNoCuentaComoCompleta() {
-        // `fotosCompletas` sobre una venta inexistente no debe decir "si" por vacuidad: un
-        // allMatch sobre lista vacia es true, y eso habilitaria emitir credenciales de nada.
         assertThat(fotos.fotosCompletas(-1L)).isFalse();
     }
 

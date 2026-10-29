@@ -27,10 +27,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Gestion de personas del sistema para la SPA (Fase H1). Solo administracion. Las personas que se
- * crean aqui quedan ACTIVO y por tanto disponibles en el selector del modulo Usuarios.
- */
 @RestController
 @RequestMapping("/api/app/personas")
 @RequiredArgsConstructor
@@ -47,11 +43,6 @@ public class PersonaApiController {
                 .toList();
     }
 
-    /**
-     * Persona por C.I. exacto, exista o no como persona del sistema. La usa el formulario de alta
-     * para avisar antes de guardar de que ese C.I. ya esta registrado -- puede ser un responsable
-     * de entidad, que no sale en el listado de arriba pero si ocupa el C.I.
-     */
     @GetMapping("/por-ci")
     public Map<String, Object> porCi(@RequestParam("ci") String ci) {
         return gestion.buscarPorCi(ci)

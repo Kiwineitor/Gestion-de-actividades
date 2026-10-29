@@ -2,15 +2,7 @@
 import { ref, watch, onUnmounted } from 'vue';
 import { cargando, textoCarga, esperaMs, estadoEspera } from '../ui/cargando';
 
-/*
- * El indicador de carga, montado una sola vez en App.vue.
- *
- * Aparece con RETRASO a proposito. Una peticion que tarda 150 ms no necesita anuncio, y
- * enseñar y quitar un velo en ese tiempo produce un parpadeo que se siente peor que no poner
- * nada. Solo se muestra si la espera se nota.
- */
 const RETRASO_MS = 250;
-/** El guiño solo aparece si la espera se hace de verdad larga. Si no, no seria un secreto. */
 const MS_KIWI = 14000;
 
 const visible = ref(false);
@@ -22,7 +14,6 @@ watch(cargando, (activo) => {
   clearInterval(cronometro);
   if (!activo) { visible.value = false; return; }
   tAparecer = setTimeout(() => { visible.value = true; }, RETRASO_MS);
-  // El contador vive aqui y no en el modulo para que no corra cuando no hay nada que esperar.
   cronometro = setInterval(() => { esperaMs.value += 250; }, 250);
 });
 
@@ -36,8 +27,6 @@ onUnmounted(() => { clearTimeout(tAparecer); clearInterval(cronometro); });
         <div class="aro" aria-hidden="true"><span></span><span></span><span></span></div>
         <p class="texto">{{ textoCarga }}</p>
 
-        <!-- Lo que se dice cambia con la espera: a los pocos segundos es "va lento", y pasados
-             nueve ya conviene sospechar de la señal en vez de seguir esperando en silencio. -->
         <p v-if="estadoEspera === 'lento'" class="pista">
           La conexión está lenta. Seguimos intentando…
         </p>
@@ -52,24 +41,7 @@ onUnmounted(() => { clearTimeout(tAparecer); clearInterval(cronometro); });
 </template>
 
 <style scoped>
-/*
- * Translucido y no opaco: por debajo se sigue viendo la pantalla donde estaba el usuario. Un
- * muro opaco refuerza la sensacion de "se colgo", que es justo lo que esto viene a evitar.
- * Lo que si hace es comerse los toques, para que no se dispare dos veces la misma venta.
- */
 .velo-carga {
-  /*
-   * DEBAJO del modal de aviso (2000) y ENCIMA de los dialogos de formulario (UiModal, 900).
-   *
-   * Estaba en 2500, por encima de todo, y eso convertia cualquier error en un cuelgue: el
-   * codigo hace `catch -> await alerta(...)`, el aviso se abria DEBAJO del velo —invisible y
-   * sin poder pulsarlo—, y como `ocultarCarga()` vive en el `finally` que espera a ese await,
-   * el velo se quedaba para siempre. Lo que el usuario veia era "Agregando al responsable…
-   * Parece que no hay señal" eternamente, con la aplicacion trabada.
-   *
-   * La regla: un velo de progreso tapa lo que NO se debe tocar mientras algo trabaja; nunca
-   * tapa la respuesta a eso que estaba trabajando.
-   */
   position: fixed; inset: 0; z-index: 1500;
   display: grid; place-items: center;
   background: rgba(2, 6, 23, 0.35);
@@ -86,7 +58,6 @@ onUnmounted(() => { clearTimeout(tAparecer); clearInterval(cronometro); });
 .pista.aviso { color: var(--tramite); font-weight: 600; }
 .kiwi { margin: 0.2rem 0 0; font-size: 0.78rem; color: var(--muted); opacity: 0.65; }
 
-/* Tres puntos que rebotan. Sin librería y sin imagen: son tres nodos y una animación. */
 .aro { display: flex; gap: 0.4rem; }
 .aro span {
   width: 10px; height: 10px; border-radius: 50%; background: var(--acento);

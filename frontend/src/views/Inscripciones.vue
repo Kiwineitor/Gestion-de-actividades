@@ -8,37 +8,28 @@ import { useAuthStore } from '../stores/auth';
 import UiModal from '../components/UiModal.vue';
 
 const tienda = usePuestosStore();
-/*
- * Quien entra con la pantalla asignada (por rol o por usuario) sin ser de los que ven todo
- * recibe del servidor SOLO sus ventas. Aqui solo se dice en pantalla y se esconde lo que es de
- * administracion —cancelar directo, la cola de solicitudes—, que el servidor le negaria igual.
- */
 const auth = useAuthStore();
 const esAdmin = computed(() => auth.puedeEditarPlano);
 const soloMias = computed(() => !auth.veTodasLasInscripciones);
-const pestaña = ref('activas');   // 'activas' | 'canceladas' | 'solicitudes'
+const pestaña = ref('activas');
 const conteos = ref({ activas: 0, canceladas: 0 });
 const inscripciones = ref([]);
-/** Por qué no se pudo cargar (p. ej. el rol no tiene permiso en el servidor). Se ve en la página. */
 const errorCarga = ref('');
 const cargando = ref(true);
 const filtro = ref('');
-const expandida = ref(null);      // id de la fila desplegada
-const detalle = ref(null);        // respuesta de GET /inscripciones/{id}
-/** Fotos que la base dice tener pero que no estan en disco. Ver CredencialPublica.vue. */
+const expandida = ref(null);
+const detalle = ref(null);
 const fotosRotas = ref(new Set());
 const verComprobante = ref(false);
 
-// --- cancelacion (V10) ---
-const modalCancelar = ref(null);  // inscripcion en espera de confirmacion
+const modalCancelar = ref(null);
 const motivo = ref('');
-const cancelando = ref(false);    // peticion en vuelo
+const cancelando = ref(false);
 
-// --- solicitudes de cancelacion (V11) ---
-const solicitudes = ref([]);      // pendientes, en orden de llegada
-const resueltas = ref([]);        // historico de aprobadas/rechazadas
-const resolviendo = ref(null);    // id de la solicitud que se esta resolviendo
-const modalRechazo = ref(null);   // solicitud en espera de la respuesta del rechazo
+const solicitudes = ref([]);
+const resueltas = ref([]);
+const resolviendo = ref(null);
+const modalRechazo = ref(null);
 const respuestaRechazo = ref('');
 const cargandoSolicitudes = ref(false);
 
@@ -55,19 +46,15 @@ const filtradas = computed(() => {
     || (i.categorias || []).some((c) => c.toLowerCase().includes(q)));
 });
 
-// Totales del conjunto filtrado (pie de tabla).
 const totales = computed(() => filtradas.value.reduce((acc, i) => {
   acc.total += Number(i.total || 0);
   acc.puestos += i.cantidadPuestos || 0;
   return acc;
 }, { total: 0, puestos: 0 }));
 
-/** Trae las dos listas (contadores de las pestanas) y muestra la de la pestana activa. */
 async function cargar() {
   cargando.value = true;
   try {
-    // jsonOError y no r.json() a secas: con un 403 el cuerpo es {ok, mensaje}, y recorrerlo
-    // como lista rompia la vista con "is not iterable".
     const [activas, canceladas] = await Promise.all([
       apiFetch('/api/app/inscripciones').then((r) => jsonOError(r, 'No se pudieron cargar las inscripciones')),
       apiFetch('/api/app/inscripciones?canceladas=true').then((r) => jsonOError(r, 'No se pudieron cargar las inscripciones')),
@@ -97,7 +84,6 @@ function cambiarPestaña(p) {
   }
 }
 
-/** Trae la cola de solicitudes de cancelacion (V11): pendientes y resueltas. */
 async function cargarSolicitudes() {
   cargandoSolicitudes.value = true;
   try {
@@ -118,7 +104,6 @@ async function cargarSolicitudes() {
   }
 }
 
-/** Administracion aprueba: el vendedor queda habilitado y se le avisa por WebSocket. */
 async function aprobar(s) {
   if (resolviendo.value) return;
   resolviendo.value = s.id;
@@ -140,7 +125,6 @@ function abrirRechazo(s) {
   respuestaRechazo.value = '';
 }
 
-/** Administracion rechaza con respuesta obligatoria; el vendedor recibe el aviso. */
 async function confirmarRechazo() {
   const texto = respuestaRechazo.value.trim();
   if (!texto) { toast('La respuesta del rechazo es obligatoria', 'error'); return; }
@@ -165,7 +149,6 @@ async function confirmarRechazo() {
   }
 }
 
-/** Despliega la fila y pide el detalle completo (incluye la auditoria). */
 async function alternar(id) {
   verComprobante.value = false;
   if (expandida.value === id) { expandida.value = null; detalle.value = null; return; }
@@ -176,7 +159,6 @@ async function alternar(id) {
     if (r.ok) detalle.value = await r.json();
     else toast('No se pudo cargar el detalle', 'error');
   } catch (e) {
-    // La fila sigue mostrando lo del listado aunque el detalle falle.
     toast(e.message, 'error');
   }
 }
@@ -186,7 +168,6 @@ function abrirCancelar(i) {
   motivo.value = '';
 }
 
-/** Cancela la venta. El backend exige el motivo; aqui se exige antes de mandarlo. */
 async function confirmarCancelacion() {
   const texto = motivo.value.trim();
   if (!texto) { toast('El motivo es obligatorio', 'error'); return; }
@@ -203,7 +184,7 @@ async function confirmarCancelacion() {
     if (!r.ok || !d.ok) { toast(d.mensaje || 'No se pudo cancelar la venta', 'error'); return; }
     toast(d.mensaje || 'Venta cancelada', 'ok');
     modalCancelar.value = null;
-    await cargar(); // el mapa se recolorea solo, via WebSocket
+    await cargar();
   } catch (e) {
     toast(e.message, 'error');
   } finally {
@@ -222,7 +203,6 @@ const etiquetaAccion = (a) => ({
 
 const origenLabel = (o) => (o === 'APK' ? 'APK (móvil)' : 'Web');
 
-// Tiempo real (V11): cuando llega una solicitud nueva, la cola se refresca sola.
 function onNotificacion(n) {
   if (!n || n.tipo !== 'SOLICITUD_CANCELACION') return;
   toast(`Nueva ${n.mensaje || 'solicitud de cancelación'}`, 'info');
@@ -239,8 +219,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
 </script>
 
 <template>
-  <!-- Pestanas: las activas son las ventas vigentes; las canceladas, el historico;
-       las solicitudes, la cola de cancelacion con aprobacion (V11). -->
   <div class="pestanas" role="tablist">
     <button class="pestana" :class="{ activa: pestaña === 'activas' }" role="tab"
             @click="cambiarPestaña('activas')">
@@ -256,8 +234,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
     </button>
   </div>
 
-  <!-- Fijo en la página y no solo un aviso que se va: con la tabla vacía, sin esto parecería
-       que no hay ventas. -->
   <p v-if="errorCarga" class="card aviso-carga" role="alert">{{ errorCarga }}</p>
   <p v-else-if="soloMias" class="card aviso-alcance">
     Se muestran solo <strong>las ventas que registraste tú</strong>. Para pedir la cancelación de
@@ -325,9 +301,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
                 </div>
                 <div class="bloque">
                   <span class="etq">Responsables</span>
-                  <!-- Con su FOTO. Quien acredita viene justamente a comprobar lo adjuntado:
-                       obligarle a abrir otra pantalla para verlo es mandarlo a buscar lo que
-                       vino a mirar. -->
                   <div v-for="(r, idx) in detalle.responsables" :key="idx" class="resp">
                     <img v-if="r.fotoUrl && !fotosRotas.has(r.fotoUrl)" :src="url(r.fotoUrl)"
                          :alt="r.nombreCompleto" class="foto-resp"
@@ -361,8 +334,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
                     <span v-if="detalle.numComprobante" class="muted"> · Nº {{ detalle.numComprobante }}</span>
                     <span v-if="detalle.entidadBancaria" class="muted"> · {{ detalle.entidadBancaria }}</span>
                   </div>
-                  <!-- El comprobante SE VE aqui, no solo se abre en otra pestaña: en el
-                       telefono esa pestaña es salir de la aplicacion y volver. -->
                   <template v-if="detalle.imgComprobante">
                     <div class="acciones-comp">
                       <button class="btn btn-sm" @click="verComprobante = !verComprobante">
@@ -417,8 +388,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
   </div>
   </template>
 
-  <!-- Cola de solicitudes de cancelacion (V11). El admin aprueba o rechaza; el
-       vendedor se entera por WebSocket sin recargar nada. -->
   <template v-else>
     <div class="card">
       <div v-if="cargandoSolicitudes" class="vacio">Cargando…</div>
@@ -491,7 +460,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
     </template>
   </UiModal>
 
-  <!-- Rechazo de una solicitud: la respuesta es obligatoria, es lo que vera el vendedor. -->
   <UiModal v-if="modalRechazo" titulo="Rechazar solicitud de cancelación" @cerrar="modalRechazo = null">
     <p class="aviso">
       Se rechazará la solicitud de <strong>{{ modalRechazo.vendedor || '—' }}</strong> para la
@@ -522,7 +490,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
   border-left: 3px solid var(--danger); color: var(--text);
 }
 
-/* ---- lo adjuntado, que es lo que viene a mirar quien acredita ---- */
 .resp { display: flex; align-items: flex-start; gap: 0.6rem; margin-bottom: 0.5rem; }
 .foto-resp {
   width: 44px; height: 44px; flex: none; border-radius: var(--radio-sm);

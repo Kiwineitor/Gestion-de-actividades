@@ -17,25 +17,21 @@ public class CategoriaServiceImpl implements ICategoriaService {
 
     @Override
     public List<Categoria> findAll() {
-        // TODO Auto-generated method stub
         return categoriaDao.findAll();
     }
 
     @Override
     public Categoria findById(Long idEntidad) {
-        // TODO Auto-generated method stub
         return categoriaDao.findById(idEntidad).orElse(null);
     }
 
     @Override
     public Categoria save(Categoria entidad) {
-        // TODO Auto-generated method stub
         return categoriaDao.save(entidad);
     }
 
     @Override
     public void deleteById(Long idEntidad) {
-        // TODO Auto-generated method stub
         categoriaDao.deleteById(idEntidad);
     }
 }

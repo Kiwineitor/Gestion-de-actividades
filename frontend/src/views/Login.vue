@@ -1,40 +1,25 @@
 <script setup>
 import { ref, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { alerta } from '../ui/alerta';
+import { marca, iniciales, cargarMarca } from '../ui/marca';
 
 const usuario = ref('');
 const contrasena = ref('');
 const error = ref('');
 const cargando = ref(false);
 const auth = useAuthStore();
-const router = useRouter();
 const formVisible = ref(false);
-/*
- * La referencia al campo de contraseña NO puede llamarse `contrasena`.
- *
- * En <script setup>, un `ref="x"` de la plantilla ESCRIBE en la variable `x` del script si
- * existe. Como `contrasena` ya era el ref con el texto tecleado, al montarse la vista Vue le
- * metia dentro el propio <input>, y a partir de ahi `contrasena.trim()` —que usa el boton
- * para saber si habilitarse— reventaba el render: la pantalla de login se rompia y no habia
- * forma de entrar. De ahi el nombre distinto.
- */
 const campoContrasena = ref(null);
 
-// Producción sirve la SPA bajo /app/ (ver VITE_BASE en el perfil Maven "frontend"): una
-// ruta fija "/logo-fexpo.png" apunta a la raíz del dominio y da 404 solo ahí.
-const BASE = import.meta.env.BASE_URL;
+cargarMarca();
 
 async function entrar() {
-  // El formulario ya dispara `submit` al pulsar Enter; sin esta guarda, una pulsacion que
-  // ademas llegara por otro camino mandaria dos peticiones de login.
   if (cargando.value) return;
   error.value = '';
   cargando.value = true;
   try {
     await auth.login(usuario.value, contrasena.value);
-    router.push('/');
   } catch (e) {
     error.value = e.message;
     if (e.codigo === 'MANTENIMIENTO') {
@@ -63,8 +48,10 @@ onMounted(() => {
 
     <main class="login-card" :class="{ visible: formVisible }">
       <div class="logo-contenedor" aria-hidden="true">
-        <img :src="`${BASE}logo-fexpo.png`" alt="Gestión de Ferias" class="logo" width="640" height="433" />
+        <img v-if="marca.logoUrl" :src="marca.logoUrl" :alt="marca.nombre" class="logo" />
+        <span v-else class="logo-texto">{{ iniciales }}</span>
       </div>
+      <p class="nombre-sistema">{{ marca.nombre }}</p>
 
       <header class="cabecera">
         <h1>Bienvenido</h1>
@@ -115,7 +102,7 @@ onMounted(() => {
       </form>
 
       <footer class="pie-login">
-        <p>Sistema de gestión de ferias</p>
+        <p>{{ marca.lema || marca.nombre }}</p>
       </footer>
     </main>
   </div>
@@ -132,7 +119,6 @@ onMounted(() => {
   overflow: hidden;
 }
 
-/* Fondo animado con orbes suaves */
 .login-bg {
   position: fixed;
   inset: 0;
@@ -188,7 +174,6 @@ onMounted(() => {
   .orb { animation: none; opacity: 0.15; }
 }
 
-/* Tarjeta de login */
 .login-card {
   position: relative;
   z-index: 1;
@@ -210,7 +195,6 @@ onMounted(() => {
   transform: translateY(0) scale(1);
 }
 
-/* Logo centrado */
 .logo-contenedor {
   display: flex;
   justify-content: center;
@@ -222,8 +206,22 @@ onMounted(() => {
 
 .logo {
   width: 100px;
+  max-height: 100px;
+  object-fit: contain;
   height: auto;
-  filter: drop-shadow(0 8px 24px rgba(20, 168, 58, 0.35));
+  filter: drop-shadow(0 8px 24px rgba(124, 92, 255, 0.35));
+}
+
+.logo-texto {
+  width: 72px; height: 72px; border-radius: 20px; display: grid; place-items: center;
+  background: linear-gradient(135deg, #7c5cff, #4f46e5); color: #fff;
+  font-size: 1.6rem; font-weight: 800; letter-spacing: 0.04em;
+  box-shadow: 0 8px 24px rgba(124, 92, 255, 0.35);
+}
+
+.nombre-sistema {
+  margin: -0.6rem 0 1rem; text-align: center; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--muted, #64748b); font-size: 0.85rem; text-transform: uppercase;
 }
 
 @keyframes logoEntrada {
@@ -231,7 +229,6 @@ onMounted(() => {
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* Cabecera */
 .cabecera {
   text-align: center;
   margin-bottom: 2rem;
@@ -253,7 +250,6 @@ onMounted(() => {
   font-size: 0.95rem;
 }
 
-/* Formulario */
 .formulario {
   display: flex;
   flex-direction: column;
@@ -330,7 +326,6 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-/* Error */
 .error {
   margin: -0.5rem 0 0.25rem;
   padding: 0.7rem 1rem;
@@ -356,7 +351,6 @@ onMounted(() => {
   40%, 80% { transform: translateX(6px); }
 }
 
-/* Botón entrar */
 .btn-entrar {
   display: inline-flex;
   align-items: center;
@@ -391,7 +385,6 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-/* Spinner */
 .spinner {
   width: 20px;
   height: 20px;
@@ -405,7 +398,6 @@ onMounted(() => {
   to { transform: rotate(360deg); }
 }
 
-/* Pie */
 .pie-login {
   margin-top: 2rem;
   text-align: center;
@@ -420,7 +412,6 @@ onMounted(() => {
   opacity: 0.8;
 }
 
-/* Responsive */
 @media (max-width: 480px) {
   .login-wrap { padding: 1rem; }
   .login-card { padding: 2rem 1.5rem; border-radius: 16px; }
@@ -436,7 +427,6 @@ onMounted(() => {
   .cabecera h1 { font-size: 1.25rem; }
 }
 
-/* Modo oscuro - ajustes adicionales */
 @media (prefers-color-scheme: dark) {
   .orb { opacity: 0.25; }
 }

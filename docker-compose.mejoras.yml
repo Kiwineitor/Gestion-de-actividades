@@ -1,6 +1,3 @@
-# Entorno de revisión aislado. Usar junto a docker-compose.yml:
-# docker compose -f docker-compose.yml -f docker-compose.mejoras.yml up -d --build app-mejoras
-# La base unifex_mejoras se crea primero como copia de unifex (ver DOCKER.md).
 services:
   app-mejoras:
     build:

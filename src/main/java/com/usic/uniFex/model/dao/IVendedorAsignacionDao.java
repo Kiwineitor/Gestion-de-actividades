@@ -4,88 +4,35 @@ import java.util.List;
 
 import com.usic.uniFex.model.entity.Puesto;
 
-/**
- * Casetas habilitadas a cada vendedor.
- *
- * NO es un JpaRepository: usa EntityManager directamente para evitar el escaneo de Spring Data.
- * La tabla {@code vendedor_puesto} no tiene entidad JPA propia.
- *
- * Hay UNA sola via de habilitacion: las casetas que se le seleccionan. Hubo otra por categoria
- * entera y se contradecian —con la categoria asignada, seleccionarle 10 casetas no servia de nada
- * porque le seguian saliendo todas—, asi que se retiro en V23.
- *
- * Una caseta puede estar habilitada a VARIOS vendedores (V32). La habilitacion dice quien puede
- * intentar venderla; quien se la queda lo decide la reserva, no esta tabla.
- */
 public interface IVendedorAsignacionDao {
 
-    /** Habilita una caseta a este vendedor. Repetir la misma pareja no hace nada (V32). */
     void asignarPuesto(Long usuarioId, Long puestoId, Long adminId);
 
-    /** Retira una caseta de un vendedor. */
     void quitarPuesto(Long usuarioId, Long puestoId);
 
-    /** Deja las casetas del vendedor exactamente en esa lista, en dos consultas. */
     void reemplazarPuestos(Long usuarioId, List<Long> puestoIds, Long adminId);
 
-    /** Agrega las mismas casetas a varios vendedores, sin quitar lo que ya tenian. */
     int agregarPuestosAVendedores(List<Long> usuarioIds, List<Long> puestoIds, Long adminId);
 
-    /** Ids de las casetas habilitadas a este vendedor. */
     List<Long> findPuestoIdsByVendedor(Long usuarioId);
 
-    /** Las casetas habilitadas, con sus datos (no solo los ids). */
     List<Puesto> findPuestosAsignadosByVendedor(Long usuarioId);
 
-    /** Las casetas que este vendedor ve en el mapa. Sin habilitaciones, ninguna. */
     List<Puesto> findPuestosVisiblesParaVendedor(Long usuarioId);
 
-    /** true si tiene al menos una caseta habilitada. */
     boolean tieneAlgunaAsignacion(Long usuarioId);
 
-    /** true si esa caseta concreta esta habilitada a ese vendedor. */
     boolean vendedorTienePuesto(Long usuarioId, Long puestoId);
 
-    /**
-     * De una lista de casetas, cuales tiene habilitadas este vendedor. UNA consulta.
-     *
-     * Existe para no preguntar caseta por caseta. Comprobar un lote de veinte con
-     * {@link #vendedorTienePuesto} eran veinte viajes a la base ANTES de empezar a reservar, y
-     * eso lo paga el mapa de los demas vendedores: la difusion no sale hasta que termina todo.
-     * Con la base al otro lado de una red lenta, ese N+1 es la diferencia entre "al instante" y
-     * "unos segundos".
-     */
     java.util.Set<Long> puestosPermitidosDe(Long usuarioId, java.util.List<Long> puestoIds);
 
-    /**
-     * Catalogo para el modal de habilitacion: cada caseta viva con su categoria y quien la lleva.
-     * Columnas: id, codigo, categoriaId, categoriaNombre, estadoPuesto, usuarioId, username.
-     *
-     * Una fila POR PAREJA (caseta, vendedor) desde V32, porque una caseta puede llevarla mas de
-     * uno; la caseta sin habilitar sale una vez con las dos ultimas columnas en null.
-     */
     List<Object[]> findCatalogoAsignable();
 
-    /** Para un puñado de casetas, el nombre de la categoria de cada una: [puestoId, nombre]. */
     List<Object[]> nombresDeCategoriaPorPuesto(List<Long> puestoIds);
 
-    /**
-     * Cuantas casetas lleva cada vendedor de cada categoria, para TODOS los vendedores.
-     * Columnas: usuarioId, categoriaId, categoriaNombre, cantidad.
-     *
-     * Una sola consulta para toda la tabla y no una por fila: son 35 vendedores, y pedir el
-     * desglose vendedor a vendedor son 35 viajes a la base para pintar una columna.
-     */
     List<Object[]> contarPuestosPorCategoriaYVendedor();
 
-    /** Suelta TODAS las casetas de un usuario. Se usa al darlo de baja. */
     void borrarAsignacionesDe(Long usuarioId);
 
-    /**
-     * Todas las asignaciones vigentes con el contacto del vendedor, para el mapa.
-     * Columnas: idPuesto, idUsuario, nombre, paterno, materno, celular, username.
-     *
-     * Una caseta compartida aparece una vez por cada vendedor que la lleva.
-     */
     List<Object[]> findAsignacionesConVendedor();
 }

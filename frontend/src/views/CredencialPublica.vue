@@ -2,34 +2,18 @@
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { url as urlApi } from '../config.js';
-
-/*
- * Lo que se ve al escanear el QR de una credencial.
- *
- * SIN sesion a proposito: quien controla la puerta lo abre con su propio telefono, muchas
- * veces sin cuenta en el sistema y con la red de la feria. Por eso esta pantalla no usa
- * `apiFetch` —que añade el token y cierra sesion ante un 401— sino `fetch` pelado contra
- * /api/publico.
- *
- * Lo que hace autentica a una credencial no es esta pantalla, es la FIRMA del codigo: sin el
- * secreto del servidor no se puede fabricar uno que llegue siquiera a consultar la base. Un
- * codigo alterado responde 404 y aqui sale en rojo.
- */
+import { marca, cargarMarca } from '../ui/marca';
 
 const route = useRoute();
 const cargando = ref(true);
 const cred = ref(null);
 const error = ref('');
-/*
- * La foto puede faltar en disco aunque la base diga que existe: pasa al restaurar una copia
- * de la base sin copiar los archivos subidos. Sin esto, el navegador pinta el texto alterno
- * dentro del recuadro y queda peor que no enseñar nada.
- */
 const fotoRota = ref(false);
 
 onMounted(async () => {
+  cargarMarca();
   try {
-    const r = await fetch(urlApi(`/api/publico/credencial/${encodeURIComponent(route.params.codigo)}`));
+    const r = await fetch(urlApi(`/api/publico/credencial/${encodeURIComponent(route.query.credencial)}`));
     const d = await r.json().catch(() => ({}));
     if (r.ok && d.valida) cred.value = d;
     else error.value = d.mensaje || 'Esta credencial no es válida';
@@ -48,8 +32,6 @@ onMounted(async () => {
       <p>Verificando credencial…</p>
     </div>
 
-    <!-- El fallo va en rojo y ocupa la pantalla: en la puerta se mira de reojo y a un metro
-         de distancia, asi que no puede ser un texto pequeño junto a los datos. -->
     <div v-else-if="error" class="tarjeta invalida">
       <span class="marca" aria-hidden="true">✕</span>
       <h1>Credencial no válida</h1>
@@ -62,7 +44,7 @@ onMounted(async () => {
         <span class="marca" aria-hidden="true">✓</span>
         <div>
           <h1>Credencial válida</h1>
-          <p>FEXPO UAP · Expositor</p>
+          <p>{{ marca.nombre }} · Expositor</p>
         </div>
       </header>
 
@@ -81,7 +63,6 @@ onMounted(async () => {
         <div><dt>Entidad</dt><dd>{{ cred.entidad || '—' }}</dd></div>
         <div v-if="cred.rubro"><dt>Rubro</dt><dd>{{ cred.rubro }}</dd></div>
         <div><dt>Categoría</dt><dd>{{ cred.categoria || '—' }}</dd></div>
-        <!-- La caseta es el dato que se contrasta de verdad en la puerta: va destacado. -->
         <div class="ancho"><dt>Caseta{{ (cred.casetas || '').includes(',') ? 's' : '' }}</dt>
           <dd class="casetas">{{ cred.casetas || '—' }}</dd></div>
       </dl>
@@ -111,7 +92,6 @@ onMounted(async () => {
   border-radius: var(--radio); box-shadow: var(--sombra-md);
   padding: 1.3rem; display: flex; flex-direction: column; gap: 1.1rem;
 }
-/* Una franja de color arriba: dice si vale o no antes de leer una sola palabra. */
 .tarjeta.valida { border-top: 6px solid var(--ok); }
 .tarjeta.invalida { border-top: 6px solid var(--danger); text-align: center; gap: 0.6rem; }
 

@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 
 public interface ResumenEntidadView {
     Long getUsuarioId();
-    String getNombreCompleto();   // aquí
+    String getNombreCompleto();
     Long getEntidadId();
     String getEntidad();
     Long getCantidadInscripciones();

@@ -33,13 +33,8 @@ public class PersonalApoyo extends AuditoriaConfig {
     private String celular;
     private String rol;
 
-    /**
-     * Ruta relativa de su foto (bucket "apoyo", V47). NULL = sin foto: la credencial sale
-     * con el avatar generico de la plantilla.
-     */
     private String foto;
 
-    /** Que va a realizar, en breve (V43, tope V44). Opcional: NULL = sin tarea descrita. */
     @Column(name = "descripcion_tarea", length = 200)
     private String descripcionTarea;
 

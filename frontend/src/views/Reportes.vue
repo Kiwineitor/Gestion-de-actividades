@@ -10,8 +10,8 @@ const porCategoria = ref([]);
 const porEntidad = ref([]);
 const cargando = ref(true);
 const cargandoVentas = ref(false);
-const seccion = ref('resumen'); // resumen | ventas
-const vista = ref('categoria'); // categoria | entidad
+const seccion = ref('resumen');
+const vista = ref('categoria');
 const ventas = ref([]);
 const opciones = ref({ categorias: [], promotores: [] });
 const filtros = ref({ desde: '', hasta: '', responsable: '', categorias: [], promotores: [] });
@@ -19,7 +19,6 @@ const filtros = ref({ desde: '', hasta: '', responsable: '', categorias: [], pro
 const bs = (n) => 'Bs ' + Number(n || 0).toLocaleString('es-BO', { minimumFractionDigits: 2 });
 const num = (n) => Number(n || 0).toLocaleString('es-BO');
 
-// Filas de la tabla según el toggle, ordenadas por total.
 const filas = computed(() => {
   const data = vista.value === 'categoria' ? porCategoria.value : porEntidad.value;
   return [...data].sort((a, b) => (b.totalBs || 0) - (a.totalBs || 0));
@@ -28,7 +27,6 @@ const etiquetaDim = computed(() => (vista.value === 'categoria' ? 'Categoría' :
 const totalVentas = computed(() => ventas.value.reduce((s, v) => s + Number(v.totalBs || 0), 0));
 const casetasVentas = computed(() => ventas.value.reduce((s, v) => s + Number(v.cantidadCasetas || 0), 0));
 
-// Para el gráfico: agrego el total por su dimensión (across vendedores), top 10.
 const barras = computed(() => {
   const data = vista.value === 'categoria' ? porCategoria.value : porEntidad.value;
   const clave = vista.value === 'categoria' ? 'categoria' : 'entidad';
@@ -115,16 +113,6 @@ async function exportarVentasExcel() {
   }
 }
 
-/*
- * ---- reportes de análisis, para bajar y entregar ----
- *
- * El `id` es la ruta: `/api/app/analisis/{id}/{pdf|excel}`. Un id desconocido responde 400,
- * así que la lista de aquí y el `switch` del servidor no pueden separarse en silencio.
- *
- * Los tres primeros son los que se pidieron; los tres últimos ya alimentaban el Tablero de
- * dirección y se ofrecen aquí también, porque quien viene a "Reportes" viene a llevarse un
- * papel, no a mirar una pantalla.
- */
 const REPORTES = [
   { id: 'vendido-categoria', titulo: 'Puestos vendidos por categoría',
     detalle: 'Cuántas se vendieron de cada categoría y cuánto dinero representa.' },
@@ -178,9 +166,6 @@ onMounted(cargar);
     </button>
   </div>
 
-  <!-- Reportes que se bajan y se entregan. Cada uno sale del MISMO cálculo que alimenta el
-       Tablero de dirección, no de una consulta propia: con dos consultas, el día que una
-       cambie de criterio el papel diría una cifra y la pantalla otra. -->
   <template v-if="seccion === 'analisis'">
     <p class="muted nota-analisis">
       Todos miran la <strong>edición activa</strong> y descartan las ventas canceladas.
@@ -249,10 +234,6 @@ onMounted(cargar);
     </template>
   </template>
 
-  <!-- `v-else-if` y no `v-else`: mientras fue un `v-else` del resumen, cualquier sección que no
-       fuera «resumen» lo pintaba — al añadir la tercera pestaña, el reporte detallado de ventas
-       aparecía debajo de los reportes de análisis. Con tres pestañas, cada una tiene que decir
-       explícitamente cuál es la suya. -->
   <template v-else-if="seccion === 'ventas'">
     <section class="card reporte-ventas">
       <div class="reporte-head">
@@ -327,8 +308,6 @@ onMounted(cargar);
 </template>
 
 <style scoped>
-/* auto-fit: eran dos columnas fijas y la tercera pestaña caía sola en una segunda fila,
-   ocupando el doble de ancho que las otras dos. */
 .tabs-reportes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 0.75rem; margin-bottom: 1rem; padding: 0.35rem; border: 1px solid var(--border); border-radius: var(--radio); background: linear-gradient(135deg, var(--panel-2), var(--panel)); box-shadow: var(--sombra); }
 .tab-reporte { border: 0; border-radius: calc(var(--radio) - 0.25rem); padding: 0.9rem 1rem; background: transparent; color: var(--texto); text-align: left; cursor: pointer; transition: 0.18s ease; }
 .tab-reporte span { display: block; font-weight: 900; }
@@ -375,12 +354,8 @@ section.grafico { padding: 1.2rem; }
   .buscar { grid-column: auto; }
 }
 
-/* ---- reportes de análisis ---- */
 .nota-analisis { margin: 0 0 0.9rem; line-height: 1.5; font-size: 0.9rem; }
 .lista-analisis { display: flex; flex-direction: column; gap: 0.6rem; }
-/* `fila-analisis` y no `fila`: en style.css hay una utilidad GLOBAL `.fila` con
-   `align-items: center`, y `scoped` NO protege de ella —solo añade especificidad a las reglas
-   propias—. Ese choque ya encogió una barra del tablero a 0 px de ancho sin dar ningún error. */
 .fila-analisis {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: 0.9rem 1rem; flex-wrap: wrap;
@@ -388,7 +363,6 @@ section.grafico { padding: 1.2rem; }
 .fila-analisis .texto { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; flex: 1 1 260px; }
 .fila-analisis .texto strong { font-size: 1rem; }
 .fila-analisis .texto span { font-size: 0.85rem; line-height: 1.4; }
-/* Ámbar: no es un error, es un dato que falta y que cambia lo que dice el reporte. */
 .aviso-dato { color: var(--tramite); }
 .fila-analisis .acciones { display: flex; gap: 0.4rem; flex: none; }
 </style>

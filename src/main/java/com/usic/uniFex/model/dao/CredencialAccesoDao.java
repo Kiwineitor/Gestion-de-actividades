@@ -9,13 +9,6 @@ import org.springframework.stereotype.Repository;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Entradas y salidas de la puerta.
- *
- * Con {@code JdbcTemplate} y no con una entidad JPA a proposito: aqui solo se INSERTA y se
- * CUENTA. Una entidad traeria un ciclo de vida, un contexto de persistencia y relaciones que
- * nadie va a recorrer, para una tabla que solo crece.
- */
 @Repository
 @RequiredArgsConstructor
 public class CredencialAccesoDao {
@@ -25,19 +18,11 @@ public class CredencialAccesoDao {
 
     private final JdbcTemplate jdbc;
 
-    /** Anota un movimiento. Nunca actualiza: cada escaneo es una fila nueva. */
     public void registrar(Long responsableId, String sentido, Long usuarioId, String origen) {
         jdbc.update("INSERT INTO credencial_acceso (id_responsable, sentido, registrado_por, origen)"
                 + " VALUES (?, ?, ?, ?)", responsableId, sentido, usuarioId, origen);
     }
 
-    /**
-     * El ultimo sentido registrado, o null si nunca paso por la puerta.
-     *
-     * Es lo que responde "¿esta dentro?": no hay una columna de estado, se deduce del ultimo
-     * movimiento. Asi un escaneo equivocado se arregla registrando el contrario, sin dejar un
-     * estado mentiroso que alguien tenga que corregir a mano.
-     */
     public String ultimoSentido(Long responsableId) {
         List<String> r = jdbc.queryForList(
                 "SELECT sentido FROM credencial_acceso WHERE id_responsable = ?"
@@ -45,7 +30,6 @@ public class CredencialAccesoDao {
         return r.isEmpty() ? null : r.get(0);
     }
 
-    /** Cuantas entradas y cuantas salidas lleva esta persona. */
     public int[] conteo(Long responsableId) {
         return jdbc.queryForObject(
                 "SELECT COALESCE(SUM(CASE WHEN sentido = 'E' THEN 1 ELSE 0 END), 0),"
@@ -54,7 +38,6 @@ public class CredencialAccesoDao {
                 (rs, n) -> new int[] { rs.getInt(1), rs.getInt(2) }, responsableId);
     }
 
-    /** Los ultimos movimientos de esta persona, del mas nuevo al mas viejo. */
     public List<Object[]> historial(Long responsableId, int limite) {
         return jdbc.query(
                 "SELECT ca.sentido, ca.cuando, u.username, ca.origen"
@@ -67,13 +50,6 @@ public class CredencialAccesoDao {
                 responsableId, limite);
     }
 
-    /**
-     * Cuanta gente hay DENTRO ahora mismo.
-     *
-     * Se cuenta a quien tiene una entrada como ultimo movimiento. No se puede hacer restando
-     * entradas menos salidas: quien entro dos veces sin salir contaria dos, y en una evacuacion
-     * ese numero es exactamente el que no puede estar mal.
-     */
     public int dentroAhora() {
         Integer n = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM (
@@ -85,9 +61,6 @@ public class CredencialAccesoDao {
         return n == null ? 0 : n;
     }
 
-    /**
-     * Filtros para listar movimientos de acceso.
-     */
     public record Filtros(
             Long categoriaId,
             LocalDateTime desde,
@@ -97,12 +70,6 @@ public class CredencialAccesoDao {
             int offset
     ) {}
 
-    /**
-     * Lista movimientos de acceso con filtros.
-     *
-     * Une credencial_acceso con responsable, persona, entidad, inscripcion, puesto y categoria
-     * para poder filtrar por categoria y mostrar datos enriquecidos.
-     */
     public List<Map<String, Object>> listarConFiltros(Filtros f) {
         StringBuilder sql = new StringBuilder("""
                 SELECT ca.id, ca.sentido, ca.cuando, ca.origen, u.username AS registrado_por,
@@ -147,9 +114,6 @@ public class CredencialAccesoDao {
         return jdbc.queryForList(sql.toString(), f.limite(), f.offset());
     }
 
-    /**
-     * Cuenta total de movimientos con los mismos filtros (para paginacion).
-     */
     public int contarConFiltros(Filtros f) {
         StringBuilder sql = new StringBuilder("""
                 SELECT COUNT(DISTINCT ca.id)
@@ -182,9 +146,6 @@ public class CredencialAccesoDao {
         return jdbc.queryForObject(sql.toString(), Integer.class);
     }
 
-    /**
-     * Resumen por categoria: cuantas entradas/salidas por categoria.
-     */
     public List<Map<String, Object>> resumenPorCategoria(LocalDateTime desde, LocalDateTime hasta) {
         StringBuilder sql = new StringBuilder("""
                 SELECT c.id AS categoria_id, c.nombre AS categoria,
@@ -219,9 +180,6 @@ public class CredencialAccesoDao {
         return jdbc.queryForList(sql.toString());
     }
 
-    /**
-     * Resumen por usuario (quien escaneo): cuantas entradas/salidas registro cada uno.
-     */
     public List<Map<String, Object>> resumenPorUsuario(LocalDateTime desde, LocalDateTime hasta) {
         StringBuilder sql = new StringBuilder("""
                 SELECT u.username, u.id AS usuario_id,
@@ -248,9 +206,6 @@ public class CredencialAccesoDao {
         return jdbc.queryForList(sql.toString());
     }
 
-    /**
-     * Personas que estan DENTRO ahora, con su categoria.
-     */
     public List<Map<String, Object>> quienesEstanDentro() {
         return jdbc.queryForList("""
                 SELECT r.id AS responsable_id, p.nombre, p.paterno, p.materno, p.ci,

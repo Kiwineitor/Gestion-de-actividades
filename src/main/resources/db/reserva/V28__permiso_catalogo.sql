@@ -1,17 +1,3 @@
--- =============================================================================
--- V28 - Pantalla Catalogo en el menu de la SPA.
---
--- El catalogo es solo lectura: categorias y precio base por caseta. Lo necesita
--- quien vende, administra o consulta la feria, por eso se concede a todos los
--- roles operativos. SUPER USUARIO ya ve todo por codigo.
---
--- Es idempotente: si el permiso ya existe, no duplica filas.
--- =============================================================================
-
--- La tabla no existia en ningun script anterior: en produccion se creo a mano y nunca se
--- versiono, asi que una base nueva caia aqui con "no existe la relación «rol_pantalla»".
--- Se crea aqui (antes del primer INSERT que la usa) con IF NOT EXISTS: en produccion no
--- cambia nada, en una base nueva permite seguir.
 CREATE TABLE IF NOT EXISTS rol_pantalla (
     id                       BIGSERIAL PRIMARY KEY,
     id_rol                   BIGINT NOT NULL REFERENCES rol(id) ON DELETE CASCADE,

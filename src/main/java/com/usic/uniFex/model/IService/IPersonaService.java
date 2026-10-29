@@ -2,7 +2,6 @@ package com.usic.uniFex.model.IService;
 
 import java.util.*;
 
-import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Service;
 
 import com.usic.uniFex.model.entity.Persona;

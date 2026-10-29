@@ -1,5 +1,4 @@
 package com.usic.uniFex.model.entity;
-import java.math.BigDecimal;
 
 import com.usic.uniFex.Config.AuditoriaConfig;
 
@@ -14,5 +13,5 @@ public class TipoEntidad extends AuditoriaConfig{
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String nombre; //microEmpresa macroEmpresa
+    private String nombre;
 }

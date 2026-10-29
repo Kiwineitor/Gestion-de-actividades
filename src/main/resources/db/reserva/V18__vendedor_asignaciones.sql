@@ -1,22 +1,3 @@
--- =============================================================================
--- V18 — Asignación de casetas y categorías a vendedores (ADMINISTRATIVO).
---
--- Permite al admin definir qué casetas ve y vende cada vendedor.
--- - Cada vendedor (usuario con rol ADMINISTRATIVO) puede tener asignadas
---   una o varias categorías.
--- - Dentro de esas categorías, se le asignan casetas específicas (por ID).
--- - El mapa muestra TODAS las casetas: las que no le tocan salen en gris y su
---   ficha da el nombre y el telefono del vendedor que si las lleva, para poder
---   derivar al cliente. Lo que la asignacion decide es quien puede VENDER, y eso
---   se comprueba en cada escritura, no ocultando filas (ver PuestoApiController).
---
--- Es idempotente: volver a ejecutarlo no cambia nada.
---
--- Ejecutar:
---   psql -h <host> -U postgres -d <base> -f V18__vendedor_asignaciones.sql
--- =============================================================================
-
--- 1) Tabla intermedia: qué categorías tiene asignado un vendedor
 CREATE TABLE IF NOT EXISTS vendedor_categoria (
     id                    BIGSERIAL PRIMARY KEY,
     id_usuario            BIGINT NOT NULL REFERENCES usuario(id),
@@ -31,8 +12,6 @@ CREATE INDEX IF NOT EXISTS ix_vendedor_categoria_categoria ON vendedor_categoria
 
 COMMENT ON TABLE vendedor_categoria IS 'Categorías asignadas a cada vendedor (ADMINISTRATIVO).';
 
--- 2) Tabla intermedia: qué casetas específicas tiene asignado un vendedor
--- (permite asignar casetas sueltas, no necesariamente toda la categoría)
 CREATE TABLE IF NOT EXISTS vendedor_puesto (
     id                    BIGSERIAL PRIMARY KEY,
     id_usuario            BIGINT NOT NULL REFERENCES usuario(id),
@@ -47,8 +26,6 @@ CREATE INDEX IF NOT EXISTS ix_vendedor_puesto_puesto ON vendedor_puesto(id_puest
 
 COMMENT ON TABLE vendedor_puesto IS 'Casetas asignadas individualmente a cada vendedor.';
 
--- 3) Vista helper: casetas visibles para un vendedor (categorías + individuales)
--- Se usa en el backend para filtrar GET /api/app/puestos
 CREATE OR REPLACE VIEW v_puestos_por_vendedor AS
 SELECT DISTINCT
     p.*,

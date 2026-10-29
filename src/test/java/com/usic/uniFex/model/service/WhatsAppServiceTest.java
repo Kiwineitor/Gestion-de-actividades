@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Test;
 import com.sun.net.httpserver.HttpServer;
 import com.usic.uniFex.model.entity.InstanciaWhatsApp;
 
-/** El proveedor es un servidor local: estas pruebas nunca envian WhatsApp reales. */
 class WhatsAppServiceTest {
     HttpServer proveedor;
     InstanciaWhatsAppService instancias;

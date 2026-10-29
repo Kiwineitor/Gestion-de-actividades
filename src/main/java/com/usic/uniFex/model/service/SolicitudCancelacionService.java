@@ -14,32 +14,15 @@ import com.usic.uniFex.model.dao.IUsuarioDao;
 import com.usic.uniFex.model.dto.SolicitudCancelacionDTO;
 import com.usic.uniFex.model.entity.Inscripcion;
 import com.usic.uniFex.model.entity.SolicitudCancelacion;
-import com.usic.uniFex.model.entity.Usuario;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Flujo de solicitud de cancelacion con aprobacion de administracion (V11):
- *
- *  1. El vendedor que registro la venta solicita cancelarla con un motivo
- *     (obligatorio). La solicitud nace PENDIENTE. Una venta admite UNA solicitud
- *     pendiente a la vez: la segunda se rechaza con "ya hay una en espera".
- *  2. Administracion ve la cola de pendientes y aprueba o rechaza (con respuesta
- *     obligatoria al rechazar). Cada transicion es un UPDATE condicional: si dos
- *     admins resuelven la misma a la vez, gana la BD, no el codigo.
- *  3. Solo con una solicitud APROBADA vigente el vendedor puede cancelar la venta;
- *     eso lo valida CancelarInscripcionService al ejecutar la cancelacion.
- *
- * Cada paso deja huella en auditoria (SOLICITUD_CANCELACION, APROBACION_CANCELACION,
- * RECHAZO_CANCELACION) y notifica por WebSocket al interesado despues del commit.
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class SolicitudCancelacionService {
 
-    /** Motivo que el vendedor escribe al pedir la cancelacion (mismo tope que el de la cancelacion). */
     public static final int MOTIVO_MAX = 500;
 
     private final ISolicitudCancelacionDao solicitudDao;
@@ -48,25 +31,18 @@ public class SolicitudCancelacionService {
     private final AuditoriaService auditoria;
     private final NotificacionService notificaciones;
 
-    /** Resultado de una operacion del flujo: ok + mensaje para la SPA. */
     public record Resultado(boolean ok, String mensaje, Long solicitudId) {
         static Resultado error(String mensaje) {
             return new Resultado(false, mensaje, null);
         }
     }
 
-    /** Cuerpo del POST de solicitud: el motivo es lo unico que llega del cliente. */
     public record PeticionSolicitud(String motivo) {
     }
 
-    /** Cuerpo del POST de rechazo: la respuesta es obligatoria. */
     public record PeticionResolucion(String respuesta) {
     }
 
-    /**
-     * El vendedor pide cancelar su venta. Valida motivo, que la venta exista, que no este
-     * ya cancelada y que no haya otra solicitud pendiente. Audita y avisa a administracion.
-     */
     @Transactional
     public Resultado solicitar(Long inscripcionId, String motivo, Long usuarioId, String origen) {
         if (motivo == null || motivo.isBlank()) {
@@ -107,29 +83,21 @@ public class SolicitudCancelacionService {
                 s.getId());
     }
 
-    /** La cola de pendientes para administracion. */
     @Transactional(readOnly = true)
     public List<SolicitudCancelacionDTO> pendientes() {
         return solicitudDao.pendientes().stream().map(this::aDTO).collect(Collectors.toList());
     }
 
-    /** El historico de resueltas para administracion. */
     @Transactional(readOnly = true)
     public List<SolicitudCancelacionDTO> resueltas() {
         return solicitudDao.resueltas().stream().map(this::aDTO).collect(Collectors.toList());
     }
 
-    /** Las solicitudes que pidio un vendedor ("mis solicitudes": aprobada, rechazada o en espera). */
     @Transactional(readOnly = true)
     public List<SolicitudCancelacionDTO> delVendedor(Long usuarioId) {
         return solicitudDao.delVendedor(usuarioId).stream().map(this::aDTO).collect(Collectors.toList());
     }
 
-    /**
-     * La solicitud vigente de una venta: la pendiente si la hay, si no la aprobada,
-     * si no la ultima (rechazada). O null si nunca se solicito. La usa la SPA para
-     * saber si el boton de cancelar del vendedor esta habilitado o si sigue en espera.
-     */
     @Transactional(readOnly = true)
     public SolicitudCancelacionDTO estadoDeVenta(Long inscripcionId) {
         var pendiente = solicitudDao.pendienteDeInscripcion(inscripcionId);
@@ -139,21 +107,12 @@ public class SolicitudCancelacionService {
         return solicitudDao.ultimaDeInscripcion(inscripcionId).map(this::aDTO).orElse(null);
     }
 
-    /**
-     * Administracion aprueba una solicitud pendiente. El UPDATE condicional decide:
-     * si ya la resolvio otro admin en paralelo, no se aprueba dos veces. Al aprobarse,
-     * el vendedor queda habilitado para cancelar y se le avisa por WebSocket.
-     */
     @Transactional
     public Resultado aprobar(Long solicitudId, Long adminId, String origen) {
         return resolver(solicitudId, SolicitudCancelacion.APROBADA, "Aprobada", adminId, origen,
                 NotificacionService.TIPO_APROBADA, "Tu solicitud de cancelacion fue aprobada");
     }
 
-    /**
-     * Administracion rechaza una solicitud pendiente con una respuesta (obligatoria):
-     * el vendedor necesita saber POR QUE no se aprobo, no solo que no se aprobo.
-     */
     @Transactional
     public Resultado rechazar(Long solicitudId, String respuesta, Long adminId, String origen) {
         if (respuesta == null || respuesta.isBlank()) {
@@ -163,7 +122,6 @@ public class SolicitudCancelacionService {
                 NotificacionService.TIPO_RECHAZADA, "Tu solicitud de cancelacion fue rechazada");
     }
 
-    /** Resolucion comun a aprobar y rechazar: UPDATE condicional + auditoria + aviso al vendedor. */
     private Resultado resolver(Long solicitudId, String nuevoEstado, String respuesta,
                                Long adminId, String origen, String tipoAviso, String mensajeAviso) {
         SolicitudCancelacion s = solicitudDao.findById(solicitudId).orElse(null);
@@ -186,7 +144,6 @@ public class SolicitudCancelacionService {
                         : AuditoriaService.ACCION_RECHAZO_CANCELACION,
                 detalle, adminId, origen);
 
-        // El vendedor que pidio la cancelacion es el dueño de la solicitud (registroIdUsuario).
         Long vendedorId = s.getRegistroIdUsuario();
         notificaciones.trasCommit(() ->
                 notificaciones.notificar(vendedorId, tipoAviso, mensajeAviso, s.getIdInscripcion()));
@@ -213,7 +170,6 @@ public class SolicitudCancelacionService {
                 resueltoPor);
     }
 
-    /** Nombre para mostrar de un usuario: el de su persona, o el username como respaldo. */
     private String nombreDe(Long usuarioId) {
         if (usuarioId == null) return null;
         return Optional.ofNullable(usuarioDao.findById(usuarioId).orElse(null)).map(us -> {

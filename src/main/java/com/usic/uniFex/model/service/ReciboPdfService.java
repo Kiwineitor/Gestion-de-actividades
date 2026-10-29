@@ -43,16 +43,6 @@ import com.usic.uniFex.model.entity.Usuario;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * La nota de venta de una inscripcion, en PDF.
- *
- * <b>Formato duplicado:</b> tamaño carta (612×792 pt) con DOS mitades idénticas
- * (superior e inferior, ~396 pt cada una) separadas por una línea de corte punteada.
- * Cada mitad contiene todos los datos de la venta + QR verificable.
- *
- * Se imprime una hoja y se corta a la mitad: una copia para el cliente,
- * otra para archivo firmada/sellada.
- */
 @Service
 @RequiredArgsConstructor
 public class ReciboPdfService {
@@ -75,35 +65,16 @@ public class ReciboPdfService {
 
     private static final DateTimeFormatter F_HORA = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
-    // Letter: 612 x 792 pt. Mitad ≈ 396 pt. Márgenes 36 pt → área útil ~360 pt por mitad.
-    private static final float ALTO_PAGINA = PageSize.LETTER.getHeight(); // 792
-    private static final float ANCHO_PAGINA = PageSize.LETTER.getWidth();  // 612
+    private static final float ALTO_PAGINA = PageSize.LETTER.getHeight();
+    private static final float ANCHO_PAGINA = PageSize.LETTER.getWidth();
     private static final float MARGEN = 36f;
-    private static final float ANCHO_UTIL = ANCHO_PAGINA - 2 * MARGEN; // 540
-    /**
-     * Hueco reservado para la linea de corte, entre las dos mitades.
-     *
-     * Sin el, el contenido de la copia de arriba llegaba justo hasta la linea y las tijeras
-     * pasaban por encima del pie. Aqui hay sitio para la linea punteada y su rotulo.
-     */
+    private static final float ANCHO_UTIL = ANCHO_PAGINA - 2 * MARGEN;
     private static final float ALTO_CORTE = 18f;
 
-    /** Lo que le toca a cada mitad, ya descontados los margenes y el hueco del corte. */
     private static final float ALTO_MITAD = (ALTO_PAGINA - 2 * MARGEN - ALTO_CORTE) / 2f;
 
-    /**
-     * Colchon que se le exige de sobra a cada mitad.
-     *
-     * {@code getTotalHeight()} mide las cajas de las celdas, pero las letras sobresalen un poco
-     * de su caja y los bordes tienen grosor. Sin este margen, una mitad que "cabia" por medio
-     * punto acababa mordiendo la linea de corte.
-     */
     private static final float COLCHON = 6f;
 
-    /**
-     * Genera la nota de venta en formato DUPLICADO (dos mitades en una hoja carta).
-     * Cada mitad es una nota completa con sus datos y QR verificable.
-     */
     @Transactional(readOnly = true)
     public void generarRecibo(Long idInscripcion, OutputStream os) throws Exception {
         Inscripcion ins = inscripcionService.findById(idInscripcion);
@@ -141,15 +112,6 @@ public class ReciboPdfService {
 
         Datos datos = new Datos(ins, entidad, anulada, detalle, total, responsables, codigo, emitida);
 
-        // Se busca la escala mas grande con la que la mitad ENTERA cabe en su hueco.
-        //
-        // Antes se escribia de arriba abajo sin medir nada, y cuando la venta tenia varios
-        // responsables o varias casetas el contenido se pasaba de largo: invadia la otra mitad y
-        // el final —el total, el QR— se salia de la hoja. Con una hoja partida en dos para
-        // recortar, no hay "pagina siguiente" a la que se pueda ir lo que sobra.
-        //
-        // Medir y encoger es lo unico que garantiza que quepa con CUALQUIER venta. Si ni al
-        // minimo entra, las casetas pasan a listarse en una linea corrida en vez de una por fila.
         PdfPTable cuerpo = null;
         for (float esc : ESCALAS) {
             PdfPTable intento = construirMitad(datos, esc, false);
@@ -163,10 +125,7 @@ public class ReciboPdfService {
         }
         if (cuerpo == null) cuerpo = construirMitad(datos, ESCALAS[ESCALAS.length - 1], true);
 
-        // Las dos mitades son identicas: se construye una vez y se escribe dos veces.
         for (int mitad = 0; mitad < 2; mitad++) {
-            // La copia de abajo arranca en su tope y crece hacia el margen inferior; la de
-            // arriba, desde el borde superior. En medio queda el hueco del corte.
             float topeSuperior = mitad == 0 ? MARGEN + ALTO_MITAD : ALTO_PAGINA - MARGEN;
             cuerpo.writeSelectedRows(0, -1, MARGEN, topeSuperior, cb);
         }
@@ -175,18 +134,11 @@ public class ReciboPdfService {
         doc.close();
     }
 
-    /** Todo lo que necesita una mitad, junto, para no arrastrar doce parametros. */
     private record Datos(Inscripcion ins, Entidad entidad, boolean anulada,
                          List<InscripcionPuesto> detalle, BigDecimal total,
                          List<Responsable> responsables, String codigo, LocalDateTime emitida) {
     }
 
-    /**
-     * Una mitad completa como UNA tabla, para poder medirla antes de escribirla.
-     *
-     * @param esc      factor de escala de fuentes y separaciones (1 = tamaño base)
-     * @param compacto las casetas en una linea corrida en vez de una fila cada una
-     */
     private PdfPTable construirMitad(Datos d, float esc, boolean compacto) throws DocumentException {
         Font fMarca    = fuente(10.5f, esc, Font.BOLD, TINTA);
         Font fEdicion  = fuente(8f,    esc, Font.BOLD, TINTA_SUAVE);
@@ -203,7 +155,6 @@ public class ReciboPdfService {
         hoja.setTotalWidth(ANCHO_UTIL);
         hoja.setLockedWidth(true);
 
-        // ---- Cabecera: quien emite a la izquierda, identificacion a la derecha ----
         PdfPTable cab = tabla(new float[] { 62, 38 });
         Paragraph izq = new Paragraph();
         izq.add(new Phrase("UNIVERSIDAD AMAZÓNICA DE PANDO\n", fMarca));
@@ -229,7 +180,6 @@ public class ReciboPdfService {
             hoja.addCell(envolver(av, pad, hueco));
         }
 
-        // ---- Entidad: rejilla de dos pares etiqueta/valor por fila, la mitad de alto ----
         hoja.addCell(rotulo("ENTIDAD", fSeccion, pad));
         PdfPTable ent = tabla(new float[] { 15, 35, 15, 35 });
         Entidad e = d.entidad();
@@ -244,7 +194,6 @@ public class ReciboPdfService {
                 fEtiqueta, fNorm, pad);
         hoja.addCell(envolver(ent, 0, hueco));
 
-        // ---- Responsables: nombre completo en una sola columna ----
         if (!d.responsables().isEmpty()) {
             hoja.addCell(rotulo("RESPONSABLES", fSeccion, pad));
             PdfPTable resp = tabla(new float[] { 52, 20, 28 });
@@ -260,10 +209,8 @@ public class ReciboPdfService {
             hoja.addCell(envolver(resp, 0, hueco));
         }
 
-        // ---- Casetas ----
         hoja.addCell(rotulo("CASETAS", fSeccion, pad));
         if (compacto) {
-            // Una linea corrida: cabe una venta de muchas casetas sin comerse la mitad entera.
             String lista = d.detalle().stream()
                     .map(ip -> nvl(ip.getPuesto().getCodigo())
                             + (ip.getPuesto().getCategoria() != null ? " " + ip.getPuesto().getCategoria().getNombre() : "")
@@ -285,8 +232,6 @@ public class ReciboPdfService {
             hoja.addCell(envolver(comp, 0, hueco));
         } else {
             PdfPTable det = tabla(new float[] { 16, 16, 44, 24 });
-            // El rotulo del importe va a la derecha, sobre sus cifras: alineado a la izquierda
-            // quedaba a media tabla y parecia pertenecer a la columna de al lado.
             encabezado(det, fSeccion, pad, Element.ALIGN_RIGHT, "Código", "Tamaño", "Categoría", "Costo (Bs)");
             for (InscripcionPuesto ip : d.detalle()) {
                 celda(det, ip.getPuesto().getCodigo(), fNorm, pad);
@@ -306,7 +251,6 @@ public class ReciboPdfService {
             hoja.addCell(envolver(det, 0, hueco));
         }
 
-        // ---- Pago y vendedor, en una sola fila de cuatro columnas ----
         hoja.addCell(rotulo("PAGO", fSeccion, pad));
         PdfPTable pago = tabla(new float[] { 15, 35, 15, 35 });
         par(pago, "Forma", d.ins().isPagoContado() ? "Contado" : "Depósito / transferencia", fEtiqueta, fNorm, pad);
@@ -318,7 +262,6 @@ public class ReciboPdfService {
         }
         hoja.addCell(envolver(pago, 0, hueco));
 
-        // ---- Pie: verificacion + QR, y el espacio de firma ----
         hoja.addCell(separador(hueco * 0.5f));
         PdfPTable pie = tabla(new float[] { 58, 20, 22 });
 
@@ -355,7 +298,6 @@ public class ReciboPdfService {
         return hoja;
     }
 
-    /** Escalas que se prueban, de la mas legible a la mas apretada. */
     private static final float[] ESCALAS = { 1f, 0.94f, 0.88f, 0.82f, 0.76f, 0.7f, 0.64f };
 
     private static Font fuente(float base, float esc, int estilo, BaseColor color) {
@@ -368,7 +310,6 @@ public class ReciboPdfService {
         return t;
     }
 
-    /** Mete un elemento en una celda sin bordes de la tabla exterior, con su separacion abajo. */
     private static PdfPCell envolver(Element contenido, float pad, float huecoAbajo) {
         PdfPCell c = new PdfPCell();
         c.setBorder(Rectangle.NO_BORDER);
@@ -394,7 +335,6 @@ public class ReciboPdfService {
         return c;
     }
 
-    /** Una pareja etiqueta/valor dentro de una rejilla de cuatro columnas. */
     private static void par(PdfPTable t, String etiqueta, String valor, Font fEt, Font fVal, float pad) {
         PdfPCell e = new PdfPCell(new Phrase(etiqueta, fEt));
         e.setBorder(Rectangle.BOTTOM);
@@ -408,17 +348,15 @@ public class ReciboPdfService {
         t.addCell(v);
     }
 
-    /** Línea de corte punteada centrada entre las dos mitades. */
     private void dibujarLineaCorte(PdfContentByte cb) {
-        float yCorte = MARGEN + ALTO_MITAD + ALTO_CORTE / 2f; // centrado en el hueco
+        float yCorte = MARGEN + ALTO_MITAD + ALTO_CORTE / 2f;
         cb.saveState();
         cb.setLineWidth(0.8f);
-        cb.setLineDash(4f, 4f); // 4pt trazo, 4pt espacio
+        cb.setLineDash(4f, 4f);
         cb.setColorStroke(GRIS_CORTE);
         cb.moveTo(MARGEN + 20, yCorte);
         cb.lineTo(ANCHO_PAGINA - MARGEN - 20, yCorte);
         cb.stroke();
-        // Texto "CORTAR AQUÍ" - usar font base directamente
         try {
             com.itextpdf.text.pdf.BaseFont bf = com.itextpdf.text.pdf.BaseFont.createFont(
                     com.itextpdf.text.pdf.BaseFont.HELVETICA,
@@ -433,12 +371,6 @@ public class ReciboPdfService {
         cb.restoreState();
     }
 
-    // ===== Helpers de celdas =====
-
-    /**
-     * Fila de encabezado. {@code alineaUltima} alinea la ULTIMA columna (o -1 para dejarla como
-     * las demas): el rotulo del importe tiene que caer sobre sus cifras, no a media tabla.
-     */
     private static void encabezado(PdfPTable t, Font f, float pad, int alineaUltima, String... cols) {
         for (int i = 0; i < cols.length; i++) {
             PdfPCell h = new PdfPCell(new Phrase(cols[i], f));
@@ -475,8 +407,6 @@ public class ReciboPdfService {
         return c;
     }
 
-    // ===== Helpers de datos =====
-
     private static boolean vacio(String s) { return s == null || s.trim().isEmpty(); }
     private static String nvl(Object o) { return o == null ? "" : String.valueOf(o); }
 
@@ -496,7 +426,6 @@ public class ReciboPdfService {
         return d == null ? "" : new SimpleDateFormat("dd/MM/yyyy").format(d);
     }
 
-    /** Quien vendió. Degrada con cuidado: nombre completo → código funcionario → username. */
     private String quienEmite(Inscripcion ins) {
         Usuario usuario = ins.getRegistroIdUsuario() != null
                 ? usuarioService.findById(ins.getRegistroIdUsuario())
@@ -513,12 +442,6 @@ public class ReciboPdfService {
         return usuario != null && usuario.getUsername() != null ? usuario.getUsername() : "—";
     }
 
-    /**
-     * Genera el recibo de un responsable extra (credencial adicional) en formato duplicado.
-     *
-     * Cada mitad es un recibo completo con QR verificable. Se imprime una hoja y se corta
-     * a la mitad: una copia para el cliente, otra para archivo.
-     */
     @Transactional(readOnly = true)
     public void generarReciboResponsableExtra(Long responsableId, OutputStream os) throws Exception {
         var rOpt = responsableDao.findById(responsableId);
@@ -566,14 +489,10 @@ public class ReciboPdfService {
         doc.close();
     }
 
-    /** Todo lo que necesita una mitad del recibo extra. */
     private record DatosExtra(Responsable responsable, Entidad entidad, Persona persona,
                               BigDecimal monto, String comprobanteUrl, String codigo, LocalDateTime emitida) {
     }
 
-    /**
-     * Una mitad completa del recibo extra como UNA tabla, para poder medirla antes de escribirla.
-     */
     private PdfPTable construirMitadExtra(DatosExtra d, float esc, boolean compacto) throws DocumentException {
         Font fMarca    = fuente(10.5f, esc, Font.BOLD, TINTA);
         Font fEdicion  = fuente(8f,    esc, Font.BOLD, TINTA_SUAVE);
@@ -590,7 +509,6 @@ public class ReciboPdfService {
         hoja.setTotalWidth(ANCHO_UTIL);
         hoja.setLockedWidth(true);
 
-        // ---- Cabecera: quien emite a la izquierda, identificacion a la derecha ----
         PdfPTable cab = tabla(new float[] { 62, 38 });
         Paragraph izq = new Paragraph();
         izq.add(new Phrase("UNIVERSIDAD AMAZÓNICA DE PANDO\n", fMarca));
@@ -610,7 +528,6 @@ public class ReciboPdfService {
 
         hoja.addCell(separador(hueco));
 
-        // ---- Entidad ----
         hoja.addCell(rotulo("ENTIDAD", fSeccion, pad));
         PdfPTable ent = tabla(new float[] { 15, 35, 15, 35 });
         Entidad e = d.entidad();
@@ -622,7 +539,6 @@ public class ReciboPdfService {
                 fEtiqueta, fNorm, pad);
         hoja.addCell(envolver(ent, 0, hueco));
 
-        // ---- Responsable ----
         hoja.addCell(rotulo("RESPONSABLE", fSeccion, pad));
         PdfPTable resp = tabla(new float[] { 15, 35, 15, 35 });
         Persona p = d.persona();
@@ -633,7 +549,6 @@ public class ReciboPdfService {
         par(resp, "Correo", p != null ? p.getCorreo() : null, fEtiqueta, fNorm, pad);
         hoja.addCell(envolver(resp, 0, hueco));
 
-        // ---- Cobro ----
         hoja.addCell(rotulo("COBRO", fSeccion, pad));
         PdfPTable cobro = tabla(new float[] { 15, 35, 15, 35 });
         par(cobro, "Concepto", "Credencial adicional (responsable extra)", fEtiqueta, fNorm, pad);
@@ -641,7 +556,6 @@ public class ReciboPdfService {
         par(cobro, "Comprobante", d.comprobanteUrl() != null ? "Adjunto" : "No adjunto", fEtiqueta, fNorm, pad);
         hoja.addCell(envolver(cobro, 0, hueco));
 
-        // ---- Vendedor ----
         hoja.addCell(rotulo("VENDEDOR", fSeccion, pad));
         PdfPTable vend = tabla(new float[] { 15, 35, 15, 35 });
         Usuario u = d.responsable().getRegistroIdUsuario() != null
@@ -652,7 +566,6 @@ public class ReciboPdfService {
         par(vend, "Fecha", d.emitida().format(F_HORA), fEtiqueta, fNorm, pad);
         hoja.addCell(envolver(vend, 0, hueco));
 
-        // ---- Pie: verificacion + QR, y el espacio de firma ----
         hoja.addCell(separador(hueco * 0.5f));
         PdfPTable pie = tabla(new float[] { 58, 20, 22 });
 

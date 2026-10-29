@@ -66,7 +66,6 @@ public class InstanciaWhatsAppService {
         return listar();
     }
 
-    /** Puente de migracion: nunca sobrescribe una configuracion administrada desde la SPA. */
     @Transactional
     public void importarInicial(String urlApi, String instancia, String claveApi) {
         bloquearEscrituras();
@@ -74,7 +73,6 @@ public class InstanciaWhatsAppService {
     }
 
     private void bloquearEscrituras() {
-        // Tambien serializa dos altas cuando la tabla aun esta vacia. No bloquea los envios.
         jdbc.execute("LOCK TABLE instancia_whatsapp IN SHARE ROW EXCLUSIVE MODE");
     }
 

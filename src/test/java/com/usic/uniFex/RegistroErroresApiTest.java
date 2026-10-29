@@ -27,9 +27,16 @@ class RegistroErroresApiTest {
     @MockitoBean MantenimientoService mantenimiento;
 
     @BeforeEach void preparar() {
-        when(jwt.validar("administrador")).thenReturn(new JwtUser(1L, "admin", "ADMINISTRADOR"));
+        when(jwt.validar("administrador")).thenReturn(new JwtUser(1L, "admin", "SUPER USUARIO"));
         when(jwt.validar("vendedor")).thenReturn(new JwtUser(2L, "vendedor", "ADMINISTRATIVO"));
+        when(jwt.validar("gerente")).thenReturn(new JwtUser(3L, "gerente", "ADMINISTRADOR"));
         when(mantenimiento.estado()).thenReturn(mock(com.usic.uniFex.model.dto.MantenimientoDTO.class));
+    }
+
+    @Test void elAdministradorNoVeElRegistroDeErrores() throws Exception {
+        for (String ruta : new String[]{"/api/app/errores", "/api/app/errores/archivos"}) {
+            mvc.perform(get(ruta).header("Authorization", "Bearer gerente")).andExpect(status().isForbidden());
+        }
     }
 
     @Test void exigeAutenticacionYRolEnLosDosEndpointsDeLectura() throws Exception {

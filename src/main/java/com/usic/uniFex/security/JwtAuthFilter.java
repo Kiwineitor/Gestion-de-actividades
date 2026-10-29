@@ -14,11 +14,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 
-/**
- * Lee el header {@code Authorization: Bearer <token>}, valida el JWT y coloca el
- * usuario en el SecurityContext. No es un @Component (se instancia en SecurityConfig
- * y se registra solo en la cadena del API) para no aplicarse a las rutas del web.
- */
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
 
@@ -37,7 +32,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 org.slf4j.MDC.put("usuario", user.username());
                 org.slf4j.MDC.put("usuarioId", String.valueOf(user.id()));
             } catch (Exception e) {
-                // Token invalido o expirado: se continua sin autenticacion (endpoint protegido -> 401/403).
                 SecurityContextHolder.clearContext();
             }
         }

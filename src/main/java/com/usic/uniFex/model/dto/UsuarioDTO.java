@@ -3,10 +3,6 @@ package com.usic.uniFex.model.dto;
 import com.usic.uniFex.model.entity.Persona;
 import com.usic.uniFex.model.entity.Usuario;
 
-/**
- * Vista de un usuario para la API de administracion. Nunca lleva la contraseña:
- * el hash no sale del backend por ningun endpoint.
- */
 public record UsuarioDTO(
         Long id,
         String username,

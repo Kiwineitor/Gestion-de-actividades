@@ -8,9 +8,9 @@ const responsables = ref([]);
 const cargando = ref(true);
 const filtroEntidad = ref('');
 const filtroCategoria = ref('');
-const filtroTitular = ref(''); // '' | 'titular' | 'extra'
-const filtroFoto = ref(''); // '' | 'si' | 'no'
-const filtroCredencial = ref(''); // '' | 'si' | 'no'
+const filtroTitular = ref('');
+const filtroFoto = ref('');
+const filtroCredencial = ref('');
 
 const entidades = computed(() => {
   const set = new Set();

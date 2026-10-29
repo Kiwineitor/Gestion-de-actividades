@@ -20,11 +20,6 @@ import com.usic.uniFex.model.entity.VentaBoleto;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.transaction.Transactional;
 
-/**
- * PENDIENTE: boleteria por pasarela de pago, sin conectar a la SPA ni probada contra la
- * pasarela real todavia (ver DEPLOY.md). Se deja lista para
- * retomarla, no en el flujo activo de venta.
- */
 @RestController
 @RequestMapping("/api/pagos")
 public class PagoController {
@@ -49,8 +44,6 @@ public class PagoController {
         Map<String, Object> result = pasarela.crearTransaccion(request);
         Object codigoTransaccion = result.get("codigoTransaccion");
         Object urlRedireccion = result.get("urlRedireccion");
-        // Map.of() no acepta valores null: si la pasarela responde 200 sin alguna de estas
-        // dos claves, lanzaba NullPointerException en vez de un error claro. Se valida antes.
         if (codigoTransaccion == null || urlRedireccion == null) {
             throw new IllegalStateException("La pasarela respondio sin codigoTransaccion/urlRedireccion");
         }
@@ -61,19 +54,12 @@ public class PagoController {
         return ResponseEntity.ok(body);
     }
 
-    /**
-     * Webhook de la pasarela. La pasarela te enviará:
-     *  - estado: APROBADO / RECHAZADO / PENDIENTE
-     *  - codigoTransaccion
-     *  - metadata: lo que enviaste (categoriaId, cantidad, ci, nombre, paterno, materno, celular)
-     */
-
     @PostMapping("/notificacion")
     @Transactional
     public ResponseEntity<?> notificacion(@RequestBody Map<String, Object> payload, HttpServletRequest request) {
         String estado = String.valueOf(payload.get("estado"));
         if (!"APROBADO".equalsIgnoreCase(estado)) {
-            return ResponseEntity.ok(Map.of("ok", true)); // ignoras los no aprobados
+            return ResponseEntity.ok(Map.of("ok", true));
         }
 
         Map<String, Object> metadata = (Map<String, Object>) payload.get("metadata");
@@ -81,7 +67,6 @@ public class PagoController {
             return ResponseEntity.badRequest().body(Map.of("ok", false, "msg", "Sin metadata"));
         }
 
-        // 1) Asegurar Persona
         String ci       = String.valueOf(metadata.get("ci"));
         String nombre   = String.valueOf(metadata.get("nombre"));
         String paterno  = String.valueOf(metadata.get("paterno"));
@@ -96,7 +81,6 @@ public class PagoController {
         try { persona.setEstado("CLIENTE"); } catch (Exception ignored) {}
         persona = personaService.save(persona);
 
-        // 2) Categoría + precio real
         Long categoriaId = Long.valueOf(String.valueOf(metadata.get("categoriaId")));
         CategoriaVenta cat = categoriaVentaService.findById(categoriaId);
 
@@ -107,7 +91,6 @@ public class PagoController {
         qty = Math.max(1, Math.min(qty, 50));
         java.math.BigDecimal total = unit.multiply(java.math.BigDecimal.valueOf(qty));
 
-        // 3) Guardar venta
         VentaBoleto v = new VentaBoleto();
         v.setPersona(persona);
         v.setCategoria(cat);
@@ -116,8 +99,6 @@ public class PagoController {
         v.setTotal(total);
         v.setFechaHora(java.time.LocalDateTime.now());
         v.setEstado("ACTIVO");
-        // Si necesitas el usuario, puedes setear un "usuario sistema" para notificaciones, o guardar el código de transacción:
-        // v.setCodigoTransaccion(String.valueOf(payload.get("codigoTransaccion")));
         ventaBoletoService.save(v);
 
         return ResponseEntity.ok(Map.of("ok", true, "ventaId", v.getId()));

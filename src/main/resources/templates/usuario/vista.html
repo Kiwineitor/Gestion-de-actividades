@@ -1,7 +1,4 @@
 <h4 class="py-3 mb-4"><span class="text-muted fw-light">Menú /</span> Usuario</h4>
-<!-- <form action="/administracion/usuario/generar-usuarios" method="post">
-    <button type="submit">Generar Usuarios y Descargar CSV</button>
-</form> -->
 
 <div id="tablaRegistro"></div>
 
@@ -42,7 +39,6 @@
   </div>
 </div>
 
-
 <script>
     $(document).ready(function () {
         cargarTabla();
@@ -52,9 +48,9 @@
     function cargarTabla() {
         $.ajax({
             type: 'POST',
-            url: "/administracion/usuario/tabla-registros",  // Ruta del metodo del controlador en Spring Boot
+            url: "/administracion/usuario/tabla-registros",
             success: function (response) {
-                $("#tablaRegistro").html(response);  // Actualiza el contenido del div con la respuesta del servidor
+                $("#tablaRegistro").html(response);
             }
         });
     }
@@ -69,7 +65,6 @@
     function eliminar(nombre, id) {
         eliminarRegistroAlert(nombre, id, "/administracion/usuario/eliminar",cargarTabla);
     }
-
 
     function abrirModalPassword(idEnc, username) {
   document.getElementById('cp-idEnc').value = idEnc;
@@ -95,7 +90,6 @@ document.getElementById('formCambiarPassword').addEventListener('submit', functi
   .then(r => r.text())
   .then(msg => {
     alert(msg);
-    // cerrar modal
     const modal = bootstrap.Modal.getInstance(document.getElementById('modalCambiarPassword'));
     modal.hide();
   })

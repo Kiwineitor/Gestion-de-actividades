@@ -31,7 +31,6 @@ import com.usic.uniFex.model.dao.IInstanciaWhatsAppDao;
 import com.usic.uniFex.model.entity.InstanciaWhatsApp;
 import com.usic.uniFex.model.service.InstanciaWhatsAppService;
 
-/** PostgreSQL real, en un esquema aislado: no modifica las instancias de desarrollo. */
 @SpringBootTest(classes = InstanciaWhatsAppTest.Configuracion.class, webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @ActiveProfiles({"dev", "pruebas-whatsapp"})
 class InstanciaWhatsAppTest {
@@ -62,7 +61,6 @@ class InstanciaWhatsAppTest {
             sentencia.execute("CREATE SCHEMA " + ESQUEMA);
             conexion.setSchema(ESQUEMA);
             sentencia.execute(Files.readString(Path.of("src/main/resources/db/reserva/V31__instancias_whatsapp.sql")));
-            // La migracion se puede volver a aplicar sin perder registros ni fallar.
             sentencia.execute(Files.readString(Path.of("src/main/resources/db/reserva/V31__instancias_whatsapp.sql")));
         }
         registro.add("spring.datasource.hikari.schema", () -> ESQUEMA);

@@ -21,7 +21,6 @@ import org.springframework.test.context.ActiveProfiles;
 
 import com.usic.uniFex.model.service.VisitasPaginaService;
 
-/** Comprueba el contador de la página pública sin depender de los módulos retirados. */
 @SpringBootTest
 @ActiveProfiles("dev")
 class VisitasPaginaTest {

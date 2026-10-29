@@ -1,33 +1,13 @@
-/**
- * Pruebas del estado compartido de casetas (`stores/puestos.js`).
- *
- * Cubren justo lo que se rompio antes y no se ve a simple vista: que las tres vistas del
- * plano compartan UNA descarga y UNA conexion en tiempo real, y que un mensaje del servidor
- * no le borre al Editor la geometria que el usuario todavia no ha guardado.
- *
- * Ejecutar:  npm --prefix frontend test
- */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mock } from 'node:test';
 
-// --- dobles de prueba, instalados ANTES de importar el store -----------------
 let peticiones = 0;
 let respuesta = [];
 let fallaRed = false;
-/*
- * El doble tiene que parecerse a una Response de verdad, no solo traer `json()`: el store hace
- * peticiones CONDICIONADAS (If-None-Match) y mira `status` y `headers.get('ETag')` para no
- * descargar lo que no cambio. Cuando el doble devolvia solo `json`, las pruebas reventaban con
- * "Cannot read properties of undefined (reading 'get')" — y el fallo era del doble, no del
- * store. Si algun dia se prueba el camino del 304, basta con devolver `status: 304` aqui.
- */
 mock.module('../src/api.js', {
   namedExports: {
     apiFetch: async (ruta) => {
-      // Se cuentan las DESCARGAS DE LA LISTA, no las llamadas. Una carga trae ademas las
-      // asignaciones (quien vende cada caseta) en la misma tanda: contar todo daba 2 donde la
-      // invariante dice 1, y la invariante seguia siendo cierta.
       if (String(ruta).endsWith('/api/app/puestos')) peticiones++;
       if (fallaRed) throw new Error('sin red');
       return {
@@ -42,8 +22,8 @@ mock.module('../src/api.js', {
 
 let conexiones = 0;
 let desconexiones = 0;
-let empujar = null;          // simula un mensaje del servidor
-let rechazar = null;         // simula un token rechazado
+let empujar = null;
+let rechazar = null;
 mock.module('../src/ws.js', {
   namedExports: {
     crearClientePuestos: (onEstado, onRechazo, onConectado) => {
@@ -70,12 +50,9 @@ const caseta = (id, extra = {}) => ({
   mapaX: 0.5, mapaY: 0.5, mapaEscala: 1, activo: true, ...extra,
 });
 
-// ----------------------------------------------------------------------------
-
 test('las cargas concurrentes comparten una sola peticion', async () => {
   const t = nuevaTienda();
   respuesta = [caseta(1), caseta(2)];
-  // Mapa, Tablero y Editor montandose a la vez.
   await Promise.all([t.cargar(), t.cargar(), t.cargar()]);
   assert.equal(peticiones, 1, 'deberia bajarse la lista una sola vez');
   assert.equal(t.puestos.length, 2);
@@ -114,14 +91,6 @@ test('un broadcast actualiza, agrega y da de baja casetas', async () => {
   assert.equal(t.puestos.length, 1, 'una caseta anulada desaparece');
 });
 
-/*
- * Lo que llega del servidor se aplica AGRUPADO, un repintado por fotograma.
- *
- * Meter un lote al carrito son N mensajes, cada uno en su turno del bucle de eventos, y sin
- * agrupar cada uno dispara su pasada de render sobre las ~400 casetas del plano. Medido con la
- * CPU frenada 6x, un lote de 20 tardaba 309 ms en terminar de marcarse en la pantalla del otro
- * vendedor, aunque el aviso hubiera llegado a los 16 ms.
- */
 test('una ráfaga del servidor cuesta DOS pasadas, no una por mensaje', async () => {
   const pendientes = [];
   const rafOriginal = globalThis.requestAnimationFrame;
@@ -146,20 +115,15 @@ test('una ráfaga del servidor cuesta DOS pasadas, no una por mensaje', async ()
     assert.equal(t.puestos.filter((p) => p.estado === 'T').length, 3,
       'al cerrarse la ventana entran los dos restantes de una vez');
 
-    // Gana el ultimo mensaje de cada caseta: cada uno trae el estado completo.
-    empujar(caseta(1, { estado: 'O' }));   // este abre ventana y se aplica ya
-    empujar(caseta(1, { estado: 'L' }));   // este se encola
-    empujar(caseta(1, { estado: 'X' }));   // y pisa al anterior en la cola
+    empujar(caseta(1, { estado: 'O' }));
+    empujar(caseta(1, { estado: 'L' }));
+    empujar(caseta(1, { estado: 'X' }));
     pendientes.pop()();
     assert.equal(t.puestos.find((p) => p.id === 1).estado, 'X',
       'de varios mensajes de la misma caseta gana el mas nuevo');
 
-    /*
-     * Un cambio local no puede quedar debajo de un mensaje encolado. Sin vaciar la cola antes,
-     * el pin se pintaria de vuelta a libre durante un fotograma justo tras reservarlo.
-     */
-    empujar(caseta(3, { estado: 'O' }));   // abre ventana
-    empujar(caseta(2, { estado: 'L' }));   // se queda encolado
+    empujar(caseta(3, { estado: 'O' }));
+    empujar(caseta(2, { estado: 'L' }));
     t.aplicar(caseta(2, { estado: 'T' }));
     assert.equal(t.puestos.find((p) => p.id === 2).estado, 'T',
       'el cambio local queda ENCIMA de lo que habia encolado');
@@ -176,20 +140,17 @@ test('un broadcast NO pisa la geometria que el Editor no ha guardado', async () 
   respuesta = [caseta(1, { mapaX: 0.1, mapaY: 0.1 })];
   await t.asegurar();
 
-  // El usuario arrastra la caseta 1 y aun no ha pulsado Guardar.
   const sucias = new Set([1]);
   const quitar = t.protegerLocales((id) => sucias.has(id));
   t.puestos[0].mapaX = 0.9;
   t.puestos[0].mapaY = 0.8;
 
-  // Llega del servidor la posicion vieja junto con una venta real.
   empujar(caseta(1, { mapaX: 0.1, mapaY: 0.1, estado: 'O' }));
 
   assert.equal(t.puestos[0].mapaX, 0.9, 'conserva el arrastre sin guardar');
   assert.equal(t.puestos[0].mapaY, 0.8, 'conserva el arrastre sin guardar');
   assert.equal(t.puestos[0].estado, 'O', 'pero si acepta el estado de venta del servidor');
 
-  // Tras guardar, el guardia se retira y el servidor vuelve a mandar.
   quitar();
   empujar(caseta(1, { mapaX: 0.1, mapaY: 0.1, estado: 'O' }));
   assert.equal(t.puestos[0].mapaX, 0.1, 'sin cambios pendientes, manda el servidor');
@@ -198,10 +159,10 @@ test('un broadcast NO pisa la geometria que el Editor no ha guardado', async () 
 test('el carrito son las casetas en tramite del propio vendedor', async () => {
   const t = nuevaTienda();
   respuesta = [
-    caseta(1, { estado: 'T', reservadoPor: 7 }),   // mia
-    caseta(2, { estado: 'T', reservadoPor: 9 }),   // de otro vendedor
-    caseta(3, { estado: 'L' }),                    // libre
-    caseta(4, { estado: 'O', reservadoPor: 7 }),   // ya vendida, no es carrito
+    caseta(1, { estado: 'T', reservadoPor: 7 }),
+    caseta(2, { estado: 'T', reservadoPor: 9 }),
+    caseta(3, { estado: 'L' }),
+    caseta(4, { estado: 'O', reservadoPor: 7 }),
   ];
   await t.cargar();
 
@@ -216,11 +177,9 @@ test('el carrito se rehace solo al llegar un broadcast (sobrevive a recargar)', 
   await t.asegurar();
   assert.equal(t.carritoDe(7).length, 0);
 
-  // Otro dispositivo del mismo vendedor reserva la caseta: llega por WebSocket.
   empujar(caseta(1, { estado: 'T', reservadoPor: 7 }));
   assert.deepEqual(t.carritoDe(7).map((p) => p.id), [1], 'entra al carrito sin pedir nada');
 
-  // Y si la pierde (vence o la libera), sale solo.
   empujar(caseta(1, { estado: 'L', reservadoPor: null }));
   assert.equal(t.carritoDe(7).length, 0);
 });
@@ -258,14 +217,11 @@ test('un token rechazado avisa a la vista y marca que ya no hay tiempo real', as
 test('un fallo de red no deja la carga bloqueada para siempre', async () => {
   const t = nuevaTienda();
 
-  // Primera carga: se cae la red.
   fallaRed = true;
   await assert.rejects(() => t.cargar(), /sin red/);
   assert.equal(t.error, 'sin red');
   assert.equal(t.cargando, false, 'no se queda con el indicador de carga encendido');
 
-  // Vuelve la red: un reintento debe volver a pedir de verdad, no devolver la promesa
-  // fallida en cache (que era el riesgo de deduplicar las cargas concurrentes).
   fallaRed = false;
   respuesta = [caseta(1)];
   await t.cargar();

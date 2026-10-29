@@ -17,7 +17,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-/** Lee un tramo acotado del archivo elegido; nunca carga todo el historial en memoria. */
 @Service
 public class RegistroErroresService {
     private static final int MAX_BYTES = 2 * 1024 * 1024;
@@ -68,7 +67,6 @@ public class RegistroErroresService {
         }
     }
 
-    /** Trunca el archivo sin eliminarlo: el appender puede seguir escribiendo en el mismo descriptor. */
     public void vaciar(String archivo) throws IOException {
         synchronized (bloqueoArchivo()) {
             try (var canal = Files.newByteChannel(archivoSeguro(archivo), StandardOpenOption.WRITE,
@@ -88,7 +86,7 @@ public class RegistroErroresService {
             long inicio = Math.max(0, fin - MAX_BYTES);
             canal.position(inicio);
             ByteBuffer buffer = ByteBuffer.allocate((int) (fin - inicio));
-            while (buffer.hasRemaining() && canal.read(buffer) > 0) { /* lectura acotada */ }
+            while (buffer.hasRemaining() && canal.read(buffer) > 0) { }
             byte[] bytes = buffer.array();
             int desde = 0;
             if (inicio > 0) {
@@ -109,7 +107,7 @@ public class RegistroErroresService {
                     Map<String, Object> registro = json.readValue(lineas[i], new com.fasterxml.jackson.core.type.TypeReference<>() {});
                     if (normalizar(String.valueOf(registro.get("usuario"))).contains(filtroUsuario)
                             && normalizar(lineas[i]).contains(filtro)) encontrados.add(registro);
-                } catch (com.fasterxml.jackson.core.JsonProcessingException ignorada) { /* linea incompleta o antigua */ }
+                } catch (com.fasterxml.jackson.core.JsonProcessingException ignorada) { }
                 if (encontrados.size() == 100) return new Resultado(encontrados, cursor, archivo);
             }
             return new Resultado(encontrados, inicio == 0 ? 0 : inicio + desde, archivo);

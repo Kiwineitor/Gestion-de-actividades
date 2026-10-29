@@ -2,7 +2,6 @@ package com.usic.uniFex.model.dto;
 
 import com.usic.uniFex.model.entity.PersonalApoyo;
 
-/** Vista de personal de apoyo para la API. */
 public record PersonalApoyoDTO(
         Long id,
         Long idDependencia,
@@ -39,7 +38,6 @@ public record PersonalApoyoDTO(
                 p.getEstado());
     }
 
-    /** La ruta de disco a URL servida en /files/**. */
     public static String fotoUrl(String ruta) {
         if (ruta == null || ruta.isBlank()) return null;
         String r = ruta.trim();

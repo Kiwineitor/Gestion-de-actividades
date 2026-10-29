@@ -11,7 +11,7 @@ import { usePermisosStore } from '../stores/permisos';
 const route = useRoute();
 const propio = usePermisosStore();
 
-const vista = ref(route.path.startsWith('/permisos') ? 'usuarios' : 'roles');
+const vista = ref(route.query.m === 'permisos' ? 'usuarios' : 'roles');
 const cargando = ref(true);
 const roles = ref([]);
 const catalogo = ref([]);
@@ -27,7 +27,7 @@ const guardando = ref(false);
 const abiertos = ref(new Set());
 const nuevo = reactive({ abierto: false, nombre: '', descripcion: '', guardando: false });
 
-watch(() => route.path, (p) => { vista.value = p.startsWith('/permisos') ? 'usuarios' : 'roles'; });
+watch(() => route.query.m, (m) => { vista.value = m === 'permisos' ? 'usuarios' : 'roles'; });
 
 const sel = computed(() => roles.value.find((r) => r.id === selId.value) || null);
 const filaMatriz = computed(() => (sel.value ? matriz.value.get(sel.value.id) : null));

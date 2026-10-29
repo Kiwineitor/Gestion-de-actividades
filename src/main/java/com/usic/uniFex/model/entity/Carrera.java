@@ -13,19 +13,11 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
-/**
- * Una carrera de la UAP, dentro de un {@link Area} (ver V35).
- *
- * La persona apunta aqui, y el area se deduce por este camino: nadie escribe la sigla dos
- * veces. Cambiar una carrera de area es un UPDATE de una fila y se refleja en todos los
- * vendedores de esa carrera.
- */
 @Entity
 @Table(name = "carrera")
 @Setter @Getter
 public class Carrera extends AuditoriaConfig {
 
-    /** Valores de {@code _estado} en esta tabla. Ver {@link Puesto#REGISTRO_ACTIVO}. */
     public static final String REGISTRO_ACTIVO  = "A";
     public static final String REGISTRO_ANULADO = "X";
 

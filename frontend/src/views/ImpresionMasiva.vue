@@ -49,11 +49,6 @@ function marcarTodas(marcar) {
   seleccion.value = s;
 }
 
-/**
- * Lanza la impresion masiva con la plantilla EXPOSITOR (10x13 cm).
- * `ids` vacio = todas las credenciales cargadas.
- * El servidor devuelve un solo PDF duplex: 2 paginas por lote de 2 (frentes + reversos).
- */
 async function imprimir(ids, etiqueta) {
   if (generando.value) return;
   generando.value = true;
@@ -65,7 +60,7 @@ async function imprimir(ids, etiqueta) {
     });
     toast('Credenciales de expositor generadas', 'ok');
   } catch (e) {
-    alerta(e.message, 'error', 0); // 0 = no se cierra solo
+    alerta(e.message, 'error', 0);
   } finally {
     generando.value = false;
   }

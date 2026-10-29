@@ -1,5 +1,6 @@
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue';
+import { aModulo } from '../modulos';
 import { useRouter } from 'vue-router';
 import { primeraPaginaEnCanvas } from '../ui/pdf';
 import PanZoom from '../components/PanZoom.vue';
@@ -49,7 +50,7 @@ function leerPreferencia(clave) {
   try { return localStorage.getItem(clave); } catch { return null; }
 }
 function guardarPreferencia(clave, valor) {
-  try { localStorage.setItem(clave, valor); } catch { /* sin almacenamiento */ }
+  try { localStorage.setItem(clave, valor); } catch { }
 }
 
 const catSel = ref(null);
@@ -1048,7 +1049,7 @@ function avisarSinGuardar(e) {
 
 function sesionCaducada() {
   auth.logout();
-  router.push('/login');
+  router.push('/admin');
 }
 
 onMounted(async () => {
@@ -1179,7 +1180,7 @@ onUnmounted(() => {
             <label class="mini">Por fila <input type="number" min="1" max="60" v-model.number="porLinea" /></label>
             <button class="btn btn-sm" :disabled="ocupado || !activa" @click="agregarCaseta">＋ 1 puesto</button>
           </div>
-          <router-link to="/categorias" class="enlace">Administrar categorías →</router-link>
+          <router-link :to="aModulo('categorias')" class="enlace">Administrar categorías →</router-link>
         </template>
       </section>
 

@@ -18,9 +18,9 @@
     function cargarTabla() {
         $.ajax({
             type: "POST",
-            url: "/administracion/persona/tabla-registros", // Ruta del metodo del controlador en Spring Boot
+            url: "/administracion/persona/tabla-registros",
             success: function (response) {
-                $("#tablaRegistro").html(response); // Actualiza el contenido del div con la respuesta del servidor
+                $("#tablaRegistro").html(response);
             },
         });
     }

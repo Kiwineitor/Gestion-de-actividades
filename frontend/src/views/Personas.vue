@@ -9,9 +9,7 @@ const personas = ref([]);
 const cargando = ref(true);
 const filtro = ref('');
 const guardando = ref(false);
-// Ocupado: evita dobles clicks en las acciones de fila (eliminar).
 const ocupado = ref(false);
-// La carrera es OPCIONAL: en esta tabla hay gente de administracion que no tiene ninguna.
 const modal = reactive({ abierto: false, editando: null, nombre: '', paterno: '', materno: '',
   ci: '', correo: '', celular: '', carreraId: '' });
 
@@ -59,7 +57,6 @@ async function guardar() {
     const body = {
       nombre: modal.nombre, paterno: modal.paterno, materno: modal.materno,
       ci: modal.ci, correo: modal.correo, celular: modal.celular,
-      // '' es "sin carrera": el <select> devuelve texto y el backend espera un id o null.
       carreraId: modal.carreraId || null,
     };
     const r = await apiFetch(url, { method: metodo, body: JSON.stringify(body) });
@@ -92,8 +89,6 @@ async function eliminar(p) {
 
 onMounted(() => {
   cargar();
-  // El catalogo no bloquea el listado: si tarda o falla, la tabla ya esta pintada y lo unico
-  // que queda sin llenarse es el desplegable de carrera.
   academico.asegurar().catch((e) => toast(e.message, 'error'));
 });
 </script>
@@ -149,7 +144,6 @@ onMounted(() => {
         <label class="campo"><span>Apellido materno</span><input v-model="modal.materno" class="control" /></label>
         <label class="campo"><span>Correo</span><input v-model="modal.correo" type="email" class="control" /></label>
         <label class="campo"><span>Celular</span><input v-model="modal.celular" class="control" /></label>
-        <!-- Agrupado por área: quien asigna piensa "es de ACYT" antes que en la carrera suelta. -->
         <label class="campo campo-ancho">
           <span>Carrera</span>
           <select v-model="modal.carreraId" class="control">
@@ -174,7 +168,6 @@ onMounted(() => {
 .busca { max-width: 360px; }
 .nota { margin: 0 0 1rem; font-size: 0.85rem; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
-/* La carrera ocupa la fila entera: los nombres son largos y partidos a media columna se cortan. */
 .campo-ancho { grid-column: 1 / -1; }
 .carrera-nombre { margin-left: 0.4rem; font-size: 0.85rem; }
 @media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } }

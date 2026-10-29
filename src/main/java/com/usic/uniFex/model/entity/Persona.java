@@ -31,14 +31,6 @@ public class Persona extends AuditoriaConfig{
     private String celular;
     private String foto;
 
-    /**
-     * Carrera de la que sale esta persona (ver V35). De ella cuelga el area, que es por lo que
-     * administracion filtra a los vendedores.
-     *
-     * <p><b>Es opcional, y tiene que serlo.</b> En esta tabla conviven las personas del sistema
-     * con los responsables de entidad y los promotores traidos de la API de la UAP; exigirla
-     * rompería el alta de todos ellos, que no tienen ninguna.
-     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_carrera")
     private Carrera carrera;

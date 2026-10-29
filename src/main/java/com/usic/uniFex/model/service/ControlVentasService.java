@@ -39,49 +39,20 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 
-/**
- * Control de ventas: la rendicion de cuentas de la feria. Cada operacion con todas sus celdas,
- * y lo vendido, recaudado y por rendir de cada vendedor y cada categoria.
- *
- * <h2>Todo se deriva; no hay tablas propias</h2>
- * Se carga la edicion entera con tres consultas planas (ventas, casetas, responsables con su
- * credencial) mas el inventario de {@link AnalisisVentasService#ocupacion()}, y el resto se
- * calcula aqui. Son unos cientos de filas: traerlas cuesta milisegundos, y a cambio el tablero,
- * la tabla, el Excel y el PDF leen exactamente las mismas cifras.
- *
- * <h2>Rendido = comprobante adjunto</h2>
- * Una venta esta rendida si tiene su comprobante adjunto ({@code inscripcion.img_comprobante}):
- * la foto del deposito, el voucher o el recibo. <b>Banco y numero no se exigen</b> — muchos
- * vendedores solo subieron la imagen, y la imagen es el respaldo. Es la misma regla que ya
- * aplican Credenciales, Mis ventas y el tablero de direccion; un libro de pagos aparte haria
- * que esta pantalla dijera "pagado" de una venta que el resto del sistema ve sin comprobante.
- * Las credenciales extra, igual: cada una con su comprobante ({@code comprobante_extra}).
- *
- * "Al contado" sin comprobante NO cuenta como rendido: marcar contado dice COMO se pago, no que
- * el respaldo exista.
- *
- * <h2>Las mismas dos reglas que el resto de reportes</h2>
- * Solo la edicion activa, y nada anulado ({@code _estado = 'X'}): ni ventas, ni casetas de la
- * venta, ni responsables.
- */
 @Service
 @RequiredArgsConstructor
 public class ControlVentasService {
 
-    /** Una carpa por caseta adquirida. */
     public static final int CARPAS_POR_PUESTO = 1;
-    /** Dos credenciales incluidas por caseta: las de sus dos responsables. */
     public static final int CREDENCIALES_POR_PUESTO = RegistroVentaService.RESPONSABLES_POR_CASETA;
 
     private static final String EDICION_ACTIVA =
             "(select ed.id from edicion ed where ed.activa limit 1)";
 
-    /** Venta viva de la edicion activa; el alias de inscripcion es siempre {@code i}. */
     private static final String VENTA_VIVA = """
             (i."_estado" is null or i."_estado" <> 'X')
                and i.id_edicion = """ + EDICION_ACTIVA;
 
-    /** Nombre legible de un usuario: su persona, o el login si no tiene. */
     private static String nombreUsuario(String u, String p) {
         return "coalesce(nullif(btrim(concat_ws(' ', " + p + ".nombre, " + p + ".paterno, " + p
                 + ".materno)), ''), " + u + ".username)";
@@ -92,10 +63,6 @@ public class ControlVentasService {
 
     private final AnalisisVentasService analisis;
 
-    /**
-     * Filtros de la pantalla. Se aplican sobre las ventas ya calculadas: el monto por rendir o
-     * el codigo de expositor no existen en la base.
-     */
     public record Filtros(Long vendedorId, Long categoriaId, LocalDate desde, LocalDate hasta,
                           String estadoPago, String texto) {
 
@@ -104,7 +71,6 @@ public class ControlVentasService {
         }
     }
 
-    /** La edicion calculada. Cada mapa va por id de inscripcion. */
     public record Calculo(List<Venta> ventas, Map<Long, List<Puesto>> puestos,
                           Map<Long, List<Responsable>> responsables,
                           Map<Long, Set<Long>> categoriasDeVenta) {
@@ -118,25 +84,16 @@ public class ControlVentasService {
         }
     }
 
-    // ================================================================== consultas publicas
-
     @Transactional(readOnly = true)
     public Calculo calcular() {
         return cargar();
     }
 
-    /** Las ventas que pasan el filtro, mas recientes primero. */
     @Transactional(readOnly = true)
     public List<Venta> ventas(Filtros f) {
         return filtrar(cargar(), f);
     }
 
-    /**
-     * Todo lo de una venta. Vacio si no existe, esta anulada o es de otra edicion.
-     *
-     * Se carga la edicion entera y no solo la venta: "compras del expositor" cuenta las OTRAS
-     * ventas con su mismo codigo, y eso no se sabe mirando una sola.
-     */
     @Transactional(readOnly = true)
     public java.util.Optional<ControlVentasDTO.Ficha> ficha(Long inscripcionId) {
         Calculo c = cargar();
@@ -155,7 +112,6 @@ public class ControlVentasService {
                 categorias(c, ventas), avance(ventas));
     }
 
-    /** Opciones de los desplegables de filtro: solo lo que aparece en la edicion activa. */
     @Transactional(readOnly = true)
     public Map<String, Object> opcionesDeFiltro() {
         Map<String, Object> r = new LinkedHashMap<>();
@@ -169,15 +125,13 @@ public class ControlVentasService {
                 """.formatted(nombreUsuario("u", "pe"), VENTA_VIVA)));
         r.put("categorias", opciones("""
                 select c.id, c.nombre from categoria c
-                 where c."_estado" is null or c."_estado" <> 'X'
+                 where (c."_estado" is null or c."_estado" <> 'X')
+                   and c.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
                  order by c.nombre
                 """));
         return r;
     }
 
-    // ================================================================== agregados
-
-    /** La rendicion de cuentas de cada vendedor, de mas vendido a menos. */
     public List<Vendedor> vendedores(List<Venta> ventas) {
         BigDecimal totalGeneral = suma(ventas, Venta::getTotalVendido);
 
@@ -210,17 +164,8 @@ public class ControlVentasService {
         return r;
     }
 
-    /**
-     * Ventas de casetas por categoria, con las categorias SIN ventas incluidas: una categoria
-     * que no vendio nada es la que hay que mirar, y esconderla la vuelve invisible.
-     *
-     * El inventario (casetas vendibles) sale de {@link AnalisisVentasService#ocupacion()} y no
-     * de una consulta propia: es el mismo dato que el tablero de direccion.
-     *
-     * Lo RECAUDADO de una venta se reparte entre sus casetas en proporcion a su precio.
-     */
     public List<Categoria> categorias(Calculo c, List<Venta> ventas) {
-        Map<String, int[]> conteo = new LinkedHashMap<>();        // [vendidas, exentas]
+        Map<String, int[]> conteo = new LinkedHashMap<>();
         Map<String, BigDecimal> vendido = new HashMap<>();
         Map<String, BigDecimal> recaudado = new HashMap<>();
         for (Venta v : ventas) {
@@ -266,7 +211,6 @@ public class ControlVentasService {
         return r;
     }
 
-    /** Lo vendido cada dia, con el acumulado. Solo los dias con ventas. */
     public List<Dia> avance(List<Venta> ventas) {
         TreeMap<LocalDate, List<Venta>> porDia = new TreeMap<>();
         for (Venta v : ventas) {
@@ -306,8 +250,6 @@ public class ControlVentasService {
                 ventas.stream().mapToInt(Venta::getCredencialesEmitidas).sum());
     }
 
-    // ================================================================== filtro
-
     public List<Venta> filtrar(Calculo c, Filtros f) {
         if (f == null) return c.ventas();
         String texto = normal(f.texto());
@@ -325,7 +267,6 @@ public class ControlVentasService {
                 .toList();
     }
 
-    /** Todo lo que se puede buscar de una venta, en minusculas y sin tildes. */
     private static String buscable(Venta v) {
         return normal(String.join(" | ", noNulos(v.getCodigoVenta(), v.getCodigoExpositor(),
                 v.getEntidad(), v.getRubro(), v.getNit(), v.getRepresentante(), v.getCiRepresentante(),
@@ -335,10 +276,7 @@ public class ControlVentasService {
                 String.valueOf(v.getInscripcionId()))));
     }
 
-    // ================================================================== carga y calculo
-
     private Calculo cargar() {
-        // ---- 1. las ventas
         List<Object[]> filasVenta = lista("""
                 select i.id, i.nota_codigo, i.fecha_compra, i.inscripcion_estado,
                        u.id, %s, u.username,
@@ -354,11 +292,6 @@ public class ControlVentasService {
                  order by i.fecha_compra desc nulls last, i.id desc
                 """.formatted(nombreUsuario("u", "vp"), VENTA_VIVA));
 
-        // ---- 2. sus casetas
-        //
-        // El precio de referencia se resuelve con el MISMO orden que al vender
-        // (RegistroVentaService.congelarCosto): la opcion elegida; si no la hay y la caseta
-        // tiene precio propio, ese; si no, la opcion predeterminada de la categoria.
         List<Object[]> filasPuesto = lista("""
                 select ip.id_inscripcion, p.id, p.codigo, c.id, c.nombre,
                        o.nombre, o.precio, p.precio, od.nombre, od.precio, c.precio_base,
@@ -379,11 +312,6 @@ public class ControlVentasService {
                  order by ip.id_inscripcion, p.codigo
                 """.formatted(VENTA_VIVA));
 
-        // ---- 3. sus responsables, con la PRIMERA vez que se genero su credencial
-        //
-        // credencial_impresion guarda cada credencial generada: la virtual (la que se mandaba
-        // por WhatsApp) y la impresa. Que el envio llegara no quedo registrado; esto es lo mas
-        // cerca de "entregada" que hay en la base.
         List<Object[]> filasResp = lista("""
                 select i.id, r.id, r.es_titular, r.es_extra, r.monto_extra, r.comprobante_extra,
                        r."_fecha_registro",
@@ -406,7 +334,6 @@ public class ControlVentasService {
                  order by i.id, r.es_titular desc, r.es_extra, r.id
                 """.formatted(nombreUsuario("ue", "pue"), VENTA_VIVA));
 
-        // ---- armado
         Map<Long, List<Puesto>> puestos = new LinkedHashMap<>();
         Map<Long, Set<Long>> categoriasDeVenta = new HashMap<>();
         Map<Long, List<Responsable>> responsables = new LinkedHashMap<>();
@@ -443,7 +370,6 @@ public class ControlVentasService {
             v.setComprobanteUrl(img == null ? null : "/files/" + img);
             v.setFormaPago(contado ? "Al contado" : img != null ? "Depósito / transferencia" : null);
 
-            // -- casetas
             List<Puesto> ps = new ArrayList<>();
             Set<Long> cats = new HashSet<>();
             for (Object[] p : puestosCrudos.getOrDefault(id, List.of())) {
@@ -454,7 +380,6 @@ public class ControlVentasService {
             categoriasDeVenta.put(id, cats);
             llenarCasetas(v, ps);
 
-            // -- responsables, extras y credenciales
             List<Responsable> rs = new ArrayList<>();
             BigDecimal importeExtras = BigDecimal.ZERO;
             BigDecimal recaudadoExtras = BigDecimal.ZERO;
@@ -505,7 +430,6 @@ public class ControlVentasService {
             v.setPrecioExtra(extras == 0 ? RegistroVentaService.COSTO_RESPONSABLE_EXTRA
                     : importeExtras.divide(BigDecimal.valueOf(extras), 2, RoundingMode.HALF_UP));
 
-            // -- dinero: rendido = con comprobante adjunto
             v.setTotalVendido(v.getImportePuestos().add(importeExtras));
             v.setRecaudadoPuestos(img != null ? v.getImportePuestos() : BigDecimal.ZERO);
             v.setRecaudadoExtras(recaudadoExtras);
@@ -516,7 +440,6 @@ public class ControlVentasService {
                     : v.getTotalRecaudado().signum() > 0 ? ControlVentasDTO.PARCIAL
                     : ControlVentasDTO.PENDIENTE);
 
-            // -- carpas y credenciales
             v.setCarpasCorresponden(v.getCantidadPuestos() * CARPAS_POR_PUESTO);
             v.setCredencialesIncluidas(v.getCantidadPuestos() * CREDENCIALES_POR_PUESTO);
             v.setCredencialesTotal(v.getCredencialesIncluidas() + extras);
@@ -527,7 +450,6 @@ public class ControlVentasService {
             ventas.add(v);
         }
 
-        // "Compras del expositor": cuantas ventas comparten su codigo.
         Map<String, Long> compras = ventas.stream()
                 .collect(Collectors.groupingBy(Venta::getCodigoExpositor, Collectors.counting()));
         for (Venta v : ventas) v.setComprasExpositor(compras.get(v.getCodigoExpositor()).intValue());
@@ -558,14 +480,11 @@ public class ControlVentasService {
                 lista, costo, descuento, exento, exento ? sub : null);
     }
 
-    /** Los campos de la venta que salen de sus casetas. */
     private static void llenarCasetas(Venta v, List<Puesto> ps) {
         v.setCantidadPuestos(ps.size());
         v.setPuestos(unir(ps, Puesto::codigo));
         v.setCategorias(unirDistintos(ps, Puesto::categoria));
         v.setSubcategorias(unirDistintos(ps, Puesto::subcategoria));
-        // Sin columna de ubicacion en las casetas (referencia esta vacia en toda la base), la
-        // ubicacion util es la zona: categoria y codigo.
         v.setUbicacion(ps.stream()
                 .map(p -> (p.categoria() == null ? "" : p.categoria() + " · ") + p.codigo())
                 .collect(Collectors.joining("; ")));
@@ -581,23 +500,8 @@ public class ControlVentasService {
         v.setMotivoExencion(exentos.isEmpty() ? null : "Exento: " + unirDistintos(exentos, Puesto::motivoExencion));
     }
 
-    // ================================================================== codigo de expositor
-
     private static final Pattern DIGITOS = Pattern.compile("\\d{5,}");
 
-    /**
-     * Un codigo estable para reconocer al mismo negocio en varias compras.
-     *
-     * Cada venta crea su propia ficha de entidad, asi que el id de la entidad NO sirve: el
-     * mismo expositor que compra dos veces tiene dos. Se usa el numero de su NIT y, si no es
-     * utilizable, el del C.I. del representante — el mismo prefijo para los dos, porque muchos
-     * expositores pequeños ponen su C.I. como NIT y asi se unen igual.
-     *
-     * "Utilizable" = al menos cinco digitos seguidos y no todos iguales: en la base hay NIT
-     * como "00000", "11111111", "S/N" o "NO TIENE", y unirlos juntaria a decenas de negocios
-     * distintos en un solo expositor. Del C.I. se toma el primer grupo de digitos, para que
-     * "1234567 LP" y "1234567" sean la misma persona.
-     */
     static String[] codigoExpositor(Long entidadId, String nit, String ci) {
         String n = digitosUtiles(nit);
         if (n != null) return new String[] { "EXP-" + n, "NIT" };
@@ -613,8 +517,6 @@ public class ControlVentasService {
         String d = m.group();
         return d.chars().distinct().count() == 1 ? null : d;
     }
-
-    // ================================================================== utilidades
 
     private List<Object[]> lista(String sql) {
         @SuppressWarnings("unchecked")
@@ -667,7 +569,6 @@ public class ControlVentasService {
         return parte.multiply(BigDecimal.valueOf(100)).divide(total, 1, RoundingMode.HALF_UP);
     }
 
-    /** Formato es-BO: el punto agrupa y la coma separa decimales. */
     static String bs(BigDecimal v) {
         return String.format(Locale.of("es", "BO"), "%,.2f", v == null ? BigDecimal.ZERO : v);
     }
@@ -682,7 +583,6 @@ public class ControlVentasService {
         return v == null || v.isBlank();
     }
 
-    /** Minusculas y sin tildes, para buscar "unión" escribiendo "union". */
     static String normal(String v) {
         if (vacio(v)) return null;
         return Normalizer.normalize(v.trim(), Normalizer.Form.NFD)

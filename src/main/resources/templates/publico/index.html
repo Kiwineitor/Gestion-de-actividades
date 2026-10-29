@@ -7,10 +7,7 @@
 <link rel="stylesheet" href="../../assets/css/config_general_publico.css" />
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
 
-<!-- VISTA PUBLICA -->
-
 <body data-ctx="admin">
-    <!-- NAVBAR -->
     <div class="container" style="padding-top: 70px">
         <nav th:fragment="topbar"
             class="layout-navbar container-xxl navbar navbar-expand-xl navbar-detached align-items-center bg-navbar-theme"
@@ -25,14 +22,12 @@
                 </div>
 
                 <ul class="navbar-nav flex-row align-items-center ms-auto">
-                    <!-- Login -->
                     <li class="nav-item" th:if="${session.persona == null}">
                         <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#modalLogin">
                             <i class="ti ti-login me-2"></i> Iniciar sesión
                         </a>
                     </li>
 
-                    <!-- Usuario logueado -->
                     <li class="nav-item dropdown" th:if="${session.persona != null}">
                         <a class="nav-link dropdown-toggle d-flex align-items-center" href="#"
                             data-bs-toggle="dropdown">
@@ -70,7 +65,6 @@
         <br />
     </div>
 
-    <!-- MODAL DE LOGIN -->
     <div class="modal fade" id="modalLogin" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-lg modal-fullscreen-sm-down">
             <div class="modal-content glass-card animate__animated animate__fadeInDown">
@@ -118,7 +112,6 @@
         </div>
     </div>
 
-    <!-- CERRAR SESIÓN -->
     <div class="modal fade" id="modalConfirmLogout" tabindex="-1" aria-labelledby="modalConfirmLogoutLabel"
         aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -178,14 +171,11 @@
                             padding: 1rem 1.25rem;
                         }
 
-                        /* Ocultar ocupados cuando el switch está activo */
                         body.solo-libres .puesto-card[data-estado="O"] {
                             display: none !important;
                         }
                     </style>
 
-
-                    <!-- Botón para abrir el mapa en modal -->
                     <div class="text-center my-3">
                         <button class="btn btn-primary btn-lg w-100 w-sm-auto" data-bs-toggle="modal"
                             data-bs-target="#modalMapa">
@@ -204,7 +194,6 @@
                                 </div>
 
                                 <div class="modal-body p-0 position-relative">
-                                    <!-- Spinner mientras carga -->
                                     <div id="pdfSpinner" class="d-flex align-items-center justify-content-center w-100"
                                         style="height: 80vh;">
                                         <div class="spinner-border" role="status" aria-label="Cargando">
@@ -212,13 +201,11 @@
                                         </div>
                                     </div>
 
-                                    <!-- PDF en iframe -->
                                     <iframe id="pdfFrame" class="w-100 d-none border-0" title="Mapa de puestos"
                                         allowfullscreen th:data-src="${mapaPdf} != null ?
                                         ( @{/files/{f}(f=${mapaPdf})} + '#page=1&zoom=page-fit' ) :
                                         ( @{/files/mapa.pdf} + '#page=1&zoom=page-fit' )">
                                     </iframe>
-
 
                                 </div>
                                 <div class="modal-footer justify-content-between">
@@ -279,12 +266,6 @@
                                                 </div>
 
                                             </div>
-                                            <!-- <div class="card-footer bg-transparent border-0 pt-0">
-                                                <button type="button" class="btn btn-sm w-100"
-                                                    th:classappend="${p['estado_puesto'] == 'L'} ? ' btn-primary' : ' btn-secondary disabled'">
-                                                    Seleccionar
-                                                </button>
-                                            </div> --> <!-- PARA VERSION 2-->    
                                         </div>
                                     </div>
                                 </div>
@@ -331,7 +312,6 @@
                 }
             });
 
-            // (Opcional) Liberar memoria en móviles al cerrar
             modal.addEventListener('hidden.bs.modal', () => {
                 iframe.src = '';
                 iframe.classList.add('d-none');

@@ -1,11 +1,11 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth.js';
 import { usePuestosStore } from '../stores/puestos.js';
 import { useNotificacionesStore } from '../stores/notificaciones.js';
-import { toast } from '../ui/toast.js';
 import NotificacionItem from '../components/NotificacionItem.vue';
+import { aModulo } from '../modulos';
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -25,19 +25,15 @@ onMounted(async () => {
 
 onUnmounted(() => { if (quitarOyente) quitarOyente(); });
 
-/** Llega notificación por WebSocket → store la aplica a la lista. */
 function onNotificacionWS(n) {
   notifStore.aplicarWS(n);
-  // Si la vista está visible, no hacemos toast (el usuario la ve en la lista).
-  // Si está en otra pestaña, el badge se actualiza solo por countNoLeidas.
 }
 
-/** Navega a la venta/puesto si la notificación tiene referencia. */
 function irARef(notif) {
   if (notif.inscripcionId) {
-    router.push({ name: 'MisVentas', query: { inscripcion: notif.inscripcionId } });
+    router.push(aModulo('mis-ventas', { inscripcion: notif.inscripcionId }));
   } else if (notif.puestoId) {
-    router.push({ name: 'Mapa', query: { puesto: notif.puestoId } });
+    router.push(aModulo('mapa', { puesto: notif.puestoId }));
   }
 }
 
@@ -51,7 +47,6 @@ const tieneNoLeidas = computed(() => notifStore.countNoLeidas > 0);
       <span v-if="tieneNoLeidas" class="badge-total">{{ notifStore.countNoLeidas }}</span>
     </header>
 
-    <!-- Filtros -->
     <div class="filtros">
       <select v-model="notifStore.filtroLeida" class="select-filtro" title="Filtrar por estado">
         <option value="todas">Todas</option>
@@ -67,7 +62,6 @@ const tieneNoLeidas = computed(() => notifStore.countNoLeidas > 0);
       </button>
     </div>
 
-    <!-- Lista -->
     <div class="lista">
       <div v-if="cargando" class="cargando">Cargando…</div>
       <div v-else-if="error" class="error">{{ error }}</div>
@@ -88,7 +82,6 @@ const tieneNoLeidas = computed(() => notifStore.countNoLeidas > 0);
       </div>
     </div>
 
-    <!-- Entrada oculta para pull-to-refresh en móvil (opcional) -->
     <div class="pull-hint" v-if="notifStore.filtradas.length">Desliza para actualizar</div>
   </div>
 </template>

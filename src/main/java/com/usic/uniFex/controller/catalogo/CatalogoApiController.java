@@ -20,7 +20,6 @@ import com.usic.uniFex.model.service.CategoriaOpcionService;
 
 import lombok.RequiredArgsConstructor;
 
-/** Catalogo de categorias y precios para consulta desde la SPA. */
 @RestController
 @RequestMapping("/api/app/catalogo")
 @RequiredArgsConstructor

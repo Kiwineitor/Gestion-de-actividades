@@ -10,14 +10,14 @@ import lombok.Setter;
 public class PagoRequest {
     private DatosCliente datosCliente;
     private List<Item> items;
-    private Map<String, Object> metadata; // aquí mandamos categoriaId, cantidad, ci, etc.
+    private Map<String, Object> metadata;
 
     @Getter @Setter
     public static class DatosCliente {
         public String nombres;
         public String apellidos;
         public String ciNit;
-        public String fechaNacimiento; // yyyy-MM-dd o null
+        public String fechaNacimiento;
         public String correo;
     }
 

@@ -1,35 +1,4 @@
 #!/usr/bin/env bash
-#
-# Aplica en orden los scripts de esquema V1..V23 de este directorio contra la base
-# indicada por las variables de entorno estandar de psql (PGHOST, PGPORT, PGUSER,
-# PGPASSWORD, PGDATABASE), registrando en la tabla de control public._migraciones_aplicadas
-# cuales ya corrieron para no repetirlas ni saltarse ninguna.
-#
-# NUNCA aplica R1__reset_gestion.sql: ese script BORRA todo lo transaccional (casetas,
-# entidades, inscripciones, ventas...) y su propia cabecera dice "Nunca contra produccion".
-# Es una herramienta de desarrollo, no una migracion; se ejecuta a mano, aparte, solo si
-# se sabe exactamente lo que se esta haciendo.
-#
-# Por que existe este script en vez de aplicar los V*.sql a mano con psql -f uno por uno:
-# este proyecto no usa Flyway/Liquibase a proposito, asi que no hay ningun
-# registro de que scripts ya se aplicaron a una base dada. Sin ese registro es facil
-# aplicar un script dos veces, saltarse uno, o aplicarlos fuera de orden -- y varios de
-# estos scripts no son idempotentes (V7, por ejemplo, no tiene guardas IF NOT EXISTS).
-# La tabla de control es la unica pieza que le faltaba al proceso manual para ser seguro,
-# sin traer un framework nuevo al proyecto.
-#
-# Uso normal (aplica todo lo pendiente, en orden):
-#   export PGHOST=localhost PGPORT=5432 PGUSER=postgres PGDATABASE=<base>
-#   export PGPASSWORD=...
-#   ./aplicar-migraciones.sh
-#
-# Si la base de destino YA tiene aplicados a mano algunos V*.sql de antes de que existiera
-# este script (por ejemplo, produccion), hay que marcarlos como aplicados SIN ejecutarlos,
-# uno por uno y en orden, antes de correr el modo normal:
-#   ./aplicar-migraciones.sh --marcar-aplicada V1__reserva_puesto.sql
-#
-# Verificar que estado quedo (que se aplico y cuando), sin aplicar nada:
-#   ./aplicar-migraciones.sh --estado
 
 set -euo pipefail
 

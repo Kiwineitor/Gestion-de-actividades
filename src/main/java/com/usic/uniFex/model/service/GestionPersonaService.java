@@ -15,16 +15,6 @@ import com.usic.uniFex.model.entity.Persona;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Gestion de las personas "del sistema" (las candidatas a ser usuarios), la version API de lo
- * que el PersonaController de Thymeleaf hace a medias: aquel dejaba `modificar-persona` entero
- * comentado (no guardaba nada) y `registrar-persona` sin fijar el estado. Aqui el CRUD funciona.
- *
- * "Del sistema" = estado ACTIVO. Los responsables (estado RESPONSABLE) y los promotores traidos
- * de la API de la UAP (PROMOTOR) NO aparecen aqui; se gestionan en su propio flujo. Al crear una
- * persona aqui queda ACTIVO, con lo que pasa a estar disponible en el selector del modulo Usuarios
- * —eso resuelve el "solo salen 5 personas" de ese modulo.
- */
 @Service
 @RequiredArgsConstructor
 public class GestionPersonaService {
@@ -36,14 +26,6 @@ public class GestionPersonaService {
     private final IUsuarioDao usuarioDao;
     private final CatalogoAcademicoService catalogoAcademico;
 
-    /**
-     * Los datos editables de una persona.
-     *
-     * {@code carreraId} es opcional y puede llegar ausente: en esta tabla conviven las personas
-     * del sistema con los responsables de entidad, que no tienen carrera. Al editar, un
-     * {@code null} SI vacia la carrera — este record viaja entero desde el formulario, no como
-     * un PATCH campo a campo.
-     */
     public record Datos(String nombre, String paterno, String materno, String ci,
                         String correo, String celular, Long carreraId) {
     }
@@ -53,12 +35,10 @@ public class GestionPersonaService {
         static Resultado exito(String m, Persona p) { return new Resultado(true, m, p); }
     }
 
-    /** Personas del sistema (estado ACTIVO). */
     public List<Persona> listar() {
         return personaService.listarPersonas();
     }
 
-    /** Ids de personas que ya tienen un usuario no eliminado (para marcarlas en el listado). */
     public Set<Long> idsConUsuario() {
         return Set.copyOf(usuarioDao.idsDePersonasConUsuario());
     }
@@ -106,20 +86,6 @@ public class GestionPersonaService {
         return Resultado.exito("Persona eliminada.", personaService.save(p));
     }
 
-
-    /**
-     * Personas para el selector del alta de usuarios.
-     *
-     * Devuelve las personas del sistema (ACTIVO) que casen con el texto, y ademas, si el texto es
-     * un C.I. exacto, la persona que lo tenga aunque NO sea del sistema. Ese anadido resuelve un
-     * callejon sin salida real: los responsables de entidad y los promotores traidos de la UAP
-     * viven en la misma tabla con {@code _estado} RESPONSABLE / PROMOTOR, asi que no salian en el
-     * buscador — pero el alta rechazaba su C.I. por duplicado. El administrador no podia ni
-     * encontrarlos ni crearlos. Ahora los encuentra y les puede dar un usuario, que es lo que
-     * ocurre cuando un responsable ademas trabaja en la feria.
-     *
-     * El limite acota la lista: son cientos de personas y un desplegable no las necesita todas.
-     */
     public List<Seleccionable> buscarParaSelector(String texto, int limite) {
         String q = texto == null ? "" : texto.trim().toLowerCase();
         Set<Long> conUsuario = idsConUsuario();
@@ -140,10 +106,6 @@ public class GestionPersonaService {
                 .toList();
     }
 
-    /**
-     * Persona por C.I. exacto, sea del sistema o no, siempre que no este dada de baja.
-     * Es la comprobacion que evita crear dos veces a la misma persona desde el alta de usuarios.
-     */
     public Optional<Persona> buscarPorCi(String ci) {
         String buscado = trim(ci);
         if (buscado == null || buscado.isEmpty()) return Optional.empty();
@@ -151,13 +113,11 @@ public class GestionPersonaService {
                 .filter(p -> !ELIMINADO.equalsIgnoreCase(p.getEstado()));
     }
 
-    /** Convierte una persona en la forma que consume un selector. */
     public Seleccionable comoSeleccionable(Persona p) {
         return new Seleccionable(p.getId(), nombreCompleto(p), p.getCi(),
                 idsConUsuario().contains(p.getId()), p.getEstado());
     }
 
-    /** Una persona tal como la ve un selector: quien es, si ya tiene login y de donde salio. */
     public record Seleccionable(Long id, String nombre, String ci, boolean tieneUsuario, String origen) {
     }
 
@@ -170,8 +130,6 @@ public class GestionPersonaService {
                 .filter(s -> s != null && !s.isBlank())
                 .reduce((a, b) -> a + " " + b).orElse("(sin nombre)");
     }
-
-    // ===== helpers =====
 
     private String validar(Datos d) {
         if (vacio(d.nombre())) return "El nombre es obligatorio.";
@@ -187,12 +145,9 @@ public class GestionPersonaService {
         p.setCi(trim(d.ci()));
         p.setCorreo(trim(d.correo()));
         p.setCelular(trim(d.celular()));
-        // Un id que no existe deja la carrera vacia en vez de tumbar el alta: el dato es
-        // opcional, y un desplegable desincronizado no justifica perder el resto del formulario.
         p.setCarrera(catalogoAcademico.buscarViva(d.carreraId()));
     }
 
-    /** El C.I. no debe repetirse en ninguna persona no eliminada (evita duplicar a la misma persona). */
     private boolean ciEnUso(String ci, Long exceptoId) {
         return personaService.findFirstByCi(trim(ci))
                 .filter(p -> !ELIMINADO.equalsIgnoreCase(p.getEstado()))

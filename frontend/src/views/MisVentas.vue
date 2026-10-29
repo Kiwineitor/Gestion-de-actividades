@@ -13,33 +13,22 @@ import ArchivoPreview from '../components/ArchivoPreview.vue';
 import CampoCelular from '../components/CampoCelular.vue';
 
 const tienda = usePuestosStore();
-const items = ref([]);       // filas de fn_get_inscripciones: una por (inscripción, categoría)
+const items = ref([]);
 const resumen = ref({ cantidad: 0, total: 0 });
 const cargando = ref(true);
-const ediciones = ref([]);   // ediciones de la feria (V6), para el selector
-const edicionSel = ref(null); // null = la edición ACTIVA
+const ediciones = ref([]);
+const edicionSel = ref(null);
 
-// --- cancelacion con aprobacion (V11) ---
-// El vendedor SOLICITA cancelar con un motivo; administracion aprueba o rechaza;
-// solo con la solicitud aprobada se habilita el boton de cancelar. Todo asincrono:
-// llega un aviso por WebSocket y esta pantalla se refresca sola.
-const solicitudes = ref({});       // inscripcionId -> solicitud (o ausente si nunca se pidio)
-const modalSolicitar = ref(null);  // venta en espera de confirmacion de solicitud
+const solicitudes = ref({});
+const modalSolicitar = ref(null);
 const motivo = ref('');
-const enviando = ref(false);       // peticion de solicitud en vuelo
-const cancelandoId = ref(null);    // venta cuya cancelacion (ya aprobada) esta en vuelo
+const enviando = ref(false);
+const cancelandoId = ref(null);
 
 const bs = (n) => 'Bs ' + Number(n || 0).toLocaleString('es-BO', { minimumFractionDigits: 2 });
 
-/** Por inscripcion: { conComprobante, sinFoto }. Lo manda el listado. */
 const faltantes = ref({});
 
-/**
- * Que le falta a esta venta, en palabras cortas y en orden de urgencia.
- *
- * Sin el comprobante no se emite ninguna credencial, asi que va primero. La lista lo enseña
- * para que no haga falta abrir venta por venta a ver cual tiene trabajo pendiente.
- */
 function faltaDe(id) {
   const f = faltantes.value[id];
   if (!f) return [];
@@ -49,7 +38,6 @@ function faltaDe(id) {
   return falta;
 }
 
-/** Nombre de la edición que se está mostrando (para el encabezado). */
 const edicionVisible = computed(() => {
   const e = ediciones.value.find((x) => x.id === edicionSel.value);
   if (e) return e.nombre;
@@ -61,12 +49,11 @@ async function cargarEdiciones() {
   try {
     const r = await apiFetch('/api/app/ediciones');
     ediciones.value = await r.json();
-  } catch { /* sin selector si el endpoint no responde */ }
+  } catch { }
 }
 
 const conEdicion = (base) => (edicionSel.value ? `${base}?edicion=${edicionSel.value}` : base);
 
-/** Agrupa las filas por inscripción: cada una con su entidad, fecha, pago, categorías y total. */
 const inscripciones = computed(() => {
   const m = new Map();
   for (const f of items.value) {
@@ -92,8 +79,6 @@ async function cargar() {
     const d = await r.json();
     items.value = d.items || [];
     resumen.value = { cantidad: d.cantidad || 0, total: d.total || 0 };
-    // Lo que le falta a cada venta, para poder marcarlo EN LA LISTA. Llega en la misma
-    // respuesta: preguntarlo por fila serian decenas de peticiones.
     const m = {};
     for (const p of d.pendientes || []) m[p.id] = p;
     faltantes.value = m;
@@ -104,7 +89,6 @@ async function cargar() {
   }
 }
 
-/** Estado de la solicitud de cancelacion de CADA venta propia, en un mapa por inscripcion. */
 async function cargarSolicitudes() {
   try {
     const r = await apiFetch('/api/app/mis-solicitudes-cancelacion');
@@ -112,24 +96,20 @@ async function cargarSolicitudes() {
     const lista = await r.json();
     solicitudes.value = {};
     for (const s of lista) {
-      // Solo la ultima solicitud de cada venta: un vendedor puede reintentar tras un rechazo.
       if (!solicitudes.value[s.inscripcionId] || s.id > solicitudes.value[s.inscripcionId].id) {
         solicitudes.value[s.inscripcionId] = s;
       }
     }
-  } catch { /* la pantalla sigue siendo util sin esta seccion */ }
+  } catch { }
 }
 
 const fecha = (f) => (f ? new Date(f).toLocaleDateString('es-BO') : '');
-
-// ---------------------------------------------------------------- cancelacion
 
 function abrirSolicitud(ins) {
   modalSolicitar.value = ins;
   motivo.value = '';
 }
 
-/** El vendedor pide cancelar su venta con un motivo: queda a la espera del admin. */
 async function confirmarSolicitud() {
   const texto = motivo.value.trim();
   if (!texto) { toast('El motivo es obligatorio', 'error'); return; }
@@ -154,16 +134,12 @@ async function confirmarSolicitud() {
   }
 }
 
-/**
- * Cancela la venta SOLO cuando administracion ya aprobo la solicitud (V11).
- * El motivo no se pide aqui: es el que se escribio al solicitar.
- */
 async function cancelarVenta(id) {
   cancelandoId.value = id;
   try {
     const r = await apiFetch(`/api/app/inscripciones/${id}/cancelar`, {
       method: 'POST',
-      body: JSON.stringify({}), // el backend usa el motivo de la solicitud aprobada
+      body: JSON.stringify({}),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.ok) { toast(d.mensaje || 'No se pudo cancelar la venta', 'error'); return; }
@@ -176,52 +152,42 @@ async function cancelarVenta(id) {
   }
 }
 
-/** Etiqueta corta del estado de la solicitud, para el badge de la fila. */
 const etiquetaSolicitud = (s) => ({
   PENDIENTE: 'En espera',
   APROBADA: 'Aprobada',
   RECHAZADA: 'Rechazada',
 }[s?.estado] || '');
 
-// ---------------------------------------------------------------- pendientes
-// Ventas propias sin comprobante. Van arriba y con los dias que llevan asi, porque una
-// venta cobrada a medias es lo unico de esta pantalla sobre lo que hay que ACTUAR.
-// Incluye las de CONTADO: marcar contado dice como se pago, no que exista el recibo, y sin
-// recibo la credencial del expositor no se puede emitir.
 const pendientes = ref([]);
-const subiendo = ref(null);   // id de la inscripcion cuyo comprobante esta subiendo
+const subiendo = ref(null);
 const entradaArchivo = ref(null);
 const idParaComprobante = ref(null);
-const archivoSeleccionado = ref(null); // para vista previa
+const archivoSeleccionado = ref(null);
 
 async function cargarPendientes() {
   try {
     const r = await apiFetch('/api/app/inscripciones/mis-pendientes');
     if (r.ok) pendientes.value = await r.json();
-  } catch { /* la pantalla sigue siendo util sin esta seccion */ }
+  } catch { }
 }
 
-/** Abre el selector de archivo (en el móvil, la cámara) para esa venta. */
 function elegirComprobante(id) {
   idParaComprobante.value = id;
   entradaArchivo.value?.click();
 }
 
-/** Archivo elegido -> abre vista previa para confirmar antes de subir. */
 function onArchivoElegido(evento) {
   const archivo = evento.target.files?.[0];
-  evento.target.value = ''; // permitir volver a elegir el mismo archivo
+  evento.target.value = '';
   if (!archivo) return;
   archivoSeleccionado.value = archivo;
 }
 
-/** Sube el comprobante confirmado desde la vista previa. */
 async function confirmarSubidaComprobante(archivo) {
   const id = idParaComprobante.value;
   if (!archivo || !id) return;
 
   subiendo.value = id;
-  // Subir una foto con la red de la feria puede tardar bastante y no hay nada que lo delate.
   mostrarCarga('Subiendo el comprobante…');
   try {
     const datos = new FormData();
@@ -245,34 +211,16 @@ async function confirmarSubidaComprobante(archivo) {
   }
 }
 
-/**
- * Baja el recibo. Va por el mismo helper que el registro de la venta para que se comporte
- * igual en los dos sitios: en el APK, abrir un blob en una pestaña no hace nada.
- */
 function verRecibo(id, entidad = null) {
-  // Misma carpeta que el dia de la venta: se busca por el nombre del expositor, no por fecha.
   return descargarRecibo(id, entidad);
 }
 
-// ---------------------------------------------------------------- ficha de la venta
-/*
- * Toda la venta en una ventana, y desde ahi se corrige.
- *
- * La tabla de antes tenia siete columnas y en un telefono solo se veian tres: habia que
- * arrastrarla de lado para leer el total. Y para ver quien atiende la caseta o si falta una
- * foto no habia sitio en ninguna columna. Ahora la lista da lo justo para reconocer la venta
- * —entidad, casetas, total— y el resto vive aqui.
- *
- * El detalle llega en UNA peticion (`/detalle`) en vez de tres. En la feria la red es mala y
- * tres esperas seguidas se notan.
- */
-const ficha = ref(null);         // { id, entidad, pago, casetas, responsables }
+const ficha = ref(null);
 const cargandoFicha = ref(false);
-const editando = ref(null);      // 'entidad' | id del responsable | null
+const editando = ref(null);
 const guardando = ref(false);
 const borrador = reactive({});
 
-/** El comprobante que ya se subió, a tamaño mirable. Antes solo se podía reemplazar. */
 const verComprobante = ref(false);
 
 async function abrirFicha(id) {
@@ -293,16 +241,6 @@ async function abrirFicha(id) {
   }
 }
 
-/*
- * ---------------------------------------------------------------- responsables de mas
- *
- * Cada caseta da derecho a DOS responsables, o sea a dos credenciales. Pasada esa cuenta, el
- * cliente puede seguir sumando gente pagando 15 Bs por cabeza, con su comprobante.
- *
- * El cupo se pide al abrir la ficha y NO se calcula aqui: quien decide si cobra es el servidor,
- * y si la pantalla hiciera su propia cuenta las dos podrian discrepar — y la que se ve es esta,
- * asi que el vendedor le diria un precio al cliente que luego el servidor no acepta.
- */
 const cupo = ref(null);
 const modalResp = reactive({
   abierto: false, nombre: '', paterno: '', materno: '', ci: '', celular: '', comprobante: null, foto: null,
@@ -315,7 +253,6 @@ async function cargarCupo(id) {
     const r = await apiFetch(`/api/app/inscripciones/${id}/responsables/cupo`);
     if (r.ok) cupo.value = await r.json();
   } catch {
-    // Sin cupo el boton no aparece: es preferible a ofrecer un alta que el servidor rechazara.
   }
 }
 
@@ -363,8 +300,6 @@ async function guardarResponsableNuevo() {
   if (!modalResp.nombre.trim()) { await alerta('Falta el nombre', 'error', 0); return; }
   if (!modalResp.ci.trim()) { await alerta('Falta el C.I.', 'error', 0); return; }
   if (!modalResp.foto) { await alerta('Adjunta la foto para enviar la credencial por WhatsApp.', 'error', 0); return; }
-  // El cobro sin comprobante es el agujero por el que se pierden los pagos: se corta aqui y el
-  // servidor lo vuelve a comprobar, porque esta pantalla no es una garantia.
   if (!cupo.value?.dentroDelDerecho && !modalResp.comprobante) {
     await alerta('Este responsable tiene un costo de 15 Bs: adjunta el comprobante del pago.', 'error', 0);
     return;
@@ -387,12 +322,6 @@ async function guardarResponsableNuevo() {
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.ok === false) { await alerta(d.mensaje || 'No se pudo agregar', 'error', 0); return; }
 
-    /*
-     * A partir de aqui el responsable YA EXISTE en la base. Lo que queda —foto y WhatsApp— son
-     * pasos de mas: si fallan, se avisa, pero no se puede decir "no se pudo agregar" ni dejar
-     * al vendedor sin saber que la persona ya esta registrada. Por eso cada uno va en su propio
-     * try y lo unico que se lleva un fallo es el texto del aviso final.
-     */
     let avisoExtra = '';
     if (d.responsableId && modalResp.foto) {
       cambiarTextoCarga('Subiendo la foto del responsable…');
@@ -408,11 +337,7 @@ async function guardarResponsableNuevo() {
     }
 
     modalResp.abierto = false;
-    // Se recarga la ficha ANTES del aviso: al cerrarlo, lo que queda detras ya esta al dia.
     await abrirFicha(inscripcionId);
-    // El velo baja ANTES de abrir ningun dialogo. Aunque ya no lo tape (el velo bajo a 1500),
-    // dejar girando un indicador de progreso detras de un mensaje de "listo" es mentir sobre
-    // que algo sigue trabajando.
     ocultarCarga();
     velado = false;
     await alerta(d.cobrado
@@ -423,8 +348,6 @@ async function guardarResponsableNuevo() {
     await alerta(e.message, 'error', 0);
   } finally {
     guardandoResp.value = false;
-    // Solo si sigue puesto: `ocultarCarga` lleva un contador y bajarlo dos veces por una
-    // subida deja el contador en cero con otra operacion todavia en curso.
     if (velado) ocultarCarga();
   }
 }
@@ -434,7 +357,6 @@ function cerrarFicha() {
   editando.value = null;
 }
 
-/** Pasa a modo edicion con una copia de lo que hay: cancelar tiene que dejarlo como estaba. */
 function editarEntidad() {
   const e = ficha.value?.entidad || {};
   Object.keys(borrador).forEach((k) => delete borrador[k]);
@@ -449,9 +371,6 @@ function editarEntidad() {
 
 function editarResponsable(r) {
   Object.keys(borrador).forEach((k) => delete borrador[k]);
-  // `r.nombre` viene con los apellidos pegados, para pintarlo de una vez. Aqui hace falta el
-  // nombre de pila suelto, y se obtiene QUITANDO los apellidos que llegan aparte: partir la
-  // cadena por espacios adivinaria mal con dos nombres de pila y guardaria esa adivinanza.
   const apellidos = [r.paterno, r.materno].filter(Boolean).join(' ');
   const pila = apellidos && r.nombre?.endsWith(apellidos)
     ? r.nombre.slice(0, -apellidos.length).trim()
@@ -477,7 +396,6 @@ async function guardarEdicion() {
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.ok === false) { await alerta(d.mensaje || 'No se pudo guardar', 'error', 0); return; }
     editando.value = null;
-    // Se recarga la ficha y la lista: el nombre de la entidad sale en las dos.
     await Promise.all([abrirFicha(id), cargar()]);
     ocultarCarga();
     await aviso(esEntidad ? 'Los datos de la entidad quedaron actualizados.'
@@ -491,21 +409,16 @@ async function guardarEdicion() {
   }
 }
 
-/** Adjuntar el comprobante desde la ficha, que es donde se ve que falta. */
 function comprobanteDesdeFicha() {
   if (ficha.value) elegirComprobante(ficha.value.id);
 }
 
-/** El backend devuelve `/files/...`; en el APK hay que anteponerle el servidor. */
 const urlArchivo = (ruta) => (ruta ? urlApi(ruta) : '');
 const esPdf = (ruta) => /\.pdf($|\?)/i.test(ruta || '');
 
-/** Cuantos responsables no tienen foto todavia: es lo que frena la credencial. */
 const sinFoto = computed(() =>
   (ficha.value?.responsables || []).filter((r) => !r.tieneFoto).length);
 
-// ---------------------------------------------------------------- tiempo real
-/** Un aviso del backend: aprobaron o rechazaron mi solicitud. Recargar y avisar. */
 function onNotificacion(n) {
   if (!n || !['APROBACION_CANCELACION', 'RECHAZO_CANCELACION'].includes(n.tipo)) return;
   toast(n.mensaje || 'Tu solicitud de cancelacion fue resuelta',
@@ -538,13 +451,9 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
     <span v-if="edicionSel" class="muted">mostrando {{ edicionVisible }}</span>
   </div>
 
-  <!-- Entrada de archivo única y oculta: en el móvil abre la cámara o la galería.
-       `capture` no se fuerza a propósito — muchos comprobantes ya están en la galería
-       como captura de la transferencia. -->
   <input ref="entradaArchivo" type="file" accept="image/jpeg,image/png,application/pdf"
          class="oculto" @change="onArchivoElegido" />
 
-  <!-- Pendientes primero: es lo único de esta pantalla sobre lo que hay que actuar. -->
   <section v-if="pendientes.length" class="card pendientes">
     <header>
       <h2>Falta el comprobante</h2>
@@ -559,9 +468,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
         <span class="dias" :class="{ urgente: p.diasSinComprobante >= 3 }">
           {{ p.diasSinComprobante === 0 ? 'hoy' : `hace ${p.diasSinComprobante} día${p.diasSinComprobante === 1 ? '' : 's'}` }}
         </span>
-        <!-- Aqui SOLO se adjunta. El recibo y el compartir viven en la ficha de la venta:
-             en una lista que existe para decir "falta el comprobante", un boton de recibo
-             confunde sobre cual es la accion que se espera. -->
         <button class="btn btn-primario btn-sm" :disabled="subiendo === p.id"
                 @click="elegirComprobante(p.id)">
           {{ subiendo === p.id ? 'Subiendo…' : '📷 Adjuntar' }}
@@ -570,7 +476,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
     </ul>
   </section>
 
-  <!-- Vista previa del comprobante antes de subir -->
   <ArchivoPreview
     v-if="archivoSeleccionado"
     :archivo="archivoSeleccionado"
@@ -592,10 +497,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
       </div>
     </div>
 
-    <!-- La tabla de siete columnas se cambio por una LISTA.
-         En un telefono de 400 px aquella tabla mostraba tres columnas y para leer el total
-         habia que arrastrarla de lado; el resto de los datos no cabia en ninguna columna. La
-         lista da lo justo para reconocer la venta y el resto se abre en la ficha. -->
     <section class="card lista-ventas">
       <header class="cab">
         <h2>Entidades registradas</h2>
@@ -611,8 +512,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
             :class="{ pendiente: faltaDe(ins.id).length }" @click="abrirFicha(ins.id)">
           <div class="principal">
             <strong class="nombre">{{ ins.entidad }}</strong>
-            <!-- Que le falta, dicho en la propia fila. Antes habia que abrir cada venta para
-                 descubrirlo, y con decenas de ventas eso no lo hace nadie. -->
             <span v-for="f in faltaDe(ins.id)" :key="f" class="badge badge-danger">falta {{ f }}</span>
             <span v-if="solicitudes[ins.id]" class="badge solicitud"
                   :class="`solicitud-${solicitudes[ins.id].estado.toLowerCase()}`"
@@ -630,22 +529,17 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
           </div>
           <div class="derecha">
             <strong class="total">{{ bs(ins.total) }}</strong>
-            <!-- Que se puede tocar tiene que decirlo la fila, no adivinarse. -->
             <span class="ver">Ver detalle ›</span>
           </div>
         </li>
       </ul>
     </section>
 
-    <!-- Ficha de la venta: todo lo registrado, y desde aqui se corrige. -->
-    <!-- Mas ancha que el resto de dialogos: lleva datos en dos columnas y tres botones con
-         palabras en el pie, y a 480 px eso se partia en dos filas. -->
     <UiModal v-if="ficha || cargandoFicha" :titulo="ficha?.entidad?.nombre || 'Venta'"
              ancho="1200px" @cerrar="cerrarFicha">
       <div v-if="cargandoFicha" class="vacio">Cargando…</div>
       <div v-else-if="ficha" class="ficha">
         <div class="columna-datos">
-          <!-- Lo que falta, primero: es sobre lo que hay que actuar. -->
           <div v-if="!ficha.pago.conComprobante || sinFoto" class="falta-credencial">
             <strong>Falta para la credencial:</strong>
             <ul>
@@ -654,7 +548,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
             </ul>
           </div>
 
-          <!-- ENTIDAD -->
           <section class="grupo g-entidad">
             <header>
               <h3><span class="ico">🏢</span>Entidad</h3>
@@ -705,7 +598,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
             </div>
           </section>
 
-          <!-- CASETAS -->
           <section class="grupo g-casetas">
             <header><h3><span class="ico">🏬</span>Casetas</h3></header>
             <div v-if="!ficha.casetas.length" class="muted">Sin casetas registradas.</div>
@@ -717,7 +609,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
             </div>
           </section>
 
-          <!-- PAGO Y COMPROBANTE -->
           <section class="grupo g-pago">
             <header>
               <h3><span class="ico">🧾</span>Pago</h3>
@@ -731,8 +622,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
               <div v-if="ficha.pago.numComprobante"><dt>N.º comprobante</dt><dd>{{ ficha.pago.numComprobante }}</dd></div>
             </dl>
 
-            <!-- El comprobante SE VE. Antes solo se ofrecia reemplazarlo, asi que no habia forma
-                 de comprobar que lo subido fuera lo correcto sin bajarlo por otro camino. -->
             <div v-if="ficha.pago.conComprobante" class="comprobante">
               <button class="btn btn-sm" @click="verComprobante = !verComprobante">
                 {{ verComprobante ? 'Ocultar comprobante' : '👁 Ver comprobante' }}
@@ -754,7 +643,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
 
         </div>
 
-        <!-- RESPONSABLES -->
         <section class="grupo g-responsables">
           <header>
             <h3><span class="ico">👥</span>Responsables</h3>
@@ -768,8 +656,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
                 <div class="quien">
                   <strong>{{ r.nombre }}</strong>
                   <span class="muted">C.I. {{ r.ci || '—' }}<template v-if="r.celular"> · {{ r.celular }}</template></span>
-                  <!-- Quien entro por encima del derecho y pago. Con el enlace a SU comprobante:
-                       el del pago de la venta es otro, y confundirlos al cuadrar es fácil. -->
                   <span v-if="r.esExtra" class="extra-linea muted">
                     <span class="badge badge-extra">extra · {{ r.montoExtra }} Bs</span>
                     <a v-if="r.comprobanteExtraUrl" :href="urlArchivo(r.comprobanteExtraUrl)"
@@ -809,12 +695,8 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
               </div>
             </li>
           </ul>
-          <!-- Las fotos se gestionan con el componente que ya existe para eso. -->
           <FotosResponsables :inscripcion-id="ficha.id" />
 
-          <!-- El derecho y lo que cuesta pasarse. Se dice ANTES de abrir el formulario: que el
-               cobro aparezca despues de escribir los datos, con el cliente delante, es lo que
-               hace quedar mal al vendedor. -->
           <div v-if="cupo" class="cupo">
             <p class="muted">
               {{ cupo.casetas }} caseta{{ cupo.casetas === 1 ? '' : 's' }} dan derecho a
@@ -830,8 +712,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
       </div>
 
       <template #pie>
-        <!-- El recibo es la accion que mas se repite, asi que es el boton grande y con
-             palabras. Antes era un 🧾 suelto y nadie sabia que hacia. -->
         <button class="btn btn-grande" :disabled="!ficha"
                 @click="ficha && comprobanteDesdeFicha()">
           {{ ficha?.pago?.conComprobante ? '📷 Cambiar comprobante' : '📷 Adjuntar comprobante' }}
@@ -846,7 +726,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
       </template>
     </UiModal>
 
-  <!-- Solicitud de cancelacion: el vendedor pide con motivo, administracion decide. -->
   <UiModal v-if="modalSolicitar" titulo="Solicitar cancelación" @cerrar="modalSolicitar = null">
     <p class="aviso">
       Se pedirá la cancelación de la venta de <strong>{{ modalSolicitar.entidad }}</strong>
@@ -866,7 +745,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
     </template>
   </UiModal>
 
-  <!-- ------------------------------------------------- agregar un responsable a la venta -->
   <UiModal v-if="modalResp.abierto" titulo="Agregar responsable" @cerrar="modalResp.abierto = false">
     <div class="form-resp">
       <p v-if="cupo && !cupo.dentroDelDerecho" class="card aviso-cobro">
@@ -896,7 +774,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
 
       <div class="campo">
         <span>Foto para la credencial *</span>
-        <!-- Sin `capture`: igual que comprobantes, muchas fotos ya estan en galeria. -->
         <input id="foto-resp-nuevo" class="oculto" type="file" accept="image/jpeg,image/png"
                @change="elegirFotoResp" />
         <label for="foto-resp-nuevo" class="btn">
@@ -908,8 +785,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
 
       <div v-if="cupo && !cupo.dentroDelDerecho" class="campo">
         <span>Comprobante del pago *</span>
-        <!-- Sin `capture`: forzar la camara quita la galeria en Android, y el comprobante
-             muchas veces ya esta en el telefono. Mismo criterio que el resto del modulo. -->
         <input id="comp-resp" class="oculto" type="file" accept="image/jpeg,image/png,application/pdf"
                @change="elegirComprobanteResp" />
         <label for="comp-resp" class="btn">
@@ -941,24 +816,16 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
 .puestos { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .chip-puesto { background: var(--acento-suave); color: var(--acento); border-radius: 999px; padding: 0.25rem 0.65rem; font-size: 0.85rem; font-weight: 600; }
 
-/* ---- lista de entidades ---- */
 .lista-ventas { padding: 0; }
 .cab { display: flex; align-items: center; gap: 0.6rem; padding: 0.9rem 1.1rem; border-bottom: 1px solid var(--border); }
 .cab h2 { margin: 0; font-size: 1.05rem; }
 .cab .cuenta { background: var(--acento-suave); color: var(--acento); border-radius: 999px; padding: 0.05rem 0.55rem; font-size: 0.8rem; font-weight: 700; }
 .ventas { list-style: none; margin: 0; padding: 0; }
-/*
- * Una fila = una entidad, en rejilla de dos columnas: a la izquierda quien es, a la derecha
- * cuanto y la invitacion a abrir. En movil la derecha se pasa debajo en vez de salirse, que
- * es lo que hacia la tabla.
- */
 .venta {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.15rem 0.8rem;
   padding: 0.85rem 1.1rem; border-bottom: 1px solid var(--border); cursor: pointer;
 }
 .venta:last-child { border-bottom: none; }
-/* Franja ambar a la izquierda: se recorre la lista con la vista y las que tienen trabajo
-   pendiente saltan sin tener que leer las insignias una por una. */
 .venta.pendiente {
   border-left: 4px solid var(--tramite);
   background: color-mix(in srgb, var(--tramite) 5%, transparent);
@@ -975,28 +842,14 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
 .total { font-variant-numeric: tabular-nums; font-size: 1.05rem; white-space: nowrap; }
 .ver { color: var(--acento); font-size: 0.82rem; font-weight: 700; white-space: nowrap; }
 
-/* ---- ficha de la venta ---- */
 .ficha { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.1rem; align-items: start; }
 .columna-datos { display: flex; flex-direction: column; gap: 1.1rem; min-width: 0; }
 .ficha > .g-responsables { min-width: 0; overflow-wrap: anywhere; }
-/*
- * OJO con el nombre: esta clase se llamaba `.pendiente` a secas y chocaba con `.venta.pendiente`
- * de la lista. El selector sin calificar alcanzaba tambien a las filas, asi que una venta con
- * trabajo pendiente salia con el nombre de la entidad y el importe en ROJO, como si la venta
- * estuviera mal. Dos cosas distintas no pueden compartir un nombre tan generico.
- */
 .falta-credencial {
   padding: 0.7rem 0.9rem; border-radius: var(--radio-sm);
   background: var(--danger-suave); color: var(--danger); font-size: 0.9rem;
 }
 .falta-credencial ul { margin: 0.25rem 0 0; padding-left: 1.1rem; }
-/*
- * Cada bloque con su color y su icono.
- *
- * La ficha lleva cuatro cosas distintas —quien es, que compro, si pago y quien atiende— y
- * puestas una detras de otra en el mismo gris se leian como un muro. La franja de color de la
- * izquierda y el icono dan el "donde estoy" de un vistazo, sin tener que leer el titulo.
- */
 .grupo {
   display: flex; flex-direction: column; gap: 0.6rem;
   padding: 0.75rem 0.9rem; border-radius: var(--radio-sm);
@@ -1013,7 +866,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
 .g-pago         { --borde-grupo: var(--tramite); }
 .g-responsables { --borde-grupo: #a855f7; }
 
-/* ---- comprobante ---- */
 .comprobante { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 .visor-comp { flex-basis: 100%; margin-top: 0.3rem; }
 .visor-comp img {
@@ -1046,10 +898,8 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
 .badge-extra { background: color-mix(in srgb, #a855f7 18%, transparent); color: #7e22ce; font-weight: 700; }
 .extra-linea .sin-comp { color: var(--danger); font-weight: 600; }
 .responsables .form { flex-basis: 100%; }
-/* El recibo y el comprobante se pulsan de pie: botones con palabras, no un emoji suelto. */
 .btn-grande { min-height: 48px; font-size: 0.98rem; font-weight: 700; }
 
-/* ---- solicitud de cancelacion (V11) ---- */
 .solicitud { margin-left: 0.4rem; }
 .solicitud-pendiente { background: var(--tramite-suave, #fff3cd); color: #8a6d1a; }
 .solicitud-aprobada { background: var(--ok-suave, #d4edda); color: #1e6b34; }
@@ -1058,7 +908,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
 .aviso-rechazo { margin-top: 0.6rem; color: var(--danger); font-size: 0.85rem; }
 .aviso-aprobada { margin-top: 0.6rem; color: #1e6b34; font-size: 0.85rem; }
 
-/* ---- pendientes de comprobante ---- */
 .oculto { display: none; }
 .pendientes {
   margin-bottom: 1.2rem; padding: 0;
@@ -1081,7 +930,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
 .pendientes li:last-child { border-bottom: none; }
 .pendientes .quien { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .pendientes .dias { font-size: 0.8rem; color: var(--muted); font-weight: 600; white-space: nowrap; }
-/* A partir de tres días deja de ser un olvido y pasa a ser un problema de cobro. */
 .pendientes .dias.urgente { color: var(--danger); }
 
 @media (max-width: 800px) {
@@ -1092,8 +940,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
   .pendientes li { align-items: flex-start; }
   .pendientes .quien { flex-basis: 100%; }
 
-  /* En el telefono el total y el "ver detalle" se pasan debajo: apretados a la derecha
-     dejaban el nombre de la entidad en dos letras por linea. */
   .venta { grid-template-columns: 1fr; }
   .derecha {
     grid-column: 1; grid-row: auto; flex-direction: row; align-items: center;

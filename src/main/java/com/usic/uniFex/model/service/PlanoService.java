@@ -18,13 +18,6 @@ import com.usic.uniFex.model.entity.Edicion;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Plano de la feria por edicion (V13).
- *
- * Existe para que cambiar el plano NO obligue a recompilar el APK: la imagen vive en el
- * servidor y la SPA la pide al abrir el mapa. Antes viajaba dentro del bundle, asi que un
- * plano nuevo significaba reinstalar la app en cada telefono.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -33,11 +26,9 @@ public class PlanoService {
     private final IEdicionDao edicionDao;
     private final FileStorageService almacen;
 
-    /** Resultado de un reemplazo: `ok` false trae el motivo listo para mostrar. */
     public record Resultado(boolean ok, String mensaje, PlanoDTO plano) {
     }
 
-    /** El plano de la edicion activa, o el de respaldo si todavia no subieron ninguno. */
     @Transactional(readOnly = true)
     public PlanoDTO activo() {
         return edicionDao.findFirstByActivaTrueOrderByAnioDesc()
@@ -45,13 +36,6 @@ public class PlanoService {
                 .orElseGet(PlanoDTO::respaldo);
     }
 
-    /**
-     * Reemplaza el plano de la edicion activa.
-     *
-     * Las medidas se leen de la imagen y no se piden al cliente: son la proporcion con la que
-     * el visor encuadra, y un numero mal tecleado deforma el plano para todos. Si no se pueden
-     * leer, se rechaza — es preferible eso a guardar un plano que luego se dibuja torcido.
-     */
     @Transactional
     public Resultado reemplazar(MultipartFile archivo, Long usuarioId) {
         if (archivo == null || archivo.isEmpty()) {
@@ -85,8 +69,6 @@ public class PlanoService {
             return new Resultado(false, "No se pudo guardar el archivo: " + e.getMessage(), null);
         }
 
-        // El archivo anterior NO se borra a proposito: si el plano nuevo sale mal, el viejo
-        // sigue en disco y se puede volver a el. Ocupan poco y son uno por edicion.
         edicion.setPlanoArchivo(ruta);
         edicion.setPlanoAncho(ancho);
         edicion.setPlanoAlto(alto);

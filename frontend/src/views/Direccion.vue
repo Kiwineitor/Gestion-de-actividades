@@ -1,22 +1,4 @@
 <script setup>
-/**
- * Tablero de dirección: cómo va la feria, en vivo.
- *
- * Lo mira quien dirige (rol ASESORIA) además de administración. Responde cuatro preguntas, en
- * el orden en que se hacen: cuánto queda por vender, quién está vendiendo, cuánto se cobró de
- * verdad, y si el ritmo sube o baja.
- *
- * <h2>Se actualiza solo</h2>
- * Escucha `/topic/puestos` —el mismo canal que el mapa— y vuelve a pedir el análisis cuando
- * una caseta cambia de estado. Se AGRUPAN los avisos: registrar una venta de veinte casetas
- * son veinte mensajes, y recalcular veinte veces seguidas serían veinte consultas pesadas para
- * enseñar el mismo número. Con la espera, es una.
- *
- * <h2>Todo sale de UNA petición</h2>
- * `GET /api/app/analisis` trae las cuatro cosas juntas. En cuatro peticiones separadas la
- * pantalla se llenaría a trompicones y, peor, podrían venir de momentos distintos: el total de
- * arriba de hace un segundo y el desglose de hace tres.
- */
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
@@ -33,14 +15,9 @@ const error = ref('');
 const actualizado = ref(0);
 const datos = ref({ ocupacion: [], vendedores: [], cobros: null, avance: [] });
 
-// ---- filtros, en el cliente ----
-//
-// Son unas decenas de filas: filtrar aquí es instantáneo y no cuesta una consulta por cada
-// tecla. Si algún día la feria creciera hasta que esto se note, el filtro se baja al servidor
-// sin tocar la pantalla.
 const filtroCategoria = ref('');
 const soloConVentas = ref(false);
-const dias = ref(0); // 0 = todo
+const dias = ref(0);
 
 const bs = (n) => Number(n || 0).toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const ent = (n) => Number(n || 0).toLocaleString('es-BO');
@@ -60,16 +37,6 @@ async function cargar(silencioso = false) {
   }
 }
 
-// ---- lo que se ve, ya filtrado ----
-
-/*
- * Ordenadas por DINERO QUE QUEDA POR VENDER, de más a menos.
- *
- * El servidor las devuelve por nombre, que es el orden con el que se administran; aquí la
- * pregunta es otra: "¿dónde queda dinero?". Alfabético, una categoría de 103 casetas sin
- * vender puede caer la novena y pasar desapercibida entre catorce filas. Para encontrar UNA
- * concreta está el filtro de arriba.
- */
 const ocupacion = computed(() => (datos.value.ocupacion || [])
   .filter((o) => !filtroCategoria.value || o.categoria === filtroCategoria.value)
   .slice()
@@ -87,7 +54,6 @@ const totales = computed(() => ocupacion.value.reduce((t, o) => ({
   bsPorVender: t.bsPorVender + Number(o.bsPorVender || 0),
 }), { vendidas: 0, enTramite: 0, libres: 0, bloqueadas: 0, total: 0, bsVendido: 0, bsPorVender: 0 }));
 
-/** Sobre lo VENDIBLE: una categoría con la mitad bloqueada por obra no está al 50 % de ventas. */
 const pctVendido = computed(() => {
   const vendible = totales.value.total - totales.value.bloqueadas;
   return vendible <= 0 ? 0 : (totales.value.vendidas / vendible) * 100;
@@ -122,10 +88,8 @@ const puntosAvance = computed(() => avance.value.map((d) => ({
 
 const cobros = computed(() => datos.value.cobros || { cortes: [], pendientes: [], totalCobrado: 0, totalPendiente: 0 });
 
-/** Las más antiguas primero: son las que hay que reclamar hoy. */
 const pendientes = computed(() => (cobros.value.pendientes || []).slice(0, 15));
 
-// ---- descargas ----
 const bajando = ref('');
 async function bajar(nombre, formato) {
   if (bajando.value) return;
@@ -143,17 +107,6 @@ async function bajar(nombre, formato) {
   }
 }
 
-/*
- * ---- en vivo ----
- *
- * No hace falta un canal nuevo: el store ya mantiene UNA conexión WebSocket para toda la
- * aplicación y aplica cada cambio de caseta sobre su lista. Aquí basta con vigilar una señal
- * barata derivada de esa lista —cuántas hay vendidas y cuántas en trámite— y recalcular
- * cuando se mueva. Abrir otra conexión desde esta pantalla duplicaría los mensajes.
- *
- * Se vigila el CONTEO y no la lista entera: un `watch` profundo sobre ~550 objetos se dispara
- * con cualquier cambio de geometría del Editor, que no altera ni una cifra de este tablero.
- */
 const pulso = computed(() => {
   let vendidas = 0;
   let tramite = 0;
@@ -170,11 +123,7 @@ let dejarDeVigilar = null;
 onMounted(async () => {
   await cargar();
   await tienda.asegurar();
-  // `watch` y no `watchEffect`: hay que ignorar el primer valor, que es el estado con el que
-  // se acaba de cargar la pantalla. Si no, se recargaría dos veces al entrar.
   dejarDeVigilar = watch(pulso, () => {
-    // Agrupado: registrar una venta de veinte casetas son veinte mensajes, y recalcular veinte
-    // veces seguidas serían veinte consultas pesadas para enseñar el mismo número.
     if (pendienteRecarga) return;
     pendienteRecarga = setTimeout(() => {
       pendienteRecarga = null;
@@ -201,8 +150,6 @@ const hace = computed(() => {
     <div v-else-if="cargando" class="vacio">Cargando el tablero…</div>
 
     <template v-else>
-      <!-- Cifras de cabecera. Son números sueltos, no gráficos: un gráfico de una sola cifra
-           es un adorno que tapa el dato. -->
       <section class="tarjetas">
         <div class="card kpi principal">
           <span class="rotulo">Vendido</span>
@@ -226,7 +173,6 @@ const hace = computed(() => {
         </div>
       </section>
 
-      <!-- Los filtros, en una fila sobre los gráficos. -->
       <section class="card filtros">
         <select v-model="filtroCategoria" class="control">
           <option value="">Todas las categorías</option>
@@ -246,7 +192,6 @@ const hace = computed(() => {
       </section>
 
       <div class="rejilla">
-        <!-- 1. Cuánto queda por vender -->
         <section class="card bloque">
           <header class="cab">
             <div>
@@ -261,7 +206,6 @@ const hace = computed(() => {
           <BarraProgreso :items="barrasOcupacion" vacio="Todavía no hay casetas en el plano." />
         </section>
 
-        <!-- 2. Quién vende -->
         <section class="card bloque">
           <header class="cab">
             <div>
@@ -275,8 +219,6 @@ const hace = computed(() => {
           </header>
           <BarrasHorizontales :items="barrasVendedores" :formato="(v) => bs(v) + ' Bs'" />
 
-          <!-- La tabla no es un extra: es la lectura alternativa que exige tener un gráfico,
-               y además trae área, carrera y ticket medio, que no caben en una barra. -->
           <details class="detalle-tabla">
             <summary>Ver la tabla completa ({{ vendedores.length }})</summary>
             <div class="tabla-scroll">
@@ -303,7 +245,6 @@ const hace = computed(() => {
           </details>
         </section>
 
-        <!-- 3. Cuánto se cobró -->
         <section class="card bloque">
           <header class="cab">
             <div>
@@ -343,7 +284,6 @@ const hace = computed(() => {
                 </span>
                 <span class="cuanto">
                   {{ bs(p.totalBs) }} Bs
-                  <!-- Los días son la razón de que esta lista exista: dicen a quién llamar hoy. -->
                   <span class="dias" :class="{ viejo: p.dias >= 7 }">{{ p.dias }} d</span>
                 </span>
               </li>
@@ -351,7 +291,6 @@ const hace = computed(() => {
           </template>
         </section>
 
-        <!-- 4. A qué ritmo -->
         <section class="card bloque ancho">
           <header class="cab">
             <div>
@@ -381,36 +320,22 @@ const hace = computed(() => {
 .muted { color: var(--muted); }
 .chico { font-size: 0.82rem; }
 
-/* auto-fit: con cuatro tarjetas fijas, en una pantalla mediana la última se salía. */
 .tarjetas { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); }
 .kpi { padding: 1rem; display: flex; flex-direction: column; gap: 0.2rem; }
 .rotulo { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .kpi strong { font-size: 1.5rem; font-variant-numeric: tabular-nums; line-height: 1.15; }
-/* La cifra que se mira primero, más grande que las demás: si todas pesan igual, no hay
-   jerarquía y hay que leer las cuatro para encontrar la que importa. */
 .kpi.principal strong.grande { font-size: 2rem; color: var(--acento); }
 .moneda { font-size: 0.9rem; font-weight: 600; color: var(--muted); }
 .pie { font-size: 0.8rem; color: var(--muted); }
-/* Ámbar y no rojo: hay dinero por cobrar, no una avería. */
 .kpi.alerta { border-left: 3px solid var(--tramite); }
 
 .filtros { padding: 0.8rem 1rem; display: flex; gap: 0.7rem; align-items: center; flex-wrap: wrap; }
 .check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; white-space: nowrap; }
 .actualizado { margin-left: auto; font-size: 0.82rem; }
 
-/* `minmax(min(340px, 100%), 1fr)` y no `minmax(340px, 1fr)`: con el mínimo fijo, en una
-   pantalla de 400 px la pista de la rejilla seguía midiendo 340 y —peor— `1fr` equivale a
-   `minmax(auto, 1fr)`, cuyo mínimo es el min-content del contenido. Una tabla dentro hacía
-   crecer la columna a 577 px y la página entera se desplazaba de lado. El `min(…, 100%)` deja
-   que la pista se encoja con la ventana, y el `min-width: 0` de abajo corta la otra mitad del
-   problema: sin él, el contenido sigue imponiendo su ancho mínimo. */
 .rejilla { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); }
 .bloque { padding: 1rem; display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; }
 .bloque.ancho { grid-column: 1 / -1; }
-/* `nowrap` y el título encogible: con `wrap`, la descripción de un bloque empujaba los botones
-   a la línea de abajo y la del bloque de al lado no, así que cada tarjeta colocaba sus
-   descargas en un sitio distinto. Ahora los botones se quedan siempre arriba a la derecha y lo
-   que cede es el texto, que para eso se puede partir en varias líneas. */
 .cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.8rem; flex-wrap: nowrap; }
 .cab > div:first-child { min-width: 0; }
 .cab h3 { margin: 0; font-size: 1.05rem; }
@@ -418,10 +343,6 @@ const hace = computed(() => {
 .descargas { display: flex; gap: 0.35rem; flex: none; }
 .btn.chico { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
 
-/* La tabla es lo único que puede pasarse de ancho; se desplaza ella, no la página. */
-/* `max-width: 100%` ademas del `min-width: 0`: sin el, la tabla de siete columnas estira su
-   propio contenedor y el desplazamiento lateral se lo come la PAGINA en vez de la tabla. A 400
-   px eso deja el tablero moviendose de lado, que es exactamente lo que se quiere evitar. */
 .tabla-scroll { overflow-x: auto; min-width: 0; max-width: 100%; }
 .detalle-tabla { min-width: 0; }
 .tabla { width: 100%; }
@@ -443,7 +364,6 @@ const hace = computed(() => {
   font-size: 0.72rem; font-weight: 700; color: var(--muted);
   border: 1px solid var(--border);
 }
-/* A partir de una semana deja de ser "reciente" y pasa a ser algo que reclamar. */
 .dias.viejo { color: var(--tramite); border-color: color-mix(in srgb, var(--tramite) 45%, transparent); }
 .pie-linea { margin: 0; }
 

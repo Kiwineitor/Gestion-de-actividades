@@ -29,19 +29,6 @@ import com.usic.uniFex.security.Roles;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * Reportes globales de la feria para la SPA (Fase G). Aqui se ve el total —todas las
- * inscripciones, todos los vendedores—, a diferencia de "mis ventas", que es lo propio.
- *
- * <b>Se protege con {@link Roles#VE_REPORTES} y no con GESTIONA_USUARIOS.</b> Estaba con lo
- * segundo, que nunca cuadro: esto es de solo lectura y no crea ni toca una sola cuenta. El
- * efecto practico era que a direccion (ASESORIA) le salia "Reportes" en el menu y respondia
- * 403 al entrar — el fallo mudo que este proyecto ya sufrio con VERIFICADOR.
- *
- * Se apoya en las proyecciones {@code resumenPor*} de IInscripcionService, que —al reves que
- * fn_get_inscripciones— NO filtran por casetas confirmadas ('O'), asi que cuentan todo lo
- * inscrito y devuelven datos aunque en la copia local los puestos esten reseteados.
- */
 @RestController
 @RequestMapping("/api/app/reportes")
 @RequiredArgsConstructor
@@ -55,19 +42,16 @@ public class ReportesApiController {
     private final ReporteVentasExcelService reporteVentasExcel;
     private final ReporteResponsablesExcelService reporteResponsablesExcel;
 
-    /** KPIs generales: nº de inscripciones, nº de puestos y total en Bs. */
     @GetMapping("/resumen")
     public ResumenGeneralView resumen() {
         return inscripcionService.resumenGeneral();
     }
 
-    /** Desglose por vendedor y categoria (inscripciones, puestos, total). */
     @GetMapping("/por-categoria")
     public List<ResumenCategoriaView> porCategoria() {
         return inscripcionService.resumenPorCategoria();
     }
 
-    /** Desglose por vendedor y entidad (inscripciones, puestos, total). */
     @GetMapping("/por-entidad")
     public List<ResumenEntidadView> porEntidad() {
         return inscripcionService.resumenPorEntidad();
@@ -136,13 +120,11 @@ public class ReportesApiController {
         }
     }
 
-    /** Listado de todos los responsables de la edición activa con estado de credencial y foto. */
     @GetMapping("/responsables")
     public List<ResponsableReporteView> responsables() {
         return responsableService.listarParaReporte();
     }
 
-    /** Excel del reporte de responsables. */
     @GetMapping("/responsables/excel")
     public ResponseEntity<byte[]> responsablesExcel() {
         try (ByteArrayOutputStream salida = new ByteArrayOutputStream()) {

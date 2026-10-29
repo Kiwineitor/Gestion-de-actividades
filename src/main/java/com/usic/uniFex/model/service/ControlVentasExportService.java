@@ -24,20 +24,6 @@ import com.usic.uniFex.model.service.TablaExportService.Tabla;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * El Excel y el PDF de Control de ventas.
- *
- * El Excel lleva TODAS las celdas del registro —fechas y telefonos incluidos—, en una hoja por
- * nivel de detalle: la venta, cada caseta y cada responsable con su credencial. Una sola hoja
- * con todo obligaria a repetir la venta en cada caseta y cada responsable, y sumar esa columna
- * de importes daria el doble.
- *
- * El PDF es para imprimir y firmar. Sin filtro: resumen, rendicion por vendedor, categorias y
- * las ventas que siguen por rendir. <b>Filtrado por un vendedor es su hoja de rendicion de
- * cuentas</b>: sus cifras, cada una de sus ventas con su comprobante y un espacio de firmas.
- *
- * Todo sale de {@link ControlVentasService#calcular()}: lo mismo que ve la pantalla.
- */
 @Service
 @RequiredArgsConstructor
 public class ControlVentasExportService {
@@ -76,7 +62,6 @@ public class ControlVentasExportService {
 
         List<Tabla> paginas = new ArrayList<>();
         if (filtros != null && filtros.vendedorId() != null && !vendedores.isEmpty()) {
-            // Rendicion de cuentas de UN vendedor: lo que se imprime, se revisa y se firma.
             Vendedor v = vendedores.get(0);
             List<String> suyas = conNotas(notas, "Vendedor: " + v.vendedor()
                     + (v.usuario() == null ? "" : " (" + v.usuario() + ")"));
@@ -91,13 +76,10 @@ public class ControlVentasExportService {
         return exportador.pdf(paginas);
     }
 
-    // ------------------------------------------------------------------ hojas
-
     private Tabla tablaResumen(Resumen r, List<String> notas) {
         return tablaResumen(r, notas, "Resumen");
     }
 
-    /** Dos columnas de valor —cantidad y Bs— para que Excel no muestre "272,00 ventas". */
     private Tabla tablaResumen(Resumen r, List<String> notas, String titulo) {
         List<List<String>> f = new ArrayList<>();
         f.add(fila("Operaciones (ventas)", ent(r.operaciones()), ""));
@@ -220,7 +202,6 @@ public class ControlVentasExportService {
                 filas);
     }
 
-    /** Lo que falta rendir: las ventas sin comprobante (o con alguna extra sin el suyo). */
     private Tabla tablaPorRendir(List<Venta> ventas, List<String> notas) {
         List<List<String>> filas = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
@@ -276,7 +257,6 @@ public class ControlVentasExportService {
                 filas);
     }
 
-    /** La version impresa: sin las columnas que en papel apaisado ya no caben. */
     private Tabla tablaVendedoresPdf(List<Vendedor> vs, List<String> notas) {
         List<List<String>> filas = new ArrayList<>();
         for (Vendedor v : vs) {
@@ -301,7 +281,6 @@ public class ControlVentasExportService {
                 filas);
     }
 
-    /** Cada venta de UN vendedor, para su hoja de rendicion. Con espacio de firmas al pie. */
     private Tabla tablaDetalleVendedor(List<Venta> ventas, List<String> notas, Vendedor v) {
         List<List<String>> filas = new ArrayList<>();
         for (Venta x : ventas) {
@@ -314,9 +293,6 @@ public class ControlVentasExportService {
         filas.add(fila("TOTAL", "", ent(v.operaciones()) + " venta(s)", "", ent(v.puestos()),
                 bs(v.importePuestos()), ent(v.extras()), bs(v.importeExtras()), bs(v.totalVendido()), "",
                 bs(v.totalRecaudado()), bs(v.porRendir())));
-        // Firmas: una fila con espacio en blanco al pie, que en papel queda como casilla. Van en
-        // columnas de TEXTO (Entidad y Comprobante): en una numerica se alinean a la derecha y
-        // se parten en cuatro renglones.
         filas.add(fila("", "", "\n\n\n\nEntregué conforme:\n" + v.vendedor(), "", "", "", "", "", "",
                 "\n\n\n\nRecibí conforme:\nAdministración", "", ""));
         return new Tabla("Detalle de ventas - " + v.vendedor(), conNotas(notas,
@@ -353,8 +329,6 @@ public class ControlVentasExportService {
                 filas);
     }
 
-    // ------------------------------------------------------------------ formato
-
     private static String motivoPorRendir(Venta v) {
         List<String> r = new ArrayList<>();
         if (!v.isConComprobante() && v.getImportePuestos().signum() > 0) {
@@ -366,7 +340,6 @@ public class ControlVentasExportService {
         return String.join("; ", r);
     }
 
-    /** Las notas comunes (edicion y filtros) seguidas de las propias de la hoja. */
     private static List<String> conNotas(List<String> comunes, String... propias) {
         List<String> r = new ArrayList<>(comunes);
         r.addAll(List.of(propias));

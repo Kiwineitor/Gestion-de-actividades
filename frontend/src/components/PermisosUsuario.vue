@@ -1,14 +1,4 @@
 <script setup>
-/**
- * Pantallas por USUARIO (V49): las que se le dan a una persona concreta, además de las de su rol.
- *
- * Lo que ve un usuario = lo de su rol + lo suyo. Aquí las del rol salen marcadas y en gris
- * —se cambian en «Por rol»— y solo se marcan o desmarcan las propias. Así se habilita
- * «Inscripciones» a una persona sin cambiarle el rol ni abrírselo a todos los de su rol.
- *
- * En Inscripciones, Credenciales y Control de ventas, tener la pantalla también da acceso a sus
- * datos en el servidor; quien no es administración ve solo las ventas que registró él.
- */
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { apiFetch, jsonOError } from '../api';
@@ -17,12 +7,9 @@ import { usePermisosStore } from '../stores/permisos';
 import { useAuthStore } from '../stores/auth';
 
 const props = defineProps({
-  /** [{ clave, titulo, grupo }], el mismo catálogo que la matriz por rol. */
   catalogo: { type: Array, default: () => [] },
 });
 
-/* Pantallas donde darla también da acceso a los datos (recortados a lo propio). Espejo de las
-   que usan @acceso.puede(...) en el servidor; en las demás, el servidor sigue pidiendo el rol. */
 const CON_DATOS = ['inscripciones', 'credenciales', 'control-ventas'];
 
 const propio = usePermisosStore();
@@ -31,8 +18,8 @@ const auth = useAuthStore();
 const usuarios = ref([]);
 const busqueda = ref('');
 const elegidoId = ref(null);
-const detalle = ref(null);        // { usuarioId, nombre, rol, loVeTodo, delRol[], propias[] }
-const marcadas = ref(new Set());  // propias en edición
+const detalle = ref(null);
+const marcadas = ref(new Set());
 const cargando = ref(true);
 const cargandoDetalle = ref(false);
 const guardando = ref(false);
@@ -113,7 +100,6 @@ async function guardar() {
     if (u) u.propias = d.pantallas.length;
     detalle.value = { ...detalle.value, propias: d.pantallas };
     marcadas.value = new Set(d.pantallas);
-    // Si me los cambié a mí mismo, el menú tiene que reflejarlo sin recargar.
     if (auth.id === detalle.value.usuarioId) {
       propio.limpiar();
       await propio.asegurar();

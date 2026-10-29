@@ -1,21 +1,3 @@
--- =============================================================================
--- V49 - Pantallas por USUARIO, ademas de por rol.
---
--- Lo que ve un usuario = las pantallas de su rol + las que se le den a EL en esta tabla. Asi
--- se puede habilitar "Inscripciones" o "Credenciales" a una persona concreta sin cambiarle el
--- rol ni abrirselo a todos los de su rol.
---
--- Para Inscripciones, Credenciales y Control de ventas, tener la pantalla tambien da acceso a
--- sus datos en el servidor, con una condicion: administracion (y verificador/asesoria, que ya
--- lo veian todo) ve todas las ventas; cualquier otro usuario, solo las que registro el.
--- Lo aplica la aplicacion (security/AccesoPantallas), no la base.
---
--- Sin clave foranea a usuario a proposito: los usuarios nunca se borran fisicamente (baja
--- logica en usuario._estado), y declararla exige el privilegio REFERENCES que solo tiene el
--- dueño de la tabla. El servicio valida que el usuario exista antes de guardar.
---
--- Idempotente: se puede ejecutar varias veces.
--- =============================================================================
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS usuario_pantalla (

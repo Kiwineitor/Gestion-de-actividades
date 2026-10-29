@@ -1,29 +1,20 @@
-import { ref, computed } from 'vue';
+import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import { apiFetch } from '../api.js';
 import { escucharTopic } from '../ws.js';
 
-/**
- * Estado compartido de los movimientos de acceso (entradas/salidas).
- *
- * Una sola conexion WebSocket para toda la app al topic /topic/accesos.
- * Las vistas (ControlAcceso, Escaner) se suscriben aqui para recibir
- * actualizaciones en tiempo real sin recargar.
- */
 export const useAccesosStore = defineStore('accesos', () => {
-  const movimientos = ref([]);        // ultimos movimientos (para tabla)
-  const dentroDetalle = ref([]);      // personas dentro ahora
-  const resumenCategoria = ref([]);   // resumen por categoria
-  const resumenUsuario = ref([]);     // resumen por usuario
+  const movimientos = ref([]);
+  const dentroDetalle = ref([]);
+  const resumenCategoria = ref([]);
+  const resumenUsuario = ref([]);
   const cargando = ref(false);
   const error = ref('');
-  const enVivo = ref(false);          // WebSocket conectado
+  const enVivo = ref(false);
   const ultimaSync = ref(0);
 
   let cliente = null;
   let promesaCarga = null;
-
-  // ---- WebSocket ----
 
   let desconectarWs = null;
 
@@ -47,14 +38,13 @@ export const useAccesosStore = defineStore('accesos', () => {
   function aplicarEvento(e) {
     if (!e || e.tipo !== 'MOVIMIENTO') return;
 
-    // Agregar al inicio de la lista de movimientos (maximo 100)
     movimientos.value = [
       {
-        id: Date.now(), // id temporal para key
+        id: Date.now(),
         cuando: e.cuando,
         sentido: e.sentido,
         nombre: e.nombre,
-        paterno: '', // no viene en el evento, se puede dejar vacio
+        paterno: '',
         materno: '',
         ci: e.ci,
         entidad: e.entidad,
@@ -66,10 +56,7 @@ export const useAccesosStore = defineStore('accesos', () => {
       ...movimientos.value.slice(0, 99),
     ];
 
-    // Actualizar dentroDetalle: recargar desde servidor es mas fiable
-    // pero podemos hacer optimista:
     if (e.sentido === 'E') {
-      // Entrada: agregar si no existe
       const existe = dentroDetalle.value.find(p => p.responsable_id === e.responsableId);
       if (!existe) {
         dentroDetalle.value.push({
@@ -87,17 +74,14 @@ export const useAccesosStore = defineStore('accesos', () => {
         existe.ultima_entrada = e.cuando;
       }
     } else if (e.sentido === 'S') {
-      // Salida: quitar
       const idx = dentroDetalle.value.findIndex(p => p.responsable_id === e.responsableId);
       if (idx >= 0) dentroDetalle.value.splice(idx, 1);
     }
 
-    // Actualizar resumenes de forma optimista
     actualizarResumenOptimista(e);
   }
 
   function actualizarResumenOptimista(e) {
-    // Resumen por categoria
     let cat = resumenCategoria.value.find(c => c.categoria === e.categoria);
     if (!cat) {
       cat = { categoria_id: 0, categoria: e.categoria || '—', entradas: 0, salidas: 0, personas_unicas: 0 };
@@ -106,11 +90,7 @@ export const useAccesosStore = defineStore('accesos', () => {
     if (e.sentido === 'E') cat.entradas = (cat.entradas || 0) + 1;
     else cat.salidas = (cat.salidas || 0) + 1;
 
-    // Resumen por usuario (quien escaneo) - no sabemos quien fue en el evento
-    // Se recargara del servidor
   }
-
-  // ---- Carga inicial / recarga ----
 
   async function cargar(filtros = {}) {
     if (promesaCarga) return promesaCarga;

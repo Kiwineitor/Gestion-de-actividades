@@ -1,5 +1,6 @@
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
 import UiModal from '../components/UiModal.vue';
 import MenuAcciones from '../components/MenuAcciones.vue';
 import { apiFetch, jsonOError } from '../api';
@@ -8,15 +9,42 @@ import { alertaConAccion } from '../ui/alerta';
 import { useAuthStore } from '../stores/auth';
 import { useActividadStore } from '../stores/actividad';
 import { url as urlApi } from '../config.js';
+import { usePermisosStore } from '../stores/permisos';
+import { aModulo } from '../modulos';
+import { alCambiarPublico } from '../ui/canalPublico';
 
 const TIPOS = ['Feria', 'Exposición', 'Evento', 'Congreso', 'Festival', 'Otro'];
 
 const auth = useAuthStore();
+const permisos = usePermisosStore();
+const router = useRouter();
 const actividad = useActividadStore();
 const esSuper = computed(() => (auth.rol || '').toUpperCase().replace(/ /g, '_') === 'SUPER_USUARIO');
 
 const lista = ref([]);
+const eventos = ref([]);
 const cargando = ref(true);
+const filtro = ref('todas');
+const busqueda = ref('');
+const nuevoAbierto = ref(false);
+let soltarCanal = null;
+let pendiente = null;
+
+const admin = computed(() => auth.puedeEditarPlano);
+const puede = (p) => admin.value || permisos.puedeVer(p);
+const veFerias = computed(() => puede('actividades'));
+const veEventos = computed(() => puede('mesas') || puede('mesas-diseno'));
+
+const tarjetas = computed(() => {
+  const ferias = lista.value.map((a) => ({ ...a, clase: 'feria', clave: `f${a.id}` }));
+  const evs = eventos.value.map((e) => ({ ...e, clase: 'evento', clave: `e${e.id}` }));
+  const q = busqueda.value.trim().toLowerCase();
+  return [...ferias, ...evs]
+    .filter((t) => filtro.value === 'todas' || t.clase === filtro.value)
+    .filter((t) => !q || `${t.nombre} ${t.localNombre || ''} ${t.lugar || ''} ${t.tipo || ''}`.toLowerCase().includes(q))
+    .sort((a, b) => Number(Boolean(b.activa)) - Number(Boolean(a.activa)));
+});
+const porValidar = computed(() => eventos.value.reduce((s, e) => s + Number(e.porValidar || 0), 0));
 const form = reactive({
   abierto: false, editando: null, nombre: '', anio: new Date().getFullYear(), tipo: 'Feria',
   copiarDe: '', copiarPlano: true, copiarTextos: true, guardando: false,
@@ -28,16 +56,38 @@ const PUBLICO_VACIO = { lugar: '', fechasTexto: '', descripcionPublica: '', cont
 
 const activa = computed(() => lista.value.find((a) => a.activa) || null);
 
-async function cargar() {
-  cargando.value = true;
+async function cargar(silencioso = false) {
+  if (!silencioso) cargando.value = true;
   try {
-    lista.value = await jsonOError(await apiFetch('/api/app/ediciones/resumen'), 'No se pudieron cargar las actividades');
+    const [f, e] = await Promise.all([
+      veFerias.value ? jsonOError(await apiFetch('/api/app/ediciones/resumen'), 'No se pudieron cargar las ferias') : [],
+      veEventos.value ? jsonOError(await apiFetch('/api/app/mesas/eventos'), 'No se pudieron cargar los eventos') : [],
+    ]);
+    lista.value = f;
+    eventos.value = e;
   } catch (e) {
-    toast(e.message, 'error');
+    if (!silencioso) toast(e.message, 'error');
   } finally {
     cargando.value = false;
   }
 }
+
+function ir(m, query = {}) {
+  router.push(aModulo(m, query));
+}
+
+function abrirPublica(query) {
+  window.open(router.resolve({ path: '/', query }).href, '_blank', 'noopener');
+}
+
+function nuevo(tipo) {
+  nuevoAbierto.value = false;
+  if (tipo === 'evento') ir('mesas', { nuevo: '1' });
+  else abrirCrear();
+}
+
+const hora = (s) => (s ? s.replace('T', ' ').slice(0, 16) : '—');
+const bs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO')}`;
 
 function abrirCrear() {
   Object.assign(form, {
@@ -125,7 +175,8 @@ async function activar(a) {
 
 function acciones(a) {
   return [
-    { txt: 'Editar', accion: () => abrirEditar(a) },
+    { txt: 'Editar datos y página pública', accion: () => abrirEditar(a) },
+    { txt: 'Ver página pública', deshabilitado: !a.activa || !a.publica, titulo: !a.activa ? 'Solo la actividad activa se muestra al público' : '', accion: () => abrirPublica({ v: 'actividad' }) },
     {
       txt: 'Activar', deshabilitado: a.activa || !esSuper.value,
       titulo: !esSuper.value ? 'Solo el SUPER USUARIO cambia la actividad activa' : '', accion: () => activar(a),
@@ -133,39 +184,100 @@ function acciones(a) {
   ];
 }
 
-onMounted(cargar);
+function accionesEvento(e) {
+  return [
+    { txt: 'Datos, pago y condiciones', deshabilitado: !puede('mesas-diseno'), accion: () => ir('mesas', { evento: e.id, tab: 'evento' }) },
+    { txt: 'Ver página pública', deshabilitado: !e.publicado, titulo: e.publicado ? '' : 'Publica el evento para verlo', accion: () => abrirPublica({ evento: e.id }) },
+  ];
+}
+
+onMounted(() => {
+  cargar();
+  soltarCanal = alCambiarPublico(() => {
+    clearTimeout(pendiente);
+    pendiente = setTimeout(() => cargar(true), 700);
+  });
+});
+onUnmounted(() => { soltarCanal?.(); clearTimeout(pendiente); });
 </script>
 
 <template>
   <div class="actividades">
     <div class="cab">
-      <p class="muted">
-        Cada actividad tiene su propio plano, categorías, precios, puestos, ventas y credenciales.
-        Solo una está activa: es la que ven el mapa, las ventas y los reportes.
-      </p>
-      <button class="btn btn-primario" @click="abrirCrear">＋ Nueva actividad</button>
+      <div class="filtros">
+        <button v-for="[k, t] in [['todas', 'Todas'], ['feria', 'Ferias con puestos'], ['evento', 'Eventos con mesas']]" :key="k"
+                type="button" class="chip" :class="{ on: filtro === k }" @click="filtro = k">{{ t }}</button>
+        <input v-model="busqueda" type="search" class="control buscar" placeholder="Buscar actividad…" aria-label="Buscar actividad" />
+      </div>
+      <div class="nuevo">
+        <button class="btn btn-primario" @click="nuevoAbierto = !nuevoAbierto">＋ Nueva</button>
+        <div v-if="nuevoAbierto" class="menu-nuevo">
+          <button v-if="admin || puede('actividades')" type="button" @click="nuevo('feria')">
+            <strong>🗺️ Feria con puestos</strong><span>Plano con espacios para vender a expositores.</span>
+          </button>
+          <button v-if="puede('mesas-diseno')" type="button" @click="nuevo('evento')">
+            <strong>🍸 Evento con mesas</strong><span>Reserva pública de mesas con pago y comprobante.</span>
+          </button>
+        </div>
+      </div>
     </div>
+    <p v-if="porValidar" class="alerta-validar" role="status">
+      Hay <b>{{ porValidar }}</b> pago{{ porValidar === 1 ? '' : 's' }} de mesas esperando revisión.
+    </p>
 
     <p v-if="cargando" class="vacio">Cargando…</p>
+    <p v-else-if="!tarjetas.length" class="vacio">No hay actividades que coincidan.</p>
     <div v-else class="rejilla">
-      <article v-for="a in lista" :key="a.id" class="card tarjeta" :class="{ activa: a.activa }">
-        <header>
-          <div>
-            <h3>{{ a.nombre }}</h3>
-            <span class="muted chico">{{ a.tipo || 'Actividad' }} · {{ a.anio }}</span>
+      <template v-for="t in tarjetas" :key="t.clave">
+        <article v-if="t.clase === 'feria'" class="card tarjeta feria" :class="{ activa: t.activa }">
+          <header>
+            <span class="tipo">🗺️ {{ t.tipo || 'Feria' }} · {{ t.anio }}</span>
+            <span v-if="t.activa" class="badge badge-ok">Activa</span>
+            <span v-else class="badge badge-muted">Inactiva</span>
+            <MenuAcciones :acciones="acciones(t)" :etiqueta="`Acciones de ${t.nombre}`" />
+          </header>
+          <h3>{{ t.nombre }}</h3>
+          <dl>
+            <div><dt>Categorías</dt><dd>{{ t.categorias }}</dd></div>
+            <div><dt>Puestos</dt><dd>{{ t.puestos }}</dd></div>
+            <div><dt>Vendidos</dt><dd>{{ t.vendidos }}</dd></div>
+            <div><dt>Ventas</dt><dd>{{ t.ventas }}</dd></div>
+          </dl>
+          <p class="muted chico">{{ t.conPlano ? 'Con plano propio' : 'Usa el plano de respaldo' }}
+            · {{ t.publica ? 'Visible al público' : 'Oculta al público' }}</p>
+          <div class="atajos">
+            <template v-if="t.activa">
+              <button v-if="puede('editor')" class="btn btn-sm" @click="ir('editor')">✏️ Plano</button>
+              <button v-if="puede('categorias')" class="btn btn-sm" @click="ir('categorias')">🏷️ Precios</button>
+              <button v-if="puede('interesados')" class="btn btn-sm" @click="ir('interesados')">🙋 Solicitudes</button>
+            </template>
+            <span v-else class="muted chico">Actívala para editar su plano y precios.</span>
           </div>
-          <span v-if="a.activa" class="badge badge-ok">Activa</span>
-          <MenuAcciones :acciones="acciones(a)" :etiqueta="`Acciones de ${a.nombre}`" />
-        </header>
-        <dl>
-          <div><dt>Categorías</dt><dd>{{ a.categorias }}</dd></div>
-          <div><dt>Puestos</dt><dd>{{ a.puestos }}</dd></div>
-          <div><dt>Vendidos</dt><dd>{{ a.vendidos }}</dd></div>
-          <div><dt>Ventas</dt><dd>{{ a.ventas }}</dd></div>
-        </dl>
-        <p class="muted chico">{{ a.conPlano ? 'Con plano propio' : 'Usa el plano de respaldo' }}
-          · {{ a.publica ? 'Visible en la página pública' : 'Oculta al público' }}</p>
-      </article>
+        </article>
+
+        <article v-else class="card tarjeta evento">
+          <header>
+            <span class="tipo">🍸 Evento con mesas</span>
+            <span class="badge" :class="t.publicado ? 'badge-ok' : 'badge-muted'">{{ t.publicado ? 'Publicado' : 'Borrador' }}</span>
+            <MenuAcciones :acciones="accionesEvento(t)" :etiqueta="`Acciones de ${t.nombre}`" />
+          </header>
+          <h3>{{ t.nombre }}</h3>
+          <span class="muted chico">{{ t.localNombre }} · {{ hora(t.fechaInicio) }}</span>
+          <dl>
+            <div><dt>Mesas</dt><dd>{{ t.mesas }}</dd></div>
+            <div><dt>Vendidas</dt><dd>{{ t.vendidas }}</dd></div>
+            <div><dt>Por validar</dt><dd :class="{ urgente: t.porValidar }">{{ t.porValidar }}</dd></div>
+            <div><dt>Cobrado</dt><dd class="monto">{{ bs(t.confirmado) }}</dd></div>
+          </dl>
+          <div class="atajos">
+            <button v-if="puede('mesas')" class="btn btn-sm" :class="{ 'btn-primario': t.porValidar }" @click="ir('mesas', { evento: t.id, tab: 'reservas' })">
+              🧾 Reservas<template v-if="t.porValidar"> ({{ t.porValidar }})</template>
+            </button>
+            <button v-if="puede('mesas-diseno')" class="btn btn-sm" @click="ir('mesas', { evento: t.id, tab: 'plano' })">✏️ Plano y precios</button>
+            <button v-if="puede('mesas')" class="btn btn-sm" @click="ir('mesas', { evento: t.id, tab: 'ingreso' })">🎟️ Ingreso</button>
+          </div>
+        </article>
+      </template>
     </div>
 
     <UiModal v-if="form.abierto" :titulo="form.editando ? `Editar ${form.editando.nombre}` : 'Nueva actividad'"
@@ -226,14 +338,33 @@ onMounted(cargar);
 
 <style scoped>
 .actividades { display: flex; flex-direction: column; gap: 1rem; }
-.cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
-.cab p { margin: 0; max-width: 640px; }
-.rejilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
-.tarjeta { padding: 1rem; display: flex; flex-direction: column; gap: 0.7rem; }
-.tarjeta.activa { border-color: var(--acento); box-shadow: 0 0 0 1px var(--acento); }
-.tarjeta header { display: flex; align-items: flex-start; gap: 0.5rem; }
-.tarjeta header > div { flex: 1; }
-.tarjeta h3 { margin: 0; font-size: 1.05rem; }
+.cab { display: flex; justify-content: space-between; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
+.filtros { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.chip { border: 1px solid var(--border); background: var(--panel); color: var(--muted); border-radius: 999px; padding: 0.35rem 0.8rem; font: inherit; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
+.chip.on { background: var(--acento); border-color: var(--acento); color: var(--acento-texto, #fff); }
+.buscar { width: 220px; }
+.nuevo { position: relative; }
+.menu-nuevo {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: 300px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: var(--radio); box-shadow: var(--sombra-md); padding: 0.4rem; display: flex; flex-direction: column;
+}
+.menu-nuevo button { text-align: left; border: 0; background: none; color: var(--text); font: inherit; padding: 0.6rem 0.7rem; border-radius: var(--radio-sm); cursor: pointer; display: flex; flex-direction: column; gap: 0.15rem; }
+.menu-nuevo button:hover { background: var(--panel-2); }
+.menu-nuevo span { font-size: 0.8rem; color: var(--muted); }
+.alerta-validar { margin: 0; padding: 0.6rem 0.9rem; border-radius: var(--radio-sm); background: var(--acento-suave); color: var(--acento); font-weight: 600; }
+.rejilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
+.tarjeta { padding: 1rem; display: flex; flex-direction: column; gap: 0.6rem; border-top: 4px solid var(--border); }
+.tarjeta.feria { border-top-color: #f0a33a; }
+.tarjeta.evento { border-top-color: var(--acento); }
+.tarjeta.activa { box-shadow: 0 0 0 1px var(--acento); }
+.tarjeta header { display: flex; align-items: center; gap: 0.5rem; }
+.tipo { flex: 1; font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.tarjeta h3 { margin: 0; font-size: 1.1rem; }
+.urgente { color: var(--acento); }
+.monto { font-size: 0.95rem !important; }
+.atajos { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: auto; padding-top: 0.3rem; border-top: 1px dashed var(--border); }
+.vacio { text-align: center; color: var(--muted); padding: 2rem; }
+@media (max-width: 600px) { .buscar { width: 100%; } .menu-nuevo { width: min(300px, 90vw); } }
 .tarjeta dl { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem; margin: 0; }
 .tarjeta dt { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .tarjeta dd { margin: 0; font-size: 1.1rem; font-weight: 800; font-variant-numeric: tabular-nums; }

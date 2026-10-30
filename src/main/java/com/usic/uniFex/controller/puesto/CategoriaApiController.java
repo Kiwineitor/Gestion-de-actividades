@@ -33,7 +33,7 @@ import lombok.RequiredArgsConstructor;
 @RestController
 @RequestMapping("/api/app/categorias")
 @RequiredArgsConstructor
-@PreAuthorize(Roles.EDITA_PLANO)
+@PreAuthorize(Roles.EDITA_CATEGORIAS)
 public class CategoriaApiController {
 
     private final CategoriaMapaService service;

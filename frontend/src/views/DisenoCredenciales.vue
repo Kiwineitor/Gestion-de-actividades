@@ -1,8 +1,10 @@
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue';
 import UiModal from '../components/UiModal.vue';
+import MenuAcciones from '../components/MenuAcciones.vue';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
+import { alertaConAccion } from '../ui/alerta';
 import { primeraPaginaEnCanvas } from '../ui/pdf';
 
 const CAMPOS = [
@@ -24,6 +26,11 @@ const OPCIONES = [
 ];
 
 const ANCHO_CM = 10;
+const ALTO_MASIVA_CM = 13;
+const PROPORCION_MASIVA = ALTO_MASIVA_CM / ANCHO_CM;
+const PX_POR_CM_CSS = 96 / 2.54;
+const TARJETA_CM = { ancho: 8.56, alto: 5.398 };
+const CLAVE_CALIBRACION = 'credenciales.pxPorCm';
 
 const plantillas = ref([]);
 const ediciones = ref([]);
@@ -49,12 +56,38 @@ const guardando = ref(false);
 const campoSel = ref(null);
 const fondos = reactive({});
 const lienzo = ref(null);
+const escenario = ref(null);
+const zoom = ref('ajustar');
+const anchoLienzoPx = ref(0);
+const pxPorCm = ref(leerCalibracion());
+let observador = null;
 
 const seleccionada = computed(() => plantillas.value.find((p) => p.id === selId.value) || null);
 const modificado = computed(() => borrador.value != null && JSON.stringify(borrador.value) !== original.value);
-const proporcion = computed(() => borrador.value?.proporcion || 1.3);
+const proporcion = computed(() => borrador.value?.proporcion || PROPORCION_MASIVA);
+const altoCm = computed(() => ANCHO_CM * proporcion.value);
+const deformaMasiva = computed(() => Math.abs(proporcion.value - PROPORCION_MASIVA) > 0.01);
 const cajaSel = computed(() => (campoSel.value && borrador.value?.cajas[campoSel.value]) || null);
 const etiquetaCampo = (id) => CAMPOS.find((c) => c.id === id)?.txt ?? id;
+const cm = (v) => v.toLocaleString('es-BO', { maximumFractionDigits: 1 });
+const escalaReal = computed(() => (anchoLienzoPx.value ? Math.round((anchoLienzoPx.value / (ANCHO_CM * pxPorCm.value)) * 100) : 0));
+const marcasAncho = computed(() => Array.from({ length: ANCHO_CM + 1 }, (_, i) => i));
+const marcasAlto = computed(() => Array.from({ length: Math.floor(altoCm.value) + 1 }, (_, i) => i));
+const estiloLienzo = computed(() => (zoom.value === 'real'
+  ? { '--prop': proporcion.value, width: `${ANCHO_CM * pxPorCm.value}px` }
+  : { '--prop': proporcion.value }));
+
+function leerCalibracion() {
+  try {
+    const v = Number(localStorage.getItem(CLAVE_CALIBRACION));
+    return v > 10 && v < 120 ? v : PX_POR_CM_CSS;
+  } catch { return PX_POR_CM_CSS; }
+}
+
+function guardarCalibracion(v) {
+  pxPorCm.value = v;
+  try { localStorage.setItem(CLAVE_CALIBRACION, String(v)); } catch { }
+}
 
 function copia(p) {
   return JSON.parse(JSON.stringify({ ...p, cajas: p.cajas || {} }));
@@ -106,6 +139,10 @@ function estiloCaja(c) {
     width: `${c.ancho * 100}%`,
     height: `${c.alto * 100}%`,
   };
+}
+
+function medidaMm(c) {
+  return `${Math.round(c.ancho * ANCHO_CM * 10)} × ${Math.round(c.alto * altoCm.value * 10)} mm`;
 }
 
 function cajaPorDefecto(id, indice) {
@@ -164,16 +201,23 @@ function onCajaUp() {
   gesto = null;
 }
 
-function fijarNumero(clave, valor) {
+function enMm(clave) {
   const c = cajaSel.value;
-  const v = Number(valor) / 100;
-  if (!c || !Number.isFinite(v)) return;
-  c[clave] = Math.round(acotar(v, 0, 1) * 10000) / 10000;
+  if (!c) return 0;
+  const total = clave === 'x' || clave === 'ancho' ? ANCHO_CM * 10 : altoCm.value * 10;
+  return Math.round(c[clave] * total * 10) / 10;
+}
+
+function fijarMm(clave, valor) {
+  const c = cajaSel.value;
+  const mm = Number(String(valor).replace(',', '.'));
+  if (!c || !Number.isFinite(mm)) return;
+  const total = clave === 'x' || clave === 'ancho' ? ANCHO_CM * 10 : altoCm.value * 10;
+  c[clave] = Math.round(acotar(mm / total, 0, 1) * 10000) / 10000;
   if (campoSel.value === 'qr' && clave === 'ancho') c.alto = Math.round((c.ancho / proporcion.value) * 10000) / 10000;
 }
 
-function datosParaGuardar() {
-  const b = borrador.value;
+function datosDe(b) {
   return {
     codigo: b.codigo, etiqueta: b.etiqueta, detalle: b.detalle, imagen: b.imagen,
     requiereFoto: b.requiereFoto, centrado: b.centrado, mayusculas: b.mayusculas,
@@ -186,18 +230,23 @@ function datosParaGuardar() {
   };
 }
 
+const datosParaGuardar = () => datosDe(borrador.value);
+
+async function enviarPlantilla(id, datos) {
+  const r = await apiFetch(`/api/app/plantillas-credencial/${id}`, { method: 'PATCH', body: JSON.stringify(datos) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.mensaje || 'No se pudo guardar');
+  const i = plantillas.value.findIndex((p) => p.id === d.id);
+  if (i >= 0) plantillas.value[i] = d;
+  if (d.predeterminada) plantillas.value.forEach((p) => { if (p.id !== d.id) p.predeterminada = false; });
+  return d;
+}
+
 async function guardar() {
   if (!borrador.value || guardando.value) return;
   guardando.value = true;
   try {
-    const r = await apiFetch(`/api/app/plantillas-credencial/${borrador.value.id}`, {
-      method: 'PATCH', body: JSON.stringify(datosParaGuardar()),
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) { toast(d.mensaje || 'No se pudo guardar', 'error'); return; }
-    const i = plantillas.value.findIndex((p) => p.id === d.id);
-    if (i >= 0) plantillas.value[i] = d;
-    if (d.predeterminada) plantillas.value.forEach((p) => { if (p.id !== d.id) p.predeterminada = false; });
+    const d = await enviarPlantilla(borrador.value.id, datosParaGuardar());
     elegir(d.id, true);
     toast('Plantilla guardada ✓', 'ok', 1800);
   } catch (e) {
@@ -211,10 +260,10 @@ function descartar() {
   if (seleccionada.value) elegir(seleccionada.value.id, true);
 }
 
-async function duplicar() {
-  if (!seleccionada.value) return;
-  if (modificado.value && !confirm('Se duplicará la versión guardada; los cambios sin guardar no se copian. ¿Continuar?')) return;
-  const r = await apiFetch(`/api/app/plantillas-credencial/${seleccionada.value.id}/duplicar`, { method: 'POST' });
+async function duplicar(p = seleccionada.value) {
+  if (!p) return;
+  if (p.id === selId.value && modificado.value && !confirm('Se duplicará la versión guardada; los cambios sin guardar no se copian. ¿Continuar?')) return;
+  const r = await apiFetch(`/api/app/plantillas-credencial/${p.id}/duplicar`, { method: 'POST' });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) { toast(d.mensaje || 'No se pudo duplicar', 'error'); return; }
   plantillas.value.push(d);
@@ -222,13 +271,65 @@ async function duplicar() {
   toast('Copia creada', 'ok', 1600);
 }
 
-async function eliminar() {
-  const p = seleccionada.value;
-  if (!p || !confirm(`¿Quitar la plantilla "${p.etiqueta}"? Las credenciales ya impresas no cambian.`)) return;
+async function hacerPredeterminada(p) {
+  try {
+    const d = await enviarPlantilla(p.id, { ...datosDe(p), predeterminada: true, idEdicion: null });
+    if (d.id === selId.value) elegir(d.id, true);
+    toast(`«${d.etiqueta}» es ahora la plantilla por defecto`, 'ok');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+const reemplazo = reactive({ abierto: false, plantilla: null, nuevaId: null, trabajando: false });
+const candidatas = computed(() => plantillas.value.filter((x) => x.uso !== 'APOYO' && x.id !== reemplazo.plantilla?.id));
+
+async function eliminar(p = seleccionada.value) {
+  if (!p) return;
+  if (p.predeterminada) {
+    if (!candidatas.value.length && plantillas.value.filter((x) => x.uso !== 'APOYO').length <= 1) {
+      toast('Es la única plantilla de expositores. Crea o duplica otra antes de eliminarla.', 'advertencia');
+      return;
+    }
+    Object.assign(reemplazo, { abierto: true, plantilla: p, nuevaId: null, trabajando: false });
+    reemplazo.nuevaId = candidatas.value[0]?.id ?? null;
+    return;
+  }
+  const si = await alertaConAccion(`¿Eliminar la plantilla «${p.etiqueta}»? Las credenciales ya impresas no cambian.`, 'advertencia', () => {});
+  if (!si) return;
+  await borrar(p);
+}
+
+async function borrar(p) {
   const r = await apiFetch(`/api/app/plantillas-credencial/${p.id}`, { method: 'DELETE' });
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) { toast(d.mensaje || 'No se pudo quitar', 'error'); return; }
-  await cargar(null);
+  if (!r.ok) { toast(d.mensaje || 'No se pudo eliminar', 'error'); return false; }
+  toast('Plantilla eliminada', 'ok', 1600);
+  await cargar(selId.value === p.id ? null : selId.value);
+  return true;
+}
+
+async function confirmarReemplazo() {
+  const nueva = plantillas.value.find((x) => x.id === reemplazo.nuevaId);
+  if (!nueva || !reemplazo.plantilla) return;
+  reemplazo.trabajando = true;
+  try {
+    await enviarPlantilla(nueva.id, { ...datosDe(nueva), predeterminada: true, idEdicion: null });
+    if (await borrar(reemplazo.plantilla)) reemplazo.abierto = false;
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    reemplazo.trabajando = false;
+  }
+}
+
+function accionesDe(p) {
+  return [
+    { txt: 'Usar por defecto', deshabilitado: p.uso === 'APOYO' || p.predeterminada, titulo: p.uso === 'APOYO' ? 'Las de personal de apoyo no son predeterminadas' : '', accion: () => hacerPredeterminada(p) },
+    { txt: 'Duplicar', accion: () => duplicar(p) },
+    { separador: true },
+    { txt: p.predeterminada ? 'Eliminar (elegir otra por defecto)' : 'Eliminar', peligro: true, accion: () => eliminar(p) },
+  ];
 }
 
 async function subirImagen(archivo) {
@@ -302,9 +403,15 @@ async function crear() {
   }
 }
 
-const previa = reactive({ abierta: false, cargando: false, formato: 'pdf', url: null, imagen: null, persona: '', personas: [] });
-const lienzoPrevia = ref(null);
+const calibrar = reactive({ abierto: false, valor: PX_POR_CM_CSS });
 
+function abrirCalibrar() {
+  calibrar.valor = pxPorCm.value;
+  calibrar.abierto = true;
+}
+
+const previa = reactive({ abierta: false, cargando: false, formato: 'pdf', imagen: null, persona: '', personas: [], real: false });
+const lienzoPrevia = ref(null);
 const personaId = computed(() => previa.personas.find((p) => p.etiqueta === previa.persona)?.id ?? null);
 
 async function abrirPrevia() {
@@ -340,7 +447,7 @@ async function generarPrevia() {
       previa.imagen = URL.createObjectURL(blob);
       return;
     }
-    const escala = 2.2;
+    const escala = 3;
     const hoja = await primeraPaginaEnCanvas(await blob.arrayBuffer(), document.createElement('canvas'), escala);
     const ancho = (ANCHO_CM * 72) / 2.54;
     const alto = ancho * proporcion.value;
@@ -359,6 +466,10 @@ async function generarPrevia() {
     previa.cargando = false;
   }
 }
+
+const estiloPrevia = computed(() => (previa.real
+  ? { width: `${ANCHO_CM * pxPorCm.value}px`, maxWidth: 'none', maxHeight: 'none' }
+  : {}));
 
 watch(() => previa.formato, () => { if (previa.abierta) generarPrevia(); });
 
@@ -383,7 +494,14 @@ function avisar(e) {
   e.returnValue = '';
 }
 
+watch(lienzo, (el, antes) => {
+  if (antes) observador?.unobserve(antes);
+  if (el) observador?.observe(el);
+});
+
 onMounted(() => {
+  observador = new ResizeObserver(([e]) => { anchoLienzoPx.value = e.contentRect.width; });
+  if (lienzo.value) observador.observe(lienzo.value);
   cargarCatalogos();
   cargar();
 });
@@ -396,6 +514,7 @@ onDeactivated(() => {
   window.removeEventListener('beforeunload', avisar);
 });
 onUnmounted(() => {
+  observador?.disconnect();
   window.removeEventListener('keydown', onTecla);
   window.removeEventListener('beforeunload', avisar);
   Object.values(fondos).forEach((u) => u && URL.revokeObjectURL(u));
@@ -409,122 +528,142 @@ onUnmounted(() => {
         <strong>Plantillas</strong>
         <button class="btn btn-sm btn-primario" @click="nueva.abierta = true">＋ Nueva</button>
       </div>
-      <p v-if="cargando" class="muted">Cargando…</p>
-      <template v-for="g in grupos" :key="g.uso">
-        <h5 class="grupo-tit">{{ g.titulo }}</h5>
-        <p v-if="!g.items.length" class="muted chico">{{ g.uso === 'APOYO' ? 'Sin plantillas: se usa el diseño de siempre.' : 'Sin plantillas.' }}</p>
-        <ul>
-          <li v-for="p in g.items" :key="p.id">
-            <button :class="{ on: p.id === selId }" @click="elegir(p.id)">
-              <span class="nom">{{ p.etiqueta }}</span>
-              <span v-if="p.predeterminada" class="badge badge-ok">por defecto</span>
-              <span v-else-if="p.idEdicion" class="badge badge-muted">{{ nombreEdicion(p.idEdicion) || 'actividad' }}</span>
-            </button>
-          </li>
-        </ul>
-      </template>
+      <div class="lista-cuerpo">
+        <p v-if="cargando" class="muted">Cargando…</p>
+        <template v-for="g in grupos" :key="g.uso">
+          <h5 class="grupo-tit">{{ g.titulo }}</h5>
+          <p v-if="!g.items.length" class="muted chico">{{ g.uso === 'APOYO' ? 'Sin plantillas: se usa el diseño de siempre.' : 'Sin plantillas.' }}</p>
+          <ul>
+            <li v-for="p in g.items" :key="p.id" :class="{ on: p.id === selId }">
+              <button class="elegir" @click="elegir(p.id)">
+                <span class="nom">{{ p.etiqueta }}</span>
+                <span v-if="p.predeterminada" class="badge badge-ok">★ por defecto</span>
+                <span v-else-if="p.idEdicion" class="badge badge-muted">{{ nombreEdicion(p.idEdicion) || 'actividad' }}</span>
+              </button>
+              <MenuAcciones :acciones="accionesDe(p)" :etiqueta="`Acciones de ${p.etiqueta}`" />
+            </li>
+          </ul>
+        </template>
+      </div>
     </aside>
 
     <section v-if="borrador" class="centro">
       <div class="barra">
         <strong class="titulo">{{ borrador.etiqueta }}</strong>
+        <span class="medida" :title="`Ancho fijo de ${ANCHO_CM} cm; el alto sale de la proporción del fondo`">📐 {{ cm(ANCHO_CM) }} × {{ cm(altoCm) }} cm</span>
         <span v-if="modificado" class="pendiente">Cambios sin guardar</span>
         <span class="crecer"></span>
+        <div class="segmentado" role="group" aria-label="Zoom">
+          <button :class="{ on: zoom === 'ajustar' }" @click="zoom = 'ajustar'">Ajustar</button>
+          <button :class="{ on: zoom === 'real' }" @click="zoom = 'real'">Tamaño real</button>
+        </div>
+        <button class="btn btn-sm btn-fantasma" title="Ajustar la regla a tu pantalla" @click="abrirCalibrar">Calibrar</button>
         <button class="btn btn-sm" @click="abrirPrevia">👁 Vista previa</button>
         <button class="btn btn-sm" :disabled="!modificado || guardando" @click="descartar">Descartar</button>
         <button class="btn btn-sm btn-primario" :disabled="!modificado || guardando" @click="guardar">
           {{ guardando ? 'Guardando…' : 'Guardar' }}
         </button>
       </div>
-      <div class="escenario" @pointerdown.self="campoSel = null">
-        <div ref="lienzo" class="lienzo" :style="{ '--prop': proporcion }">
-          <img v-if="fondos[borrador.imagen]" :src="fondos[borrador.imagen]" alt="" draggable="false" />
-          <div v-for="(c, id) in borrador.cajas" :key="id" class="caja"
-               :class="[`c-${id}`, { sel: campoSel === id, circular: id === 'foto' && borrador.fotoCircular }]"
-               :style="estiloCaja(c)"
-               @pointerdown="onCajaDown($event, id, 'mover')" @pointermove="onCajaMove"
-               @pointerup="onCajaUp" @pointercancel="onCajaUp">
-            <span class="rotulo">{{ etiquetaCampo(id) }}</span>
-            <span v-if="id !== 'qr' && id !== 'foto'" class="muestra-texto"
-                  :style="{ color: borrador.colorTexto || '#111827', justifyContent: borrador.centrado ? 'center' : 'flex-start' }">
-              {{ id === 'tipo' && borrador.tipoTexto ? borrador.tipoTexto : CAMPOS.find((x) => x.id === id)?.muestra }}
-            </span>
-            <span class="asa" @pointerdown="onCajaDown($event, id, 'tamano')" @pointermove="onCajaMove"
-                  @pointerup="onCajaUp" @pointercancel="onCajaUp"></span>
+      <p v-if="deformaMasiva" class="aviso-medida">
+        La impresión masiva (4 por hoja A4) usa {{ ANCHO_CM }} × {{ ALTO_MASIVA_CM }} cm y este fondo mide {{ cm(ANCHO_CM) }} × {{ cm(altoCm) }} cm: ahí se estiraría.
+        Usa una imagen de proporción 10:13 (por ejemplo 1181 × 1535 px a 300 ppp).
+      </p>
+      <div ref="escenario" class="escenario" :class="{ real: zoom === 'real' }" @pointerdown.self="campoSel = null">
+        <div class="marco" :style="{ '--prop': proporcion }">
+          <div class="esquina">cm</div>
+          <div class="regla horizontal" :style="{ '--div': ANCHO_CM }">
+            <span v-for="i in marcasAncho" :key="i" :style="{ left: `${(i / ANCHO_CM) * 100}%` }">{{ i }}</span>
+          </div>
+          <div class="regla vertical" :style="{ '--div': altoCm }">
+            <span v-for="i in marcasAlto" :key="i" :style="{ top: `${(i / altoCm) * 100}%` }">{{ i }}</span>
+          </div>
+          <div ref="lienzo" class="lienzo" :style="estiloLienzo">
+            <img v-if="fondos[borrador.imagen]" :src="fondos[borrador.imagen]" alt="" draggable="false" />
+            <div v-for="(c, id) in borrador.cajas" :key="id" class="caja"
+                 :class="[`c-${id}`, { sel: campoSel === id, circular: id === 'foto' && borrador.fotoCircular }]"
+                 :style="estiloCaja(c)"
+                 @pointerdown="onCajaDown($event, id, 'mover')" @pointermove="onCajaMove"
+                 @pointerup="onCajaUp" @pointercancel="onCajaUp">
+              <span class="rotulo">{{ etiquetaCampo(id) }}</span>
+              <span v-if="campoSel === id" class="dim">{{ medidaMm(c) }}</span>
+              <span v-if="id !== 'qr' && id !== 'foto'" class="muestra-texto"
+                    :style="{ color: borrador.colorTexto || '#111827', justifyContent: borrador.centrado ? 'center' : 'flex-start' }">
+                {{ id === 'tipo' && borrador.tipoTexto ? borrador.tipoTexto : CAMPOS.find((x) => x.id === id)?.muestra }}
+              </span>
+              <span class="asa" @pointerdown="onCajaDown($event, id, 'tamano')" @pointermove="onCajaMove"
+                    @pointerup="onCajaUp" @pointercancel="onCajaUp"></span>
+            </div>
           </div>
         </div>
       </div>
+      <p class="pie-escala muted chico">
+        {{ zoom === 'real' ? 'Tamaño real según tu calibración: pon una credencial impresa sobre la pantalla para comparar.' : `Vista al ${escalaReal}% del tamaño real.` }}
+        Flechas: mover el campo seleccionado (Shift = más rápido).
+      </p>
     </section>
 
     <aside v-if="borrador" class="props card">
-      <h4>Plantilla</h4>
-      <label class="campo"><span>Nombre</span><input v-model="borrador.etiqueta" class="control" maxlength="80" /></label>
-      <label class="campo"><span>Descripción</span><input v-model="borrador.detalle" class="control" maxlength="200" /></label>
-      <div class="dos">
-        <label class="campo"><span>Cargo por defecto</span><input v-model="borrador.tipoTexto" class="control" maxlength="40" placeholder="EXPOSITOR" /></label>
-        <label class="campo"><span>Color del texto</span><input :value="borrador.colorTexto || '#000000'" type="color" class="control control-color"
-                 @input="borrador.colorTexto = $event.target.value" /></label>
-      </div>
-      <div class="dos">
-        <label class="campo"><span>Uso</span>
-          <select v-model="borrador.uso" class="control" :disabled="seleccionada?.predeterminada">
-            <option value="EXPOSITOR">Expositores</option>
-            <option value="APOYO">Personal de apoyo</option>
+      <div class="props-cuerpo">
+        <h4>Plantilla</h4>
+        <label class="campo"><span>Nombre</span><input v-model="borrador.etiqueta" class="control" maxlength="80" /></label>
+        <label class="campo"><span>Descripción</span><input v-model="borrador.detalle" class="control" maxlength="200" /></label>
+        <div class="dos">
+          <label class="campo"><span>Cargo por defecto</span><input v-model="borrador.tipoTexto" class="control" maxlength="40" placeholder="EXPOSITOR" /></label>
+          <label class="campo"><span>Color del texto</span><input :value="borrador.colorTexto || '#000000'" type="color" class="control control-color"
+                   @input="borrador.colorTexto = $event.target.value" /></label>
+        </div>
+        <div class="dos">
+          <label class="campo"><span>Uso</span>
+            <select v-model="borrador.uso" class="control" :disabled="seleccionada?.predeterminada">
+              <option value="EXPOSITOR">Expositores</option>
+              <option value="APOYO">Personal de apoyo</option>
+            </select>
+          </label>
+          <label class="campo"><span>Actividad</span>
+            <select v-model="borrador.idEdicion" class="control" :disabled="borrador.predeterminada">
+              <option :value="null">Todas</option>
+              <option v-for="e in ediciones" :key="e.id" :value="e.id">{{ e.nombre }}{{ e.activa ? ' (actual)' : '' }}</option>
+            </select>
+          </label>
+        </div>
+        <label v-if="borrador.uso === 'APOYO'" class="campo"><span>Dependencia</span>
+          <select v-model="borrador.idDependencia" class="control">
+            <option :value="null">Todas las dependencias</option>
+            <option v-for="d in dependencias" :key="d.id" :value="d.id">{{ d.nombre }}</option>
           </select>
         </label>
-        <label class="campo"><span>Actividad</span>
-          <select v-model="borrador.idEdicion" class="control" :disabled="borrador.predeterminada">
-            <option :value="null">Todas</option>
-            <option v-for="e in ediciones" :key="e.id" :value="e.id">{{ e.nombre }}{{ e.activa ? ' (actual)' : '' }}</option>
-          </select>
-        </label>
-      </div>
-      <label v-if="borrador.uso === 'APOYO'" class="campo"><span>Dependencia</span>
-        <select v-model="borrador.idDependencia" class="control">
-          <option :value="null">Todas las dependencias</option>
-          <option v-for="d in dependencias" :key="d.id" :value="d.id">{{ d.nombre }}</option>
-        </select>
-      </label>
-      <label v-for="o in OPCIONES" :key="o.id" class="check"><input v-model="borrador[o.id]" type="checkbox" /> {{ o.txt }}</label>
-      <label v-if="borrador.uso !== 'APOYO'" class="check">
-        <input v-model="borrador.predeterminada" type="checkbox" :disabled="seleccionada?.predeterminada || borrador.idEdicion != null" /> Plantilla por defecto
-      </label>
-      <label class="btn btn-sm">Cambiar imagen de fondo
-        <input type="file" accept="image/png,image/jpeg" class="oculto" @change="cambiarFondo" />
-      </label>
-      <div class="reverso">
-        <img v-if="borrador.imagenReverso && fondos[borrador.imagenReverso]" :src="fondos[borrador.imagenReverso]" alt="Reverso" />
-        <span class="muted chico">{{ borrador.imagenReverso ? 'Reverso propio' : 'Reverso general' }}</span>
-        <label class="btn btn-sm">{{ borrador.imagenReverso ? 'Cambiar' : 'Subir reverso' }}
-          <input type="file" accept="image/png,image/jpeg" class="oculto" @change="cambiarReverso" />
-        </label>
-        <button v-if="borrador.imagenReverso" class="btn btn-sm btn-fantasma" @click="borrador.imagenReverso = null">Quitar</button>
-      </div>
+        <div class="opciones">
+          <label v-for="o in OPCIONES" :key="o.id" class="check"><input v-model="borrador[o.id]" type="checkbox" /> {{ o.txt }}</label>
+        </div>
+        <div class="fondos">
+          <label class="btn btn-sm">Cambiar fondo
+            <input type="file" accept="image/png,image/jpeg" class="oculto" @change="cambiarFondo" />
+          </label>
+          <img v-if="borrador.imagenReverso && fondos[borrador.imagenReverso]" :src="fondos[borrador.imagenReverso]" alt="Reverso" class="mini-reverso" />
+          <label class="btn btn-sm">{{ borrador.imagenReverso ? 'Cambiar reverso' : 'Subir reverso' }}
+            <input type="file" accept="image/png,image/jpeg" class="oculto" @change="cambiarReverso" />
+          </label>
+          <button v-if="borrador.imagenReverso" class="btn btn-sm btn-fantasma" @click="borrador.imagenReverso = null">Quitar reverso</button>
+        </div>
 
-      <h4>Campos</h4>
-      <ul class="campos">
-        <li v-for="c in CAMPOS" :key="c.id" :class="{ sel: campoSel === c.id }">
-          <label class="check">
+        <h4>Campos</h4>
+        <div class="campos">
+          <label v-for="c in CAMPOS" :key="c.id" class="chip-campo" :class="{ sel: campoSel === c.id, activo: !!borrador.cajas[c.id] }">
             <input type="checkbox" :checked="!!borrador.cajas[c.id]" :disabled="c.obligatorio" @change="alternarCampo(c.id)" />
             <span @click.prevent="borrador.cajas[c.id] ? (campoSel = c.id) : alternarCampo(c.id)">{{ c.txt }}</span>
           </label>
-        </li>
-      </ul>
-
-      <div v-if="cajaSel" class="medidas">
-        <strong>{{ etiquetaCampo(campoSel) }}</strong>
-        <div class="cuatro">
-          <label>X % <input type="number" step="0.1" :value="(cajaSel.x * 100).toFixed(1)" @change="fijarNumero('x', $event.target.value)" /></label>
-          <label>Y % <input type="number" step="0.1" :value="(cajaSel.y * 100).toFixed(1)" @change="fijarNumero('y', $event.target.value)" /></label>
-          <label>Ancho % <input type="number" step="0.1" :value="(cajaSel.ancho * 100).toFixed(1)" @change="fijarNumero('ancho', $event.target.value)" /></label>
-          <label>Alto % <input type="number" step="0.1" :value="(cajaSel.alto * 100).toFixed(1)" :disabled="campoSel === 'qr'" @change="fijarNumero('alto', $event.target.value)" /></label>
         </div>
-        <p class="muted chico">Arrastra la caja para moverla y su esquina para cambiar el tamaño. Flechas: ajuste fino.</p>
-      </div>
 
-      <div class="pie-props">
-        <button class="btn btn-sm" @click="duplicar">Duplicar</button>
-        <button class="btn btn-sm btn-peligro" :disabled="seleccionada?.predeterminada" @click="eliminar">Quitar</button>
+        <div v-if="cajaSel" class="medidas">
+          <strong>{{ etiquetaCampo(campoSel) }} <span class="muted">· en milímetros</span></strong>
+          <div class="cuatro">
+            <label>Desde la izquierda <input type="number" step="0.5" :value="enMm('x')" @change="fijarMm('x', $event.target.value)" /></label>
+            <label>Desde arriba <input type="number" step="0.5" :value="enMm('y')" @change="fijarMm('y', $event.target.value)" /></label>
+            <label>Ancho <input type="number" step="0.5" :value="enMm('ancho')" @change="fijarMm('ancho', $event.target.value)" /></label>
+            <label>Alto <input type="number" step="0.5" :value="enMm('alto')" :disabled="campoSel === 'qr'" @change="fijarMm('alto', $event.target.value)" /></label>
+          </div>
+        </div>
+        <p v-else class="muted chico">Toca un campo en la credencial para moverlo, cambiar su tamaño o escribir sus medidas exactas.</p>
       </div>
     </aside>
 
@@ -540,7 +679,7 @@ onUnmounted(() => {
         <label class="campo"><span>Imagen de fondo (PNG o JPG)</span>
           <input type="file" accept="image/png,image/jpeg" class="control" @change="nueva.archivo = $event.target.files?.[0] || null" />
         </label>
-        <p class="muted chico">Se crea con el QR; después agregas y acomodas los demás campos. También puedes duplicar una plantilla existente.</p>
+        <p class="muted chico">La credencial mide {{ ANCHO_CM }} cm de ancho. Para que coincida con la impresión masiva usa un fondo de proporción 10:13 (por ejemplo 1181 × 1535 px a 300 ppp).</p>
       </div>
       <template #pie>
         <button class="btn btn-fantasma" :disabled="nueva.creando" @click="nueva.abierta = false">Cancelar</button>
@@ -548,63 +687,122 @@ onUnmounted(() => {
       </template>
     </UiModal>
 
-    <UiModal v-if="previa.abierta" titulo="Vista previa" @cerrar="previa.abierta = false">
-      <div class="previa-controles">
-        <div class="segmentado">
-          <button :class="{ on: previa.formato === 'pdf' }" @click="previa.formato = 'pdf'">Impresión (PDF)</button>
-          <button :class="{ on: previa.formato === 'png' }" @click="previa.formato = 'png'">Credencial virtual</button>
+    <UiModal v-if="reemplazo.abierto" :titulo="`Eliminar «${reemplazo.plantilla?.etiqueta}»`" @cerrar="!reemplazo.trabajando && (reemplazo.abierto = false)">
+      <p>Es la plantilla por defecto. Elige cuál la reemplaza y después se elimina.</p>
+      <label class="campo"><span>Nueva plantilla por defecto</span>
+        <select v-model="reemplazo.nuevaId" class="control">
+          <option v-for="c in candidatas" :key="c.id" :value="c.id">{{ c.etiqueta }}</option>
+        </select>
+      </label>
+      <p class="muted chico">Las credenciales ya impresas no cambian.</p>
+      <template #pie>
+        <button class="btn btn-fantasma" :disabled="reemplazo.trabajando" @click="reemplazo.abierto = false">Cancelar</button>
+        <button class="btn btn-peligro" :disabled="!reemplazo.nuevaId || reemplazo.trabajando" @click="confirmarReemplazo">
+          {{ reemplazo.trabajando ? 'Eliminando…' : 'Cambiar y eliminar' }}
+        </button>
+      </template>
+    </UiModal>
+
+    <UiModal v-if="calibrar.abierto" titulo="Calibrar tamaño real" ancho="640px" @cerrar="calibrar.abierto = false">
+      <p>Pon una tarjeta bancaria o un carnet ({{ cm(TARJETA_CM.ancho) }} × {{ cm(TARJETA_CM.alto) }} cm) sobre la pantalla y mueve el control hasta que el rectángulo tenga su mismo tamaño.</p>
+      <div class="zona-tarjeta">
+        <div class="tarjeta" :style="{ width: `${TARJETA_CM.ancho * calibrar.valor}px`, height: `${TARJETA_CM.alto * calibrar.valor}px` }">
+          <span>{{ cm(TARJETA_CM.ancho) }} cm</span>
         </div>
-        <input v-model="previa.persona" class="control" list="personas-previa" placeholder="Persona de ejemplo (opcional)"
-               @change="generarPrevia" />
-        <datalist id="personas-previa">
-          <option v-for="p in previa.personas" :key="p.id" :value="p.etiqueta"></option>
-        </datalist>
       </div>
-      <p v-if="previa.cargando" class="muted">Generando…</p>
-      <div class="previa-hoja">
-        <canvas v-show="previa.formato === 'pdf'" ref="lienzoPrevia"></canvas>
-        <img v-if="previa.formato === 'png' && previa.imagen" :src="previa.imagen" alt="Vista previa" />
+      <input v-model.number="calibrar.valor" type="range" min="20" max="80" step="0.1" class="deslizador" aria-label="Tamaño" />
+      <template #pie>
+        <button class="btn btn-fantasma" @click="calibrar.valor = PX_POR_CM_CSS">Restablecer</button>
+        <button class="btn btn-primario" @click="guardarCalibracion(calibrar.valor); calibrar.abierto = false; zoom = 'real'">Guardar y ver tamaño real</button>
+      </template>
+    </UiModal>
+
+    <UiModal v-if="previa.abierta" titulo="Vista previa" ancho="980px" @cerrar="previa.abierta = false">
+      <div class="previa">
+        <div class="previa-hoja" :class="{ real: previa.real }">
+          <p v-if="previa.cargando" class="muted generando">Generando…</p>
+          <canvas v-show="previa.formato === 'pdf'" ref="lienzoPrevia" :style="estiloPrevia"></canvas>
+          <img v-if="previa.formato === 'png' && previa.imagen" :src="previa.imagen" alt="Vista previa" :style="estiloPrevia" />
+        </div>
+        <div class="previa-lado">
+          <div class="segmentado">
+            <button :class="{ on: previa.formato === 'pdf' }" @click="previa.formato = 'pdf'">Impresión</button>
+            <button :class="{ on: previa.formato === 'png' }" @click="previa.formato = 'png'">Virtual</button>
+          </div>
+          <label class="check"><input v-model="previa.real" type="checkbox" /> Tamaño real</label>
+          <label class="campo"><span>Persona de ejemplo</span>
+            <input v-model="previa.persona" class="control" list="personas-previa" placeholder="Opcional" @change="generarPrevia" />
+          </label>
+          <datalist id="personas-previa">
+            <option v-for="p in previa.personas" :key="p.id" :value="p.etiqueta"></option>
+          </datalist>
+          <dl class="ficha-medida">
+            <div><dt>Credencial suelta</dt><dd>{{ cm(ANCHO_CM) }} × {{ cm(altoCm) }} cm</dd></div>
+            <div><dt>Impresión masiva</dt><dd>{{ ANCHO_CM }} × {{ ALTO_MASIVA_CM }} cm · 4 por A4</dd></div>
+          </dl>
+          <p class="muted chico">Generada por el mismo motor que imprime, con los cambios aún sin guardar.</p>
+        </div>
       </div>
-      <p class="muted chico">Generada por el mismo motor que imprime, con los cambios aún sin guardar.</p>
     </UiModal>
   </div>
 </template>
 
 <style scoped>
-.diseno { display: grid; grid-template-columns: 220px 1fr 300px; gap: 0.9rem; align-items: start; }
+.diseno { display: grid; grid-template-columns: 230px minmax(0, 1fr) 300px; gap: 0.8rem; height: 100%; min-height: 0; }
 .card { padding: 0.8rem; }
-.lista-cab { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.lista, .props { display: flex; flex-direction: column; min-height: 0; }
+.lista-cab { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; }
+.lista-cuerpo, .props-cuerpo { overflow-y: auto; min-height: 0; flex: 1; }
 .lista ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.lista li button {
-  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 0.4rem;
-  border: 1px solid transparent; background: none; color: var(--text); font: inherit; font-size: 0.88rem;
-  padding: 0.45rem 0.55rem; border-radius: var(--radio-sm); cursor: pointer; text-align: left;
+.lista li { display: flex; align-items: center; gap: 2px; border-radius: var(--radio-sm); border: 1px solid transparent; }
+.lista li:hover { background: var(--bg); }
+.lista li.on { background: var(--acento-suave); border-color: var(--acento); }
+.elegir {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem;
+  border: 0; background: none; color: var(--text); font: inherit; font-size: 0.88rem; padding: 0.45rem 0.5rem; cursor: pointer; text-align: left;
 }
-.lista li button:hover { background: var(--bg); }
-.lista li button.on { background: var(--acento-suave); border-color: var(--acento); }
-.nom { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.grupo-tit { margin: 0.7rem 0 0.25rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-.reverso { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-.reverso img { width: 44px; height: 56px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); }
+.nom { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; font-weight: 600; }
+.grupo-tit { margin: 0.6rem 0 0.25rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 
-.centro { display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
-.barra { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.centro { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; min-height: 0; }
+.barra { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
 .titulo { font-size: 1rem; }
+.medida { font-size: 0.8rem; font-weight: 700; padding: 0.2rem 0.55rem; border-radius: 999px; background: var(--acento-suave); color: var(--acento); }
 .pendiente { font-size: 0.8rem; color: var(--tramite); font-weight: 600; }
 .crecer { flex: 1; }
+.aviso-medida { margin: 0; padding: 0.5rem 0.7rem; border-radius: var(--radio-sm); font-size: 0.82rem; background: color-mix(in srgb, var(--tramite) 14%, transparent); color: var(--text); border: 1px solid var(--tramite); }
 .escenario {
-  display: flex; justify-content: center; padding: 1rem; border-radius: var(--radio);
-  background: var(--bg); border: 1px solid var(--border); overflow: auto;
+  flex: 1; min-height: 0; display: grid; place-items: center; padding: 0.6rem; border-radius: var(--radio);
+  background: var(--bg); border: 1px solid var(--border); overflow: hidden; container-type: size;
 }
+.escenario.real { overflow: auto; place-items: start center; }
+.marco { --regla: 22px; display: grid; grid-template-columns: var(--regla) auto; grid-template-rows: var(--regla) auto; }
+.esquina { font-size: 9px; color: var(--muted); display: grid; place-items: center; }
+.regla { position: relative; color: var(--muted); font-size: 9px; }
+.regla.horizontal {
+  border-bottom: 1px solid var(--muted);
+  background:
+    repeating-linear-gradient(90deg, var(--muted) 0 1px, transparent 1px calc(100% / var(--div))) bottom / 100% 9px no-repeat,
+    repeating-linear-gradient(90deg, var(--border) 0 1px, transparent 1px calc(100% / var(--div) / 10)) bottom / 100% 4px no-repeat;
+}
+.regla.vertical {
+  border-right: 1px solid var(--muted);
+  background:
+    repeating-linear-gradient(180deg, var(--muted) 0 1px, transparent 1px calc(100% / var(--div))) right / 9px 100% no-repeat,
+    repeating-linear-gradient(180deg, var(--border) 0 1px, transparent 1px calc(100% / var(--div) / 10)) right / 4px 100% no-repeat;
+}
+.regla.horizontal span { position: absolute; top: 1px; transform: translateX(-50%); }
+.regla.vertical span { position: absolute; left: 2px; transform: translateY(-50%); }
+.regla span:first-child { transform: none; }
 .lienzo {
   position: relative; aspect-ratio: calc(1 / var(--prop));
-  width: min(100%, calc((100vh - 230px) / var(--prop)));
+  width: min(calc(100cqw - 22px - 1.2rem), calc((100cqh - 22px - 1.2rem) / var(--prop)));
   box-shadow: var(--sombra-md); background: #fff; user-select: none; touch-action: none;
 }
 .lienzo img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 .caja {
   position: absolute; border: 1.5px dashed rgba(79, 70, 229, 0.9); background: rgba(79, 70, 229, 0.08);
-  cursor: move; display: flex; align-items: center; overflow: hidden;
+  cursor: move; display: flex; align-items: center; overflow: visible;
 }
 .caja.sel { border-style: solid; border-color: var(--acento); background: rgba(79, 70, 229, 0.16); z-index: 2; }
 .caja.c-qr { background: repeating-linear-gradient(45deg, rgba(17, 24, 39, 0.25) 0 6px, rgba(255, 255, 255, 0.5) 6px 12px); }
@@ -614,49 +812,81 @@ onUnmounted(() => {
   position: absolute; top: 0; left: 0; font-size: 10px; line-height: 1; padding: 2px 4px;
   background: var(--acento); color: #fff; border-bottom-right-radius: 4px; pointer-events: none; white-space: nowrap;
 }
+.dim {
+  position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 700;
+  background: #111827; color: #fff; padding: 1px 6px; border-radius: 999px; white-space: nowrap; pointer-events: none;
+}
 .caja.circular .rotulo { left: 50%; transform: translateX(-50%); border-radius: 0 0 4px 4px; }
 .muestra-texto {
   display: flex; width: 100%; padding: 0 4px; font-weight: 800; font-size: clamp(8px, 1.2vw, 15px);
   white-space: nowrap; overflow: hidden; pointer-events: none;
 }
 .asa {
-  position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px;
-  background: var(--acento); cursor: nwse-resize; border-top-left-radius: 3px;
+  position: absolute; right: -4px; bottom: -4px; width: 12px; height: 12px;
+  background: var(--acento); cursor: nwse-resize; border-radius: 3px; border: 2px solid #fff;
 }
+.pie-escala { margin: 0; }
 
-.props { display: flex; flex-direction: column; gap: 0.6rem; max-height: calc(100vh - 140px); overflow-y: auto; }
-.props h4 { margin: 0.3rem 0 0; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.props-cuerpo { display: flex; flex-direction: column; gap: 0.55rem; }
+.props h4 { margin: 0.2rem 0 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .dos { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 .control-color { height: 40px; padding: 2px; }
-.check { display: flex; align-items: center; gap: 0.45rem; font-size: 0.88rem; cursor: pointer; }
+.opciones { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem 0.5rem; }
+.check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.84rem; cursor: pointer; }
+.fondos { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.mini-reverso { width: 30px; height: 38px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); }
 .oculto { display: none; }
-.campos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
-.campos li { padding: 0.2rem 0.35rem; border-radius: 6px; }
-.campos li.sel { background: var(--acento-suave); }
+.campos { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.chip-campo {
+  display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.55rem; border-radius: 999px;
+  border: 1px solid var(--border); font-size: 0.8rem; cursor: pointer;
+}
+.chip-campo input { margin: 0; }
+.chip-campo.activo { border-color: var(--acento); }
+.chip-campo.sel { background: var(--acento-suave); color: var(--acento); font-weight: 700; }
 .medidas { display: flex; flex-direction: column; gap: 0.4rem; border-top: 1px solid var(--border); padding-top: 0.6rem; }
 .cuatro { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
-.cuatro label { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.76rem; color: var(--muted); }
+.cuatro label { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.74rem; color: var(--muted); }
 .cuatro input {
   padding: 0.3rem 0.4rem; border: 1px solid var(--border); border-radius: 6px;
   background: var(--panel); color: var(--text); font: inherit; font-size: 0.85rem;
 }
 .chico { font-size: 0.8rem; margin: 0; }
-.pie-props { display: flex; gap: 0.5rem; border-top: 1px solid var(--border); padding-top: 0.6rem; }
 .formulario { display: flex; flex-direction: column; gap: 0.8rem; }
 
-.previa-controles { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 0.7rem; }
-.segmentado { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--bg); border: 1px solid var(--border); align-self: flex-start; }
+.segmentado { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--bg); border: 1px solid var(--border); }
 .segmentado button {
-  border: none; background: transparent; color: var(--text); font: inherit; font-size: 0.85rem; font-weight: 600;
-  padding: 0.3rem 0.8rem; border-radius: 7px; cursor: pointer;
+  border: none; background: transparent; color: var(--text); font: inherit; font-size: 0.8rem; font-weight: 600;
+  padding: 0.25rem 0.7rem; border-radius: 7px; cursor: pointer;
 }
 .segmentado button.on { background: var(--acento); color: var(--acento-texto); }
-.previa-hoja { display: flex; justify-content: center; background: var(--bg); border-radius: var(--radio-sm); padding: 0.6rem; max-height: 65vh; overflow: auto; }
-.previa-hoja canvas, .previa-hoja img { max-width: 100%; height: auto; box-shadow: var(--sombra-md); }
+
+.zona-tarjeta { display: grid; place-items: center; padding: 1rem; background: var(--bg); border-radius: var(--radio-sm); overflow: auto; }
+.tarjeta { border: 2px solid var(--acento); border-radius: 10px; background: var(--acento-suave); display: grid; place-items: center; font-weight: 700; color: var(--acento); }
+.deslizador { width: 100%; }
+
+.previa { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 1rem; min-height: 0; }
+.previa-hoja {
+  --alto-hoja: min(72vh, 760px);
+  position: relative; display: flex; align-items: center; justify-content: center; background: var(--bg); border-radius: var(--radio-sm);
+  padding: 0.8rem; height: var(--alto-hoja); box-sizing: border-box; overflow: hidden;
+}
+.previa-hoja.real { overflow: auto; align-items: flex-start; }
+.previa-hoja canvas, .previa-hoja img {
+  max-width: 100%; max-height: calc(var(--alto-hoja) - 1.6rem); width: auto; height: auto;
+  box-shadow: var(--sombra-md); background: #fff; flex: none;
+}
+.generando { position: absolute; top: 0.6rem; left: 0.8rem; margin: 0; }
+.previa-lado { display: flex; flex-direction: column; gap: 0.7rem; }
+.ficha-medida { margin: 0; display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.84rem; }
+.ficha-medida dt { color: var(--muted); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.ficha-medida dd { margin: 0; font-weight: 700; }
 
 @media (max-width: 1100px) {
-  .diseno { grid-template-columns: 1fr; }
-  .props { max-height: none; }
-  .lienzo { width: min(100%, calc(70vh / var(--prop))); }
+  .diseno { grid-template-columns: 1fr; height: auto; }
+  .lista-cuerpo { max-height: 220px; }
+  .escenario { height: 70vh; flex: none; }
+  .previa { grid-template-columns: 1fr; }
+  .previa-hoja { --alto-hoja: 60vh; }
 }
 </style>

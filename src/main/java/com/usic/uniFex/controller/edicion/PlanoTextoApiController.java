@@ -37,7 +37,7 @@ public class PlanoTextoApiController {
     }
 
     @PostMapping
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<?> crear(@RequestBody PlanoTextoService.CambioTexto req) {
         try {
             return ResponseEntity.ok(service.crear(req, usuarioActual()));
@@ -47,7 +47,7 @@ public class PlanoTextoApiController {
     }
 
     @PatchMapping("/{id}")
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<?> actualizar(@PathVariable Long id,
                                         @RequestBody PlanoTextoService.CambioTexto req) {
         PlanoTextoDTO d = service.actualizar(id, req, usuarioActual());
@@ -57,7 +57,7 @@ public class PlanoTextoApiController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<?> eliminar(@PathVariable Long id) {
         return service.eliminar(id, usuarioActual())
                 ? ResponseEntity.ok(Map.of("ok", true))

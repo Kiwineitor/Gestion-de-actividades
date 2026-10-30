@@ -13,6 +13,7 @@ import { useAnunciosStore } from '../stores/anuncios';
 import { marca, iniciales, cargarMarca } from '../ui/marca';
 import { claveModulo, moduloActual, aModulo, puedeAbrir, MODULOS } from '../modulos';
 import { useActividadStore } from '../stores/actividad';
+import { etiquetaRol } from '../ui/roles';
 
 const auth = useAuthStore();
 const permisos = usePermisosStore();
@@ -82,54 +83,78 @@ watch(clave, () => {
 }, { immediate: true });
 
 const GRUPOS = [
-  { clave: 'Mi trabajo', titulo: 'Mi trabajo' },
-  { clave: 'Actividad', titulo: 'Actividad' },
-  { clave: 'Acreditacion', titulo: 'Acreditación' },
-  { clave: 'Plano y precios', titulo: 'Plano y precios' },
-  { clave: 'Administracion', titulo: 'Administración' },
-  { clave: 'Sistema', titulo: 'Sistema' },
+  'Mi trabajo', 'Actividades', 'Ventas', 'Planos y precios', 'Credenciales y acceso',
+  'Reportes', 'Personas y permisos', 'Comunicación', 'Sistema',
 ];
 
 const TODOS = [
   { m: 'inicio', g: 'Mi trabajo', icono: '🏠', txt: 'Inicio' },
-  { m: 'mapa', g: 'Mi trabajo', icono: '🗺️', txt: 'Mapa de ventas' },
-  { m: 'venta', g: 'Mi trabajo', icono: '🛒', txt: 'Registrar venta' },
-  { m: 'mis-ventas', g: 'Mi trabajo', icono: '🧾', txt: 'Mis ventas' },
   { m: 'notificaciones', g: 'Mi trabajo', icono: '🔔', txt: 'Notificaciones' },
 
-  { m: 'tablero', g: 'Actividad', icono: '📌', txt: 'Tablero' },
-  { m: 'mesas', g: 'Actividad', icono: '🍸', txt: 'Reservas de mesas' },
-  { m: 'actividades', g: 'Actividad', icono: '🗓️', txt: 'Actividades' },
-  { m: 'catalogo', g: 'Actividad', icono: '🏷️', txt: 'Catálogo' },
-  { m: 'inscripciones', g: 'Actividad', icono: '📋', txt: 'Inscripciones' },
-  { m: 'interesados', g: 'Actividad', icono: '🙋', txt: 'Interesados' },
+  { m: 'actividades', g: 'Actividades', icono: '🗓️', txt: 'Centro de actividades' },
+  { m: 'mesas', g: 'Actividades', icono: '🍸', txt: 'Eventos con mesas' },
+  { m: 'interesados', g: 'Actividades', icono: '🙋', txt: 'Solicitudes de participación' },
+  { m: 'tablero', g: 'Actividades', icono: '📌', txt: 'Tablero' },
+  { m: 'catalogo', g: 'Actividades', icono: '📚', txt: 'Catálogo' },
 
-  { m: 'credenciales', g: 'Acreditacion', icono: '🪪', txt: 'Credenciales' },
-  { m: 'credenciales-diseno', g: 'Acreditacion', icono: '🎨', txt: 'Diseño de credenciales' },
-  { m: 'credenciales-apoyo', g: 'Acreditacion', icono: '🎫', txt: 'Credenciales personal apoyo' },
-  { m: 'impresion-masiva', g: 'Acreditacion', icono: '🖨️', txt: 'Impresión Masiva' },
-  { m: 'escaner', g: 'Acreditacion', icono: '📷', txt: 'Escanear credencial' },
-  { m: 'control-acceso', g: 'Acreditacion', icono: '📊', txt: 'Control de acceso' },
+  { m: 'mapa', g: 'Ventas', icono: '🗺️', txt: 'Mapa de ventas' },
+  { m: 'venta', g: 'Ventas', icono: '🛒', txt: 'Registrar venta' },
+  { m: 'mis-ventas', g: 'Ventas', icono: '🧾', txt: 'Mis ventas' },
+  { m: 'inscripciones', g: 'Ventas', icono: '📋', txt: 'Inscripciones' },
+  { m: 'control-ventas', g: 'Ventas', icono: '💰', txt: 'Control de ventas' },
+  { m: 'vendedores', g: 'Ventas', icono: '👥', txt: 'Vendedores' },
 
-  { m: 'editor', g: 'Plano y precios', icono: '✏️', txt: 'Editor del plano' },
-  { m: 'categorias', g: 'Plano y precios', icono: '🏷️', txt: 'Categorías' },
-  { m: 'puestos', g: 'Plano y precios', icono: '🔢', txt: 'Puestos' },
+  { m: 'editor', g: 'Planos y precios', icono: '✏️', txt: 'Editor del plano' },
+  { m: 'categorias', g: 'Planos y precios', icono: '🏷️', txt: 'Categorías y precios' },
+  { m: 'puestos', g: 'Planos y precios', icono: '🔢', txt: 'Puestos' },
 
-  { m: 'control-ventas', g: 'Administracion', icono: '💰', txt: 'Ventas' },
-  { m: 'dashboard', g: 'Administracion', icono: '📊', txt: 'Dashboard' },
-  { m: 'vendedores', g: 'Administracion', icono: '👥', txt: 'Vendedores' },
-  { m: 'anuncios', g: 'Administracion', icono: '📣', txt: 'Comunicados' },
-  { m: 'responsables-extra', g: 'Acreditacion', icono: '🧾', txt: 'Responsables extra' },
-  { m: 'usuarios', g: 'Administracion', icono: '👤', txt: 'Usuarios' },
-  { m: 'roles', g: 'Administracion', icono: '🛡️', txt: 'Roles y permisos' },
-  { m: 'permisos', siNo: 'roles', g: 'Administracion', icono: '🔐', txt: 'Roles y permisos' },
-  { m: 'personas', g: 'Administracion', icono: '🪪', txt: 'Personas' },
-  { m: 'personal-apoyo', g: 'Administracion', icono: '👥', txt: 'Personal de apoyo' },
+  { m: 'credenciales', g: 'Credenciales y acceso', icono: '🪪', txt: 'Credenciales' },
+  { m: 'credenciales-diseno', g: 'Credenciales y acceso', icono: '🎨', txt: 'Diseño de credenciales' },
+  { m: 'credenciales-apoyo', g: 'Credenciales y acceso', icono: '🎫', txt: 'Credenciales de apoyo' },
+  { m: 'impresion-masiva', g: 'Credenciales y acceso', icono: '🖨️', txt: 'Impresión masiva' },
+  { m: 'responsables-extra', g: 'Credenciales y acceso', icono: '➕', txt: 'Responsables extra' },
+  { m: 'escaner', g: 'Credenciales y acceso', icono: '📷', txt: 'Escanear credencial' },
+  { m: 'control-acceso', g: 'Credenciales y acceso', icono: '🚪', txt: 'Control de acceso' },
+
+  { m: 'dashboard', g: 'Reportes', icono: '📊', txt: 'Dashboard' },
+  { m: 'reporte-responsables', g: 'Reportes', icono: '📑', txt: 'Reporte de responsables' },
+
+  { m: 'usuarios', g: 'Personas y permisos', icono: '👤', txt: 'Usuarios' },
+  { m: 'roles', g: 'Personas y permisos', icono: '🛡️', txt: 'Roles y permisos' },
+  { m: 'permisos', siNo: 'roles', g: 'Personas y permisos', icono: '🔐', txt: 'Roles y permisos' },
+  { m: 'personas', g: 'Personas y permisos', icono: '🧑', txt: 'Personas' },
+  { m: 'personal-apoyo', g: 'Personas y permisos', icono: '🤝', txt: 'Personal de apoyo' },
+
+  { m: 'anuncios', g: 'Comunicación', icono: '📣', txt: 'Comunicados' },
+  { m: 'whatsapp', g: 'Comunicación', icono: '💬', txt: 'WhatsApp' },
+
+  { m: 'sistema', g: 'Sistema', icono: '🏷️', txt: 'Datos del sistema' },
   { m: 'mantenimiento', g: 'Sistema', icono: '⚙️', txt: 'Mantenimiento' },
   { m: 'errores', g: 'Sistema', icono: '⚠️', txt: 'Registro de errores' },
-  { m: 'sistema', g: 'Sistema', icono: '🏷️', txt: 'Datos del sistema' },
-  { m: 'whatsapp', g: 'Administracion', icono: '💬', txt: 'WhatsApp' },
 ];
+
+const PREFERIDOS = ['inicio', 'mapa', 'venta', 'mis-ventas', 'actividades', 'mesas', 'escaner', 'credenciales', 'notificaciones'];
+const CLAVE_GRUPOS = 'menu.grupos.v2';
+
+const busqueda = ref('');
+const buscador = ref(null);
+const abiertos = ref(new Set(leerGrupos()));
+
+function leerGrupos() {
+  try {
+    const g = JSON.parse(localStorage.getItem(CLAVE_GRUPOS) || 'null');
+    return Array.isArray(g) ? g : ['Mi trabajo'];
+  } catch { return ['Mi trabajo']; }
+}
+
+function alternarGrupo(g) {
+  const s = new Set(abiertos.value);
+  if (s.has(g)) s.delete(g); else s.add(g);
+  abiertos.value = s;
+  try { localStorage.setItem(CLAVE_GRUPOS, JSON.stringify([...s])); } catch { }
+}
+
+const sinAcentos = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 const anuncios = useAnunciosStore();
 const actividad = useActividadStore();
@@ -141,13 +166,41 @@ function puedeVerEnlace(e) {
 
 const enlaces = computed(() => TODOS.filter(puedeVerEnlace));
 
-const grupos = computed(() => GRUPOS
-  .map((g) => ({ ...g, enlaces: enlaces.value.filter((e) => e.g === g.clave) }))
-  .filter((g) => g.enlaces.length > 0));
+const grupos = computed(() => {
+  const q = sinAcentos(busqueda.value.trim());
+  return GRUPOS
+    .map((g) => ({
+      clave: g,
+      titulo: g,
+      enlaces: enlaces.value.filter((e) => e.g === g && (!q || sinAcentos(`${e.txt} ${g}`).includes(q))),
+    }))
+    .filter((g) => g.enlaces.length > 0)
+    .map((g) => ({ ...g, abierto: Boolean(q) || abiertos.value.has(g.clave) || g.enlaces.some((e) => e.m === clave.value) }));
+});
+
+const sinResultados = computed(() => busqueda.value.trim() && !grupos.value.length);
+
+function irPrimero() {
+  const primero = grupos.value[0]?.enlaces[0];
+  if (!primero) return;
+  router.push(aModulo(primero.m));
+  busqueda.value = '';
+  abierto.value = false;
+}
+
+function atajoBuscar(e) {
+  const escribiendo = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || '') || e.target?.isContentEditable;
+  if ((e.key === 'k' && (e.ctrlKey || e.metaKey)) || (e.key === '/' && !escribiendo)) {
+    e.preventDefault();
+    if (plegado.value) { contraido.value = false; ocultoAuto.value = false; }
+    if (esMovil()) abierto.value = true;
+    setTimeout(() => buscador.value?.focus(), 30);
+  }
+}
 
 const enlacesPrincipales = computed(() => {
-  const mias = enlaces.value.filter((e) => e.g === 'Mi trabajo');
-  return (mias.length ? mias : enlaces.value).slice(0, 4);
+  const vistos = PREFERIDOS.map((m) => enlaces.value.find((e) => e.m === m)).filter(Boolean);
+  return (vistos.length ? vistos : enlaces.value).slice(0, 4);
 });
 
 const iconoTema = computed(() => (tema.value === 'dark' ? '🌙' : tema.value === 'light' ? '☀️' : '🌗'));
@@ -188,6 +241,7 @@ onMounted(() => {
   tienda.conectar();
   quitarOyente = tienda.registrarNotificaciones(alCambiarPermisos);
   window.addEventListener('unifex:mantenimiento', alMantenimientoHttp);
+  window.addEventListener('keydown', atajoBuscar);
   document.addEventListener('visibilitychange', alVolverAlFrente);
   window.addEventListener('online', alVolverAlFrente);
   iniciarPresencia();
@@ -201,6 +255,7 @@ onUnmounted(() => {
   clearTimeout(temporizadorMenu);
   if (quitarOyente) quitarOyente();
   window.removeEventListener('unifex:mantenimiento', alMantenimientoHttp);
+  window.removeEventListener('keydown', atajoBuscar);
   document.removeEventListener('visibilitychange', alVolverAlFrente);
   window.removeEventListener('online', alVolverAlFrente);
 });
@@ -226,12 +281,21 @@ function salir() {
         <span v-else class="logo">{{ iniciales }}</span>
         <strong class="txt-menu">{{ marca.nombre }}</strong>
       </div>
+      <div class="buscador txt-menu">
+        <input ref="buscador" v-model="busqueda" type="search" placeholder="Buscar opción…  ( / )" aria-label="Buscar en el menú"
+               @keydown.enter.prevent="irPrimero" @keydown.esc="busqueda = ''" />
+      </div>
       <nav>
-        <div v-for="g in grupos" :key="g.clave" class="grupo">
-          <h3 class="grupo-titulo">{{ g.titulo }}</h3>
-          <router-link v-for="e in g.enlaces" :key="e.m" :to="aModulo(e.m)" class="enlace" :class="{ activo: e.m === clave }" :title="e.txt" @click="abierto = false">
-            <span class="ico">{{ e.icono }}</span><span class="txt-menu">{{ e.txt }}</span>
-          </router-link>
+        <p v-if="sinResultados" class="sin-resultados txt-menu">Nada coincide con «{{ busqueda }}».</p>
+        <div v-for="g in grupos" :key="g.clave" class="grupo" :class="{ cerrado: !g.abierto }">
+          <button type="button" class="grupo-titulo" :aria-expanded="g.abierto" @click="alternarGrupo(g.clave)">
+            <span>{{ g.titulo }}</span><span class="cuenta">{{ g.enlaces.length }}</span><span class="flecha" aria-hidden="true">▾</span>
+          </button>
+          <div class="grupo-enlaces">
+            <router-link v-for="e in g.enlaces" :key="e.m" :to="aModulo(e.m)" class="enlace" :class="{ activo: e.m === clave }" :title="e.txt" @click="abierto = false; busqueda = ''">
+              <span class="ico">{{ e.icono }}</span><span class="txt-menu">{{ e.txt }}</span>
+            </router-link>
+          </div>
         </div>
       </nav>
       <div class="pie-side">
@@ -239,7 +303,7 @@ function salir() {
           <span class="avatar">{{ (auth.usuario || '?').charAt(0).toUpperCase() }}</span>
           <div class="datos txt-menu">
             <span class="u">{{ auth.usuario }}</span>
-            <span class="r">{{ auth.rol }}</span>
+            <span class="r">{{ etiquetaRol(auth.rol) }}</span>
           </div>
         </div>
         <button class="btn btn-fantasma btn-sm txt-menu" @click="salir">Salir</button>
@@ -257,7 +321,7 @@ function salir() {
         <div class="crecer"></div>
         <button class="btn btn-fantasma btn-icono" :title="`Tema: ${tema}`" @click="alternarTema">{{ iconoTema }}</button>
       </header>
-      <main class="contenido" :class="{ inmersivo }">
+      <main class="contenido" :class="{ inmersivo, completo: modulo.completo }">
         <slot />
       </main>
     </div>
@@ -292,12 +356,28 @@ function salir() {
 }
 nav { display: flex; flex-direction: column; gap: 2px; padding: 0.4rem 0.6rem; flex: 1; overflow-y: auto; }
 .grupo { display: flex; flex-direction: column; gap: 2px; }
+.buscador { padding: 0 0.8rem 0.4rem; }
+.buscador input {
+  width: 100%; box-sizing: border-box; height: 36px; border-radius: var(--radio-sm); border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); padding: 0 0.7rem; font: inherit; font-size: 0.86rem;
+}
+.buscador input:focus { outline: 2px solid var(--acento); border-color: transparent; }
+.sin-resultados { margin: 0.6rem 0.7rem; font-size: 0.85rem; color: var(--muted); }
 .grupo-titulo {
-  margin: 0.9rem 0 0.2rem; padding: 0 0.7rem;
-  font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em;
+  display: flex; align-items: center; gap: 0.4rem; width: 100%; margin: 0.35rem 0 0; padding: 0.45rem 0.7rem;
+  border: 0; background: none; border-radius: var(--radio-sm); cursor: pointer; text-align: left;
+  font: inherit; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--muted);
 }
-.grupo:first-child .grupo-titulo { margin-top: 0.2rem; }
+.grupo-titulo:hover { background: var(--panel-2); color: var(--text); }
+.grupo-titulo span:first-child { flex: 1; }
+.grupo-titulo .cuenta { font-size: 0.65rem; background: var(--panel-2); border-radius: 999px; padding: 0 0.4rem; letter-spacing: 0; }
+.grupo-titulo .flecha { transition: transform 0.15s ease; font-size: 0.8rem; }
+.grupo.cerrado .flecha { transform: rotate(-90deg); }
+.grupo-enlaces { display: flex; flex-direction: column; gap: 2px; }
+.grupo.cerrado .grupo-enlaces { display: none; }
+.sidebar.plegado:not(.asomado) .grupo.cerrado .grupo-enlaces { display: flex; }
+.sidebar.plegado:not(.asomado) .buscador { display: none; }
 .enlace {
   display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.7rem; border-radius: var(--radio-sm);
   color: var(--text); text-decoration: none; font-weight: 600; font-size: 0.92rem;
@@ -343,7 +423,7 @@ nav { display: flex; flex-direction: column; gap: 2px; padding: 0.4rem 0.6rem; f
 }
 .sidebar.plegado.asomado .txt-menu { display: inline; }
 .sidebar.plegado.asomado .datos { display: flex; }
-.sidebar.plegado.asomado .grupo-titulo { display: block; }
+.sidebar.plegado.asomado .grupo-titulo { display: flex; }
 .sidebar.plegado.asomado .enlace { justify-content: flex-start; padding: 0.6rem 0.7rem; }
 .sidebar.plegado.asomado .marca { justify-content: flex-start; padding: 1.1rem 1rem; }
 .sidebar.plegado.asomado .pie-side { justify-content: space-between; padding: 0.8rem; }
@@ -353,6 +433,11 @@ nav { display: flex; flex-direction: column; gap: 2px; padding: 0.4rem 0.6rem; f
   padding: 1.4rem calc(1.4rem + var(--safe-right))
            calc(1.4rem + var(--tabbar-h) + var(--kb)) calc(1.4rem + var(--safe-left));
 }
+.contenido.completo {
+  max-width: none; height: calc(100dvh - 58px - var(--safe-top)); box-sizing: border-box;
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden; padding-bottom: 1rem;
+}
+.contenido.completo > * { flex: 1; min-height: 0; }
 .contenido.inmersivo { display: flex; flex-direction: column; padding: 0; padding-bottom: var(--tabbar-h); max-width: none; width: 100%; }
 
 .velo { display: none; }
@@ -374,6 +459,7 @@ nav { display: flex; flex-direction: column; gap: 2px; padding: 0.4rem 0.6rem; f
   .enlace { padding: 0.9rem 0.9rem; font-size: 1.02rem; gap: 0.8rem; }
   .ico { font-size: 1.15rem; }
 
+  .contenido.completo { height: auto; overflow: visible; padding-bottom: calc(1.4rem + var(--tabbar-h)); }
   .con-teclado .tabbar { display: none; }
   .tabbar {
     display: flex; flex-direction: row; gap: 0; overflow: visible; flex: none;

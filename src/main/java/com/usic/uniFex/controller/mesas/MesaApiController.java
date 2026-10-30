@@ -56,74 +56,84 @@ public class MesaApiController {
     }
 
     @PostMapping("/eventos")
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.DISENA_MESAS)
     public ResponseEntity<Map<String, Object>> crear(@RequestBody MesaService.EventoDatos datos) {
         return MesaPublicaController.responder(mesas.crearEvento(datos, usuario()));
     }
 
     @PatchMapping("/eventos/{id}")
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.DISENA_MESAS)
     public ResponseEntity<Map<String, Object>> editar(@PathVariable Long id, @RequestBody MesaService.EventoDatos datos) {
         return MesaPublicaController.responder(mesas.editarEvento(id, datos, usuario()));
     }
 
     @PostMapping(value = "/eventos/{id}/plano", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.DISENA_MESAS)
     public ResponseEntity<Map<String, Object>> plano(@PathVariable Long id, @RequestParam("archivo") MultipartFile archivo)
             throws IOException {
         return MesaPublicaController.responder(mesas.subirImagenEvento(id, archivo, true));
     }
 
     @PostMapping(value = "/eventos/{id}/qr-pago", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.DISENA_MESAS)
     public ResponseEntity<Map<String, Object>> qrPago(@PathVariable Long id, @RequestParam("archivo") MultipartFile archivo)
             throws IOException {
         return MesaPublicaController.responder(mesas.subirImagenEvento(id, archivo, false));
     }
 
     @DeleteMapping("/eventos/{id}/qr-pago")
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.DISENA_MESAS)
     public ResponseEntity<Map<String, Object>> quitarQrPago(@PathVariable Long id) {
         return MesaPublicaController.responder(mesas.quitarQrPago(id));
     }
 
     @PutMapping("/eventos/{id}/mesas")
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.DISENA_MESAS)
     public ResponseEntity<Map<String, Object>> guardarMesas(@PathVariable Long id, @RequestBody List<MesaService.MesaDatos> lista) {
         return MesaPublicaController.responder(mesas.guardarMesas(id, lista, usuario()));
     }
 
     @DeleteMapping("/{mesaId}")
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.DISENA_MESAS)
     public ResponseEntity<Map<String, Object>> eliminarMesa(@PathVariable Long mesaId) {
         return MesaPublicaController.responder(mesas.eliminarMesa(mesaId, usuario()));
     }
 
     @PatchMapping("/{mesaId}/venta")
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.DISENA_MESAS)
     public ResponseEntity<Map<String, Object>> fueraDeVenta(@PathVariable Long mesaId, @RequestBody Bloqueo req) {
         return MesaPublicaController.responder(mesas.fueraDeVenta(mesaId, req != null && Boolean.TRUE.equals(req.fueraDeVenta()), usuario()));
     }
+
+    @PreAuthorize(Roles.VALIDA_MESAS)
 
     @GetMapping("/eventos/{id}/reservas")
     public List<Map<String, Object>> reservas(@PathVariable Long id, @RequestParam(required = false) String estado) {
         return mesas.reservas(id, estado);
     }
 
+    @PreAuthorize(Roles.VALIDA_MESAS)
+
     @PostMapping("/reservas/{id}/confirmar")
     public ResponseEntity<Map<String, Object>> confirmar(@PathVariable Long id) {
         return MesaPublicaController.responder(mesas.confirmar(id, usuario()));
     }
+
+    @PreAuthorize(Roles.VALIDA_MESAS)
 
     @PostMapping("/reservas/{id}/rechazar")
     public ResponseEntity<Map<String, Object>> rechazar(@PathVariable Long id, @RequestBody Motivo req) {
         return MesaPublicaController.responder(mesas.rechazar(id, req == null ? null : req.motivo(), usuario()));
     }
 
+    @PreAuthorize(Roles.VALIDA_MESAS)
+
     @PostMapping("/reservas/{id}/no-presentado")
     public ResponseEntity<Map<String, Object>> noPresentado(@PathVariable Long id) {
         return MesaPublicaController.responder(mesas.liberarNoPresentado(id, usuario()));
     }
+
+    @PreAuthorize(Roles.VALIDA_MESAS)
 
     @PostMapping("/ingreso")
     public ResponseEntity<Map<String, Object>> ingreso(@RequestBody Codigo req) {

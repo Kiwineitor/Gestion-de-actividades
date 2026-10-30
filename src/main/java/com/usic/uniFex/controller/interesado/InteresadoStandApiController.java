@@ -26,7 +26,7 @@ import lombok.RequiredArgsConstructor;
 @RestController
 @RequestMapping("/api/app/interesados-stand")
 @RequiredArgsConstructor
-@PreAuthorize(Roles.ADMINISTRA)
+@PreAuthorize(Roles.ATIENDE_INTERESADOS)
 public class InteresadoStandApiController {
 
     private final InteresadoStandService servicio;

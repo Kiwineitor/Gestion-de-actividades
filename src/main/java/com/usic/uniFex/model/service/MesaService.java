@@ -43,6 +43,7 @@ public class MesaService {
     private static final Set<String> FORMAS = Set.of("circulo", "cuadrado", "rectangulo");
     private static final Set<String> TIPOS_IMAGEN = Set.of("image/png", "image/jpeg", "image/webp");
     private static final long VENTANA_INTENTOS_MS = 10 * 60 * 1000L;
+    private static final long ATENCION_MS = 120_000L;
     private static final char[] ALFABETO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
     private static final DateTimeFormatter HORA = DateTimeFormatter.ofPattern("HH:mm");
     private static final DateTimeFormatter FECHA = DateTimeFormatter.ofPattern("EEEE d 'de' MMMM, HH:mm", Locale.of("es", "BO"));
@@ -51,8 +52,14 @@ public class MesaService {
     private final SimpMessagingTemplate mensajeria;
     private final FileStorageService archivos;
     private final AvisoReservaMesaService avisos;
+    private final AvisoPublicoService avisoPublico;
     private final SecureRandom azar = new SecureRandom();
     private final Map<String, Deque<Long>> intentos = new ConcurrentHashMap<>();
+    private final Map<Long, Atencion> atenciones = new ConcurrentHashMap<>();
+
+    private record Atencion(String token, Long eventoId, long expira) {
+        boolean vigente(long ahora) { return expira > ahora; }
+    }
 
     @org.springframework.beans.factory.annotation.Value("${unifex.mesas.intentos-por-ip:30}")
     private int intentosPorIp = 30;
@@ -123,6 +130,7 @@ public class MesaService {
                        politicas, publicado, "_registro_id_usuario")
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
                 """, Long.class, parametrosEvento(d, usuarioId));
+        avisoPublico.cambio("evento", id);
         return Resultado.ok("Evento creado", Map.of("id", id));
     }
 
@@ -141,6 +149,7 @@ public class MesaService {
                        "_fecha_modificacion" = now(), "_modificacion_id_usuario" = ?
                  WHERE id = ?
                 """, conId);
+        avisoPublico.cambio("evento", id);
         return Resultado.ok("Evento actualizado", Map.of("id", id));
     }
 
@@ -159,6 +168,7 @@ public class MesaService {
         } else {
             jdbc.update("UPDATE mesa_evento SET pago_qr_archivo = ? WHERE id = ?", ruta, id);
         }
+        avisoPublico.cambio("evento", id);
         return Resultado.ok(esPlano ? "Plano actualizado" : "QR de pago actualizado", Map.of("url", "/files/" + ruta));
     }
 
@@ -166,6 +176,7 @@ public class MesaService {
     public Resultado quitarQrPago(Long id) {
         if (!existeEvento(id)) return Resultado.error("El evento no existe");
         jdbc.update("UPDATE mesa_evento SET pago_qr_archivo = NULL WHERE id = ?", id);
+        avisoPublico.cambio("evento", id);
         return Resultado.ok("QR de pago quitado", Map.of());
     }
 
@@ -247,17 +258,74 @@ public class MesaService {
     @Transactional(readOnly = true)
     public List<Map<String, Object>> eventosPublicos() {
         return jdbc.query("""
-                SELECT * FROM mesa_evento
-                 WHERE "_estado" = 'A' AND publicado AND fecha_inicio > now() - interval '12 hours'
-                 ORDER BY fecha_inicio
-                """, (rs, i) -> evento(rs, false));
+                SELECT e.*,
+                       (SELECT count(*) FROM mesa m WHERE m.id_evento = e.id AND m."_estado" = 'A') AS total,
+                       (SELECT count(*) FROM mesa m WHERE m.id_evento = e.id AND m."_estado" = 'A' AND m.estado = 'L') AS libres,
+                       (SELECT min(m.precio) FROM mesa m WHERE m.id_evento = e.id AND m."_estado" = 'A' AND m.estado <> 'X') AS desde
+                  FROM mesa_evento e
+                 WHERE e."_estado" = 'A' AND e.publicado AND e.fecha_inicio > now() - interval '12 hours'
+                 ORDER BY e.fecha_inicio
+                """, (rs, i) -> {
+            Map<String, Object> m = evento(rs, false);
+            m.put("mesas", rs.getLong("total"));
+            m.put("libres", rs.getLong("libres"));
+            m.put("desde", rs.getBigDecimal("desde"));
+            return m;
+        });
+    }
+
+    public Resultado tomarAtencion(Long eventoId, Long mesaId, String token) {
+        if (token == null || token.isBlank() || token.length() > 80) return Resultado.error("Sesión no válida. Recarga la página.");
+        if (eventoPublico(eventoId) == null) return Resultado.error("El evento no está disponible");
+        List<String> estado = jdbc.queryForList("SELECT estado FROM mesa WHERE id = ? AND id_evento = ? AND \"_estado\" = 'A'",
+                String.class, mesaId, eventoId);
+        if (estado.isEmpty()) return Resultado.error("La mesa no existe");
+        if (!"L".equals(estado.get(0))) return Resultado.error("Esta mesa ya no está disponible. Elige otra.");
+        long ahora = System.currentTimeMillis();
+        boolean[] nueva = { false };
+        Atencion vigente = atenciones.compute(mesaId, (k, actual) -> {
+            if (actual != null && actual.vigente(ahora) && !actual.token().equals(token)) return actual;
+            nueva[0] = actual == null || !actual.vigente(ahora);
+            return new Atencion(token, eventoId, ahora + ATENCION_MS);
+        });
+        if (!vigente.token().equals(token)) {
+            return Resultado.error("Otra persona está comprando esta mesa en este momento. Elige otra o espera un momento.");
+        }
+        for (Map.Entry<Long, Atencion> e : atenciones.entrySet()) {
+            if (!e.getKey().equals(mesaId) && e.getValue().token().equals(token) && atenciones.remove(e.getKey(), e.getValue())) {
+                publicarDespues(e.getValue().eventoId(), List.of(e.getKey()));
+            }
+        }
+        if (nueva[0]) publicarDespues(eventoId, List.of(mesaId));
+        return Resultado.ok("Mesa apartada mientras completas tus datos", Map.of("segundos", ATENCION_MS / 1000));
+    }
+
+    public Resultado soltarAtencion(Long mesaId, String token) {
+        Atencion a = atenciones.get(mesaId);
+        if (a == null || token == null || !a.token().equals(token)) return Resultado.ok("Sin cambios", Map.of());
+        if (atenciones.remove(mesaId, a)) publicarDespues(a.eventoId(), List.of(mesaId));
+        return Resultado.ok("Mesa liberada", Map.of());
+    }
+
+    private boolean enAtencion(Long mesaId) {
+        Atencion a = atenciones.get(mesaId);
+        return a != null && a.vigente(System.currentTimeMillis());
     }
 
     @Transactional
     public Resultado reservar(Long eventoId, Long mesaId, Cliente c, String ip) {
+        return reservar(eventoId, mesaId, c, ip, null);
+    }
+
+    @Transactional
+    public Resultado reservar(Long eventoId, Long mesaId, Cliente c, String ip, String token) {
         String error = validarCliente(c);
         if (error != null) return Resultado.error(error);
         if (!permitirIntento(ip)) return Resultado.error("Demasiados intentos seguidos. Espera unos minutos y vuelve a intentar.");
+        Atencion atencion = atenciones.get(mesaId);
+        if (atencion != null && atencion.vigente(System.currentTimeMillis()) && !atencion.token().equals(token)) {
+            return Resultado.error("Otra persona está comprando esta mesa en este momento. Elige otra.");
+        }
         Map<String, Object> evento = eventoPublico(eventoId);
         if (evento == null) return Resultado.error("El evento no está disponible");
         Integer activas = jdbc.queryForObject("""
@@ -285,6 +353,7 @@ public class MesaService {
                  WHERE id = ? AND id_evento = ? AND estado = 'L' AND "_estado" = 'A'
                 """, reservaId, minutos, mesaId, eventoId);
         if (n == 0) throw new Rechazo("La mesa " + mesa.get(0)[1] + " ya no está disponible. Elige otra.");
+        atenciones.remove(mesaId);
         publicarDespues(eventoId, List.of(mesaId));
         log.info("Mesa {} bloqueada por la reserva {} ({} min)", mesaId, reservaId, minutos);
         avisos.avisar(reservaId, AvisoReservaMesaService.Tipo.BLOQUEADA);
@@ -435,6 +504,12 @@ public class MesaService {
                  WHERE estado = 'BLOQUEADA' AND bloqueo_expira < now()
                 """);
         for (Object[] f : liberadas) publicarDespues((Long) f[1], List.of((Long) f[0]));
+        long vence = System.currentTimeMillis();
+        for (Map.Entry<Long, Atencion> e : atenciones.entrySet()) {
+            if (!e.getValue().vigente(vence) && atenciones.remove(e.getKey(), e.getValue())) {
+                publicarDespues(e.getValue().eventoId(), List.of(e.getKey()));
+            }
+        }
         if (!liberadas.isEmpty()) log.info("Mesas liberadas por vencimiento: {}", liberadas.size());
         long ahora = System.currentTimeMillis();
         intentos.entrySet().removeIf(e -> {
@@ -494,6 +569,7 @@ public class MesaService {
             m.put("validadoEn", fecha(rs.getTimestamp("validado_en")));
         } else {
             m.put("ci", enmascarar(rs.getString("ci")));
+            m.put("celular", enmascarar(rs.getString("celular")));
         }
         return m;
     }
@@ -562,6 +638,7 @@ public class MesaService {
         m.put("mapaY", rs.getObject("mapa_y"));
         m.put("tamano", rs.getDouble("tamano"));
         m.put("estado", completo ? estado : ("T".equals(estado) || "R".equals(estado) ? "R" : estado));
+        m.put("enProceso", "L".equals(estado) && enAtencion(rs.getLong("id")));
         if (completo) {
             String nombre = rs.getString("r_nombre");
             m.put("reservadoPor", nombre == null ? null : nombre + " " + rs.getString("r_apellidos"));
@@ -583,6 +660,7 @@ public class MesaService {
                     return d;
                 }, (Object) mesaIds.toArray(new Long[0]));
                 mensajeria.convertAndSend(TOPIC + eventoId, estados);
+                mensajeria.convertAndSend(AvisoPublicoService.TOPIC, Map.of("tipo", "mesas", "id", eventoId));
             } catch (RuntimeException e) {
                 log.warn("No se pudo difundir el cambio de mesas del evento {}: {}", eventoId, e.getMessage());
             }

@@ -31,6 +31,7 @@ public class ActividadService {
     private final SimpMessagingTemplate mensajeria;
     private final PlantillaCredencialService plantillas;
     private final FileStorageService archivos;
+    private final AvisoPublicoService avisoPublico;
 
     private static final Set<String> TIPOS_IMAGEN = Set.of("image/png", "image/jpeg", "image/webp");
 
@@ -139,6 +140,7 @@ public class ActividadService {
         jdbc.update("UPDATE edicion SET activa = TRUE WHERE id = ?", id);
         String nombre = jdbc.queryForObject("SELECT nombre FROM edicion WHERE id = ?", String.class, id);
         log.warn("Actividad activa cambiada de {} a {} ({})", activa, id, nombre);
+        avisoPublico.cambio("actividad", id);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
@@ -170,6 +172,7 @@ public class ActividadService {
         }
         String ruta = archivos.save(archivo, FileStorageService.Bucket.ACTIVIDADES, "portada");
         jdbc.update("UPDATE edicion SET portada_archivo = ? WHERE id = ?", ruta, id);
+        avisoPublico.cambio("actividad", id);
         return new Resultado(true, "Portada actualizada", id);
     }
 
@@ -177,6 +180,7 @@ public class ActividadService {
     public Resultado quitarPortada(Long id) {
         if (!existe(id)) return Resultado.error("La actividad no existe");
         jdbc.update("UPDATE edicion SET portada_archivo = NULL WHERE id = ?", id);
+        avisoPublico.cambio("actividad", id);
         return new Resultado(true, "Portada quitada", id);
     }
 
@@ -188,6 +192,7 @@ public class ActividadService {
                  WHERE id = ?
                 """, limpio(d.lugar(), 200), limpio(d.fechasTexto(), 120), texto(d.descripcionPublica(), 3000),
                 limpio(d.contacto(), 120), d.publica(), d.recibeInteresados(), id);
+        avisoPublico.cambio("actividad", id);
     }
 
     private static String texto(String s, int max) {

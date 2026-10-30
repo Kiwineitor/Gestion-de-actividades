@@ -193,7 +193,7 @@ public class PuestoApiController {
     }
 
     @PostMapping(value = "/fotos", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> subirFoto(
             @RequestPart("archivo") MultipartFile archivo,
             @RequestParam("puestos") List<Long> puestos,
@@ -209,7 +209,7 @@ public class PuestoApiController {
     }
 
     @DeleteMapping("/fotos/{fotoId}")
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> borrarFoto(@PathVariable Long fotoId) {
         boolean ok = fotoService.borrar(fotoId);
         return respuesta(ok, ok ? "Foto eliminada" : "La foto no existe");
@@ -219,7 +219,7 @@ public class PuestoApiController {
     }
 
     @PatchMapping("/{id}/referencia")
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> referencia(
             @PathVariable Long id, @RequestBody ReferenciaRequest req) {
         Long usuarioId = usuarioActual();
@@ -230,7 +230,7 @@ public class PuestoApiController {
     }
 
     @GetMapping("/{id}/venta")
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> venta(@PathVariable Long id) {
         PuestoMapaService.VentaDePuesto v = mapaService.ventaVigente(id);
         Map<String, Object> cuerpo = new java.util.LinkedHashMap<>();
@@ -240,7 +240,7 @@ public class PuestoApiController {
     }
 
     @GetMapping("/pagados")
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public List<Long> pagados() {
         return mapaService.pagados();
     }
@@ -249,7 +249,7 @@ public class PuestoApiController {
     }
 
     @PatchMapping("/{id}/categoria")
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> cambiarCategoria(
             @PathVariable Long id, @RequestBody CambioCategoria req) {
         Long usuarioId = usuarioActual();
@@ -260,7 +260,7 @@ public class PuestoApiController {
     }
 
     @PatchMapping("/{id}/ficha")
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> ficha(
             @PathVariable Long id, @RequestBody PuestoMapaService.CambioFicha req) {
         Long usuarioId = usuarioActual();
@@ -282,7 +282,7 @@ public class PuestoApiController {
     }
 
     @PostMapping("/posiciones")
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> guardarPosiciones(
             @RequestBody List<PuestoMapaService.Posicion> posiciones) {
         List<Long> cambiados = mapaService.guardarPosiciones(posiciones);
@@ -291,7 +291,7 @@ public class PuestoApiController {
     }
 
     @PostMapping
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> crear(@RequestBody NuevaCaseta req) {
         Puesto p = mapaService.crear(req.categoriaId(), req.codigo(), req.tamano(), usuarioActual());
         if (p == null) {
@@ -302,7 +302,7 @@ public class PuestoApiController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> anular(@PathVariable Long id) {
         boolean ok = mapaService.anular(id, usuarioActual());
         if (ok) publisher.publicar(id);
@@ -313,7 +313,7 @@ public class PuestoApiController {
     }
 
     @PatchMapping("/codigos")
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> renumerar(
             @RequestBody List<PuestoMapaService.Codigo> cambios) {
         Long usuarioId = usuarioActual();
@@ -326,7 +326,7 @@ public class PuestoApiController {
     }
 
     @PatchMapping("/precios")
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> actualizarPrecios(
             @RequestBody List<PuestoMapaService.PrecioCaseta> cambios) {
         Long usuarioId = usuarioActual();
@@ -339,7 +339,7 @@ public class PuestoApiController {
     }
 
     @PostMapping("/{id}/bloquear")
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> bloquear(@PathVariable Long id) {
         boolean ok = mapaService.bloquear(id, usuarioActual());
         if (ok) publisher.publicar(id);
@@ -347,7 +347,7 @@ public class PuestoApiController {
     }
 
     @PostMapping("/{id}/desbloquear")
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> desbloquear(@PathVariable Long id) {
         boolean ok = mapaService.desbloquear(id, usuarioActual());
         if (ok) publisher.publicar(id);

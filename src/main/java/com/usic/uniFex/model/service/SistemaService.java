@@ -21,6 +21,7 @@ public class SistemaService {
 
     private final JdbcTemplate jdbc;
     private final FileStorageService archivos;
+    private final AvisoPublicoService avisoPublico;
 
     public record Datos(String nombre, String lema, String contacto) {
     }
@@ -52,6 +53,7 @@ public class SistemaService {
         escribir("nombre", nombre, usuarioId);
         escribir("lema", limpio(d.lema(), 160), usuarioId);
         escribir("contacto", limpio(d.contacto(), 120), usuarioId);
+        avisoPublico.cambio("sistema", null);
         return new Resultado(true, "Datos del sistema guardados", marca());
     }
 
@@ -63,12 +65,14 @@ public class SistemaService {
         if (archivo.getSize() > 2L * 1024 * 1024) return Resultado.error("El logo no puede pasar de 2 MB");
         String ruta = archivos.save(archivo, FileStorageService.Bucket.SISTEMA, "logo");
         escribir("logo_archivo", ruta, usuarioId);
+        avisoPublico.cambio("sistema", null);
         return new Resultado(true, "Logo actualizado", marca());
     }
 
     @Transactional
     public Resultado quitarLogo(Long usuarioId) {
         escribir("logo_archivo", null, usuarioId);
+        avisoPublico.cambio("sistema", null);
         return new Resultado(true, "Logo quitado", marca());
     }
 

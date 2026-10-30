@@ -45,19 +45,19 @@ public class EdicionApiController {
     }
 
     @GetMapping("/resumen")
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.GESTIONA_ACTIVIDADES)
     public List<Map<String, Object>> resumen() {
         return actividades.listar();
     }
 
     @PostMapping
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.GESTIONA_ACTIVIDADES)
     public ResponseEntity<Map<String, Object>> crear(@RequestBody ActividadService.Datos datos) {
         return responder(actividades.crear(datos, usuarioActual()));
     }
 
     @PatchMapping("/{id}")
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.GESTIONA_ACTIVIDADES)
     public ResponseEntity<Map<String, Object>> editar(@PathVariable Long id, @RequestBody ActividadService.Datos datos) {
         return responder(actividades.editar(id, datos));
     }
@@ -69,14 +69,14 @@ public class EdicionApiController {
     }
 
     @PostMapping(value = "/{id}/portada", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.GESTIONA_ACTIVIDADES)
     public ResponseEntity<Map<String, Object>> subirPortada(@PathVariable Long id, @RequestParam("archivo") MultipartFile archivo)
             throws IOException {
         return responder(actividades.subirPortada(id, archivo));
     }
 
     @DeleteMapping("/{id}/portada")
-    @PreAuthorize(Roles.ADMINISTRA)
+    @PreAuthorize(Roles.GESTIONA_ACTIVIDADES)
     public ResponseEntity<Map<String, Object>> quitarPortada(@PathVariable Long id) {
         return responder(actividades.quitarPortada(id));
     }

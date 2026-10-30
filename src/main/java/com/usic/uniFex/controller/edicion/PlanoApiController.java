@@ -35,7 +35,7 @@ public class PlanoApiController {
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize(Roles.EDITA_PLANO)
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
     public ResponseEntity<Map<String, Object>> reemplazar(@RequestPart("archivo") MultipartFile archivo) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         Long usuarioId = (auth != null && auth.getPrincipal() instanceof JwtUser ju) ? ju.id() : null;

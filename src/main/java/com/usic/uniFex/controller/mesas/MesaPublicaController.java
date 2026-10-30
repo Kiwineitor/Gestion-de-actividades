@@ -29,7 +29,10 @@ public class MesaPublicaController {
 
     private final MesaService mesas;
 
-    public record PeticionReserva(Long mesaId, MesaService.Cliente cliente) {
+    public record PeticionReserva(Long mesaId, MesaService.Cliente cliente, String token) {
+    }
+
+    public record PeticionAtencion(String token) {
     }
 
     @GetMapping
@@ -47,7 +50,20 @@ public class MesaPublicaController {
     public ResponseEntity<Map<String, Object>> reservar(@PathVariable Long id, @RequestBody PeticionReserva req,
                                                         HttpServletRequest http) {
         if (req == null || req.mesaId() == null) return responder(new MesaService.Resultado(false, "Elige una mesa", null));
-        return responder(mesas.reservar(id, req.mesaId(), req.cliente(), http.getRemoteAddr()));
+        return responder(mesas.reservar(id, req.mesaId(), req.cliente(), http.getRemoteAddr(), req.token()));
+    }
+
+    @PostMapping("/eventos/{id}/mesas/{mesaId}/atencion")
+    public ResponseEntity<Map<String, Object>> tomar(@PathVariable Long id, @PathVariable Long mesaId,
+                                                     @RequestBody PeticionAtencion req) {
+        return responder(mesas.tomarAtencion(id, mesaId, req == null ? null : req.token()));
+    }
+
+    @PostMapping("/eventos/{id}/mesas/{mesaId}/soltar")
+    public ResponseEntity<Map<String, Object>> soltar(@PathVariable Long id, @PathVariable Long mesaId,
+                                                      @RequestBody(required = false) String cuerpo) {
+        String token = cuerpo == null ? null : cuerpo.replaceAll("[^A-Za-z0-9-]", "");
+        return responder(mesas.soltarAtencion(mesaId, token));
     }
 
     @GetMapping("/reservas/{codigo}")

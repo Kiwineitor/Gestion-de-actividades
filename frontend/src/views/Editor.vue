@@ -1,4 +1,5 @@
 <script setup>
+import { usePermisosStore } from '../stores/permisos';
 import { ref, reactive, computed, watch, nextTick, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue';
 import { aModulo } from '../modulos';
 import { useRouter } from 'vue-router';
@@ -35,7 +36,8 @@ const planoTienda = usePlanoStore();
 const textosTienda = usePlanoTextosStore();
 
 const puestos = computed(() => tienda.puestos);
-const puedeDisenar = computed(() => auth.puedeEditarPlano);
+const permisos = usePermisosStore();
+const puedeDisenar = computed(() => auth.puedeEditarPlano || permisos.puedeVer('editor'));
 
 const modo = ref('gestion');
 const herramienta = ref(null);

@@ -1,4 +1,5 @@
 <script setup>
+import { etiquetaRol } from '../ui/roles';
 import { ref, reactive, computed, onMounted } from 'vue';
 import UiModal from '../components/UiModal.vue';
 import MenuAcciones from '../components/MenuAcciones.vue';
@@ -276,7 +277,7 @@ onMounted(() => {
              placeholder="Buscar por usuario o persona…" />
       <select v-model="filtroRol" class="control" aria-label="Filtrar por rol">
         <option value="">Todos los roles</option>
-        <option v-for="r in roles" :key="r.id" :value="r.nombre">{{ r.nombre }}</option>
+        <option v-for="r in roles" :key="r.id" :value="r.nombre">{{ etiquetaRol(r.nombre) }}</option>
       </select>
       <select v-model="filtroEstado" class="control" aria-label="Filtrar por estado">
         <option value="">Todos los estados</option>
@@ -300,7 +301,7 @@ onMounted(() => {
           <tr v-for="u in usuariosFiltrados" :key="u.id">
             <td><strong>{{ u.username }}</strong></td>
             <td>{{ u.persona }}</td>
-            <td><span class="badge badge-muted">{{ u.rol }}</span></td>
+            <td><span class="badge badge-muted" :title="u.rol">{{ etiquetaRol(u.rol) }}</span></td>
             <td>
               <span class="badge" :class="u.estado === 'ACTIVO' ? 'badge-ok' : 'badge-danger'">
                 {{ u.estado === 'ACTIVO' ? 'Activo' : 'Inactivo' }}
@@ -325,7 +326,7 @@ onMounted(() => {
       <label class="campo">
         <span>Rol *</span>
         <select v-model="modal.rolId" class="control">
-          <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.nombre }}</option>
+          <option v-for="r in roles" :key="r.id" :value="r.id">{{ etiquetaRol(r.nombre) }}</option>
         </select>
       </label>
     </div>

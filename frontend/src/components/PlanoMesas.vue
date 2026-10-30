@@ -9,6 +9,8 @@ const props = defineProps({
   editable: { type: Boolean, default: false },
   seleccionada: { type: [Number, String], default: null },
   gestion: { type: Boolean, default: false },
+  resaltadas: { type: Set, default: () => new Set() },
+  ocupada: { type: [Number, String], default: null },
 });
 const emit = defineEmits(['elegir', 'mover', 'soltar']);
 
@@ -17,7 +19,7 @@ let arrastre = null;
 
 const visibles = computed(() => props.mesas.filter((m) => m.mapaX != null && m.mapaY != null));
 
-const ETIQUETA = { L: 'Libre', T: 'Bloqueada', R: props.gestion ? 'En revisión' : 'Reservada', O: 'Vendida', X: 'No disponible' };
+const ETIQUETA = { L: 'Libre', P: 'En proceso de compra', T: 'Bloqueada', R: props.gestion ? 'En revisión' : 'Reservada', O: 'Vendida', X: 'No disponible' };
 
 function estiloMesa(m) {
   return {
@@ -66,7 +68,7 @@ function tocar(m) {
        :style="{ aspectRatio: `${1 / aspecto}` }">
     <img v-if="planoUrl" :src="urlApi(planoUrl)" alt="Plano del local" draggable="false" />
     <button v-for="m in visibles" :key="m.id ?? m.clave" type="button" class="mesa"
-            :class="[`forma-${m.forma || 'circulo'}`, `est-${m.estado || 'L'}`, { sel: seleccionada != null && (m.id ?? m.clave) === seleccionada }]"
+            :class="[`forma-${m.forma || 'circulo'}`, `est-${m.estado || 'L'}`, { sel: seleccionada != null && (m.id ?? m.clave) === seleccionada, liberada: resaltadas.has(m.id), cargando: ocupada === m.id }]"
             :style="estiloMesa(m)"
             :aria-label="`Mesa ${m.codigo}, ${ETIQUETA[m.estado || 'L']}`"
             :title="`Mesa ${m.codigo} · ${m.capacidad} personas · ${ETIQUETA[m.estado || 'L']}`"
@@ -79,7 +81,7 @@ function tocar(m) {
 
 <style scoped>
 .plano-mesas {
-  --m-libre: #1f9d63; --m-reservada: #d98b0b; --m-revision: #7c5cff; --m-vendida: #d23b5a; --m-fuera: #8a90a6;
+  --m-libre: #1f9d63; --m-proceso: #2b8fd6; --m-reservada: #d98b0b; --m-revision: #7c5cff; --m-vendida: #d23b5a; --m-fuera: #8a90a6;
   position: relative; width: 100%; border-radius: 14px; overflow: hidden;
   background: var(--plano-fondo, #1b1f33); container-type: inline-size; user-select: none; touch-action: manipulation;
 }
@@ -106,6 +108,15 @@ function tocar(m) {
 .est-O { background: var(--m-vendida); }
 .gestion .est-R { background: var(--m-revision); }
 .est-X { background: var(--m-fuera); }
+.est-P { background: var(--m-proceso); border-style: dashed; animation: proceso 1.6s ease-in-out infinite; }
+.plano-mesas:not(.editable) .est-P { cursor: not-allowed; }
+.liberada { animation: liberada 1.2s ease-out 3; box-shadow: 0 0 0 4px rgba(63, 209, 143, 0.85), 0 0 22px rgba(63, 209, 143, 0.7); z-index: 2; }
+.cargando { opacity: 0.6; }
+@keyframes proceso { 50% { opacity: 0.55; } }
+@keyframes liberada {
+  0% { box-shadow: 0 0 0 0 rgba(63, 209, 143, 0.9); }
+  100% { box-shadow: 0 0 0 14px rgba(63, 209, 143, 0); }
+}
 .sel { box-shadow: 0 0 0 4px #fff, 0 0 0 7px var(--zona); z-index: 2; }
 .editable .mesa { cursor: grab; }
 .num { pointer-events: none; }

@@ -6,22 +6,22 @@ import java.util.Optional;
 public enum RolesSistema {
 
     SUPER_USUARIO("SUPER USUARIO",
-            "Control total: gestiona usuarios, roles, el plano de la feria y toda la administracion."),
+            "Superadministrador: control total del sistema, la marca, los roles y todas las actividades."),
 
     ADMINISTRADOR("ADMINISTRADOR",
-            "Administracion de la feria: usuarios, plano, inscripciones y reportes globales."),
+            "Administrador: gestiona actividades, planos, precios, solicitudes, credenciales y usuarios."),
 
     ADMINISTRATIVO("ADMINISTRATIVO",
-            "Vendedor: reserva, vende y consulta sus propias ventas. No redisena el plano."),
+            "Operador de ventas: reserva, vende y consulta sus propias ventas."),
 
     CONTROL("CONTROL",
-            "Control de acceso en puerta: verifica credenciales y registra el ingreso de responsables."),
+            "Control de acceso: verifica credenciales y registra ingresos."),
 
     ASESORIA("ASESORIA",
-            "Consulta: ve listados y reportes de la feria, sin modificar nada."),
+            "Supervisor: consulta listados y reportes sin modificar nada."),
 
     VERIFICADOR("VERIFICADOR",
-            "Verifica que la inscripcion este completa (comprobante y fotos) antes de imprimir credenciales.");
+            "Verificador: revisa que cada registro esté completo antes de imprimir credenciales.");
 
     private final String nombre;
     private final String descripcion;

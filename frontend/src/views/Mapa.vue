@@ -1,4 +1,5 @@
 <script setup>
+import { usePermisosStore } from '../stores/permisos';
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import PanZoom from '../components/PanZoom.vue';
@@ -23,6 +24,8 @@ const enPeticion = ref(new Set());
 const seleccionada = ref(null);
 let temporizadorMedicion = null;
 const auth = useAuthStore();
+const permisosPlano = usePermisosStore();
+const puedeDisenar = computed(() => auth.puedeEditarPlano || permisosPlano.puedeVer('editor'));
 const router = useRouter();
 
 const ZONA_RESPALDO = { x0: 0.08, y0: 0.17, x1: 0.87, y1: 0.86 };
@@ -211,12 +214,12 @@ onUnmounted(() => {
               title="Muestra el número de cada caseta sobre el plano (hay que acercarse para leerlo)">
         🔢 Nº
       </button>
-      <button v-if="auth.puedeEditarPlano" class="btn btn-fantasma btn-sm"
+      <button v-if="puedeDisenar" class="btn btn-fantasma btn-sm"
               @click="planoTienda.invalidarCache(); planoTienda.asegurar()"
               title="Forzar recarga del plano desde el servidor">
         🔄 Plano
       </button>
-      <div v-if="auth.puedeEditarPlano" class="info">
+      <div v-if="puedeDisenar" class="info">
         {{ ubicados.length }} ubicadas
         <span v-if="sinUbicar > 0" class="muted">· {{ sinUbicar }} sin ubicar (Editor)</span>
       </div>

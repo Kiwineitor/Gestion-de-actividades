@@ -8,9 +8,15 @@ import { toast } from '../ui/toast';
 import { alertaConAccion } from '../ui/alerta';
 import { escucharTopicPublico } from '../ws.js';
 import { useAuthStore } from '../stores/auth';
+import { usePermisosStore } from '../stores/permisos';
+import { useRoute, useRouter } from 'vue-router';
 
 const auth = useAuthStore();
-const esAdmin = computed(() => auth.puedeEditarPlano);
+const permisos = usePermisosStore();
+const route = useRoute();
+const router = useRouter();
+const esAdmin = computed(() => auth.puedeEditarPlano || permisos.puedeVer('mesas-diseno'));
+const puedeValidar = computed(() => auth.puedeEditarPlano || permisos.puedeVer('mesas'));
 
 const ESTADOS = {
   BLOQUEADA: { txt: 'Bloqueada', clase: 'badge-parcial' },
@@ -63,7 +69,7 @@ async function cargarEventos(conservar = selId.value) {
   try {
     eventos.value = await jsonOError(await apiFetch('/api/app/mesas/eventos'), 'No se pudieron cargar los eventos');
     const id = eventos.value.some((e) => e.id === conservar) ? conservar : eventos.value[0]?.id ?? null;
-    if (id) await elegir(id); else nuevoEvento();
+    if (id) await elegir(id); else if (esAdmin.value) nuevoEvento();
   } catch (e) {
     toast(e.message, 'error');
   } finally {
@@ -75,7 +81,8 @@ async function elegir(id) {
   if (cambiosMesas.value && !confirm('Hay cambios sin guardar en el plano. ¿Descartarlos?')) return;
   selId.value = id;
   await cargarDetalle();
-  await cargarReservas();
+  if (puedeValidar.value) await cargarReservas();
+  if (!puedeValidar.value && (pestana.value === 'reservas' || pestana.value === 'ingreso')) pestana.value = 'evento';
   cerrarCanal?.();
   cerrarCanal = escucharTopicPublico(`/topic/publico/mesas/${id}`, { onMensaje: programarRecarga });
 }
@@ -99,7 +106,7 @@ async function cargarReservas() {
 function programarRecarga() {
   clearTimeout(pendiente);
   pendiente = setTimeout(async () => {
-    await cargarReservas();
+    if (puedeValidar.value) await cargarReservas().catch(() => {});
     const d = await jsonOError(await apiFetch(`/api/app/mesas/eventos/${selId.value}`), '').catch(() => null);
     if (!d) return;
     detalle.value = { ...detalle.value, mesas: d.mesas };
@@ -263,8 +270,25 @@ async function copiarEnlace() {
   }
 }
 
+function desdeRuta() {
+  const q = route.query;
+  if (q.nuevo === '1' && esAdmin.value) {
+    nuevoEvento();
+    router.replace({ query: { m: q.m } });
+    return true;
+  }
+  const id = Number(q.evento);
+  if (q.tab && ['reservas', 'ingreso', 'evento', 'plano'].includes(q.tab)) pestana.value = q.tab;
+  if (id) {
+    if (id !== selId.value) cargarEventos(id);
+    return true;
+  }
+  return false;
+}
+
 watch(pestana, (p) => { if (p !== 'plano') mesaSel.value = null; });
-onMounted(() => cargarEventos());
+watch(() => [route.query.evento, route.query.tab, route.query.nuevo], () => { if (route.query.m === 'mesas') desdeRuta(); });
+onMounted(() => { if (!desdeRuta()) cargarEventos(); });
 onUnmounted(() => { cerrarCanal?.(); clearTimeout(pendiente); });
 </script>
 
@@ -300,8 +324,8 @@ onUnmounted(() => { cerrarCanal?.(); clearTimeout(pendiente); });
       <h3 v-else>Nuevo evento</h3>
 
       <nav class="pestanas">
-        <button v-if="detalle" :class="{ on: pestana === 'reservas' }" @click="pestana = 'reservas'">Reservas<span v-if="porValidar"> ({{ porValidar }})</span></button>
-        <button v-if="detalle" :class="{ on: pestana === 'ingreso' }" @click="pestana = 'ingreso'">Ingreso</button>
+        <button v-if="detalle && puedeValidar" :class="{ on: pestana === 'reservas' }" @click="pestana = 'reservas'">Reservas<span v-if="porValidar"> ({{ porValidar }})</span></button>
+        <button v-if="detalle && puedeValidar" :class="{ on: pestana === 'ingreso' }" @click="pestana = 'ingreso'">Ingreso</button>
         <button v-if="esAdmin" :class="{ on: pestana === 'evento' }" @click="pestana = 'evento'">Evento y pago</button>
         <button v-if="esAdmin && detalle" :class="{ on: pestana === 'plano' }" @click="pestana = 'plano'">Plano y mesas</button>
       </nav>
@@ -332,7 +356,7 @@ onUnmounted(() => { cerrarCanal?.(); clearTimeout(pendiente); });
             <label class="campo"><span>Banco</span><input id="ev-banco" v-model="form.pagoBanco" class="control" maxlength="80" /></label>
             <label class="campo"><span>Número de cuenta</span><input id="ev-cuenta" v-model="form.pagoCuenta" class="control" maxlength="60" /></label>
             <label class="campo"><span>Titular</span><input id="ev-titular" v-model="form.pagoTitular" class="control" maxlength="120" /></label>
-            <label class="campo"><span>Celular de consultas</span><input id="ev-cel" v-model="form.celularContacto" class="control" maxlength="30" /></label>
+            <label class="campo"><span>Celular de consultas (WhatsApp público)</span><input id="ev-cel" v-model="form.celularContacto" class="control" maxlength="30" /></label>
           </div>
         </div>
         <label class="campo"><span>Instrucciones de pago</span><input id="ev-instr" v-model="form.pagoInstrucciones" class="control" maxlength="500" placeholder="Ej. transfiere el monto exacto" /></label>
@@ -398,6 +422,7 @@ onUnmounted(() => { cerrarCanal?.(); clearTimeout(pendiente); });
           <span class="muted chico">Se actualiza solo cuando un cliente reserva o envía su comprobante.</span>
         </div>
         <p v-if="!reservasFiltradas.length" class="vacio">Sin reservas.</p>
+        <p v-if="porValidar" class="muted chico">Al validar o rechazar, el cliente lo ve al instante en su página y recibe un WhatsApp si hay una instancia activa.</p>
         <article v-for="r in reservasFiltradas" :key="r.id" class="reserva" :class="{ destacar: r.estado === 'EN_REVISION' }">
           <div class="r-cab">
             <strong>Mesa {{ r.mesa }}</strong>

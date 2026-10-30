@@ -42,7 +42,7 @@ import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/app/plantillas-credencial")
-@PreAuthorize(Roles.ADMINISTRA)
+@PreAuthorize(Roles.DISENA_CREDENCIALES)
 @RequiredArgsConstructor
 public class PlantillaCredencialApiController {
 

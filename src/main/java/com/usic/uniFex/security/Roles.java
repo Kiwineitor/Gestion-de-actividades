@@ -31,7 +31,21 @@ public final class Roles {
     public static final String VE_REPORTES =
             "hasAnyRole('SUPER_USUARIO','ADMINISTRADOR','ASESORIA')";
 
-    public static final String GESTIONA_MESAS = ADMINISTRA + " or @acceso.puede('mesas')";
+    public static final String VALIDA_MESAS = ADMINISTRA + " or @acceso.puede('mesas')";
+
+    public static final String DISENA_MESAS = ADMINISTRA + " or @acceso.puede('mesas-diseno')";
+
+    public static final String GESTIONA_MESAS = VALIDA_MESAS + " or @acceso.puede('mesas-diseno')";
+
+    public static final String GESTIONA_ACTIVIDADES = ADMINISTRA + " or @acceso.puede('actividades')";
+
+    public static final String EDITA_PLANO_O_PANTALLA = EDITA_PLANO + " or @acceso.puede('editor')";
+
+    public static final String EDITA_CATEGORIAS = EDITA_PLANO_O_PANTALLA + " or @acceso.puede('categorias')";
+
+    public static final String DISENA_CREDENCIALES = ADMINISTRA + " or @acceso.puede('credenciales-diseno')";
+
+    public static final String ATIENDE_INTERESADOS = ADMINISTRA + " or @acceso.puede('interesados')";
 
     public static final String VE_CONTROL_VENTAS =
             VE_REPORTES + " or @acceso.puede('control-ventas')";

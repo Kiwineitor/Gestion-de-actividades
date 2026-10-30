@@ -1,4 +1,5 @@
 <script setup>
+import { etiquetaRol } from '../ui/roles';
 import { ref, reactive, computed, watch, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import UiModal from '../components/UiModal.vue';
@@ -228,7 +229,7 @@ onMounted(() => cargar());
           <li v-for="r in filtrados" :key="r.id">
             <button :class="{ on: r.id === selId }" @click="elegir(r.id)">
               <span class="fila-rol">
-                <strong>{{ r.nombre }}</strong>
+                <strong :title="r.nombre">{{ etiquetaRol(r.nombre) }}</strong>
                 <span v-if="r.sistema" class="badge badge-muted">sistema</span>
               </span>
               <span class="muted chico">{{ r.usuarios }} usuario(s) · {{ cuentaPermisos(r) }} pantalla(s)</span>
@@ -240,7 +241,7 @@ onMounted(() => cargar());
       <section v-if="sel" class="card detalle">
         <header class="det-cab">
           <div>
-            <h3>{{ sel.nombre }}</h3>
+            <h3 :title="sel.nombre">{{ etiquetaRol(sel.nombre) }}</h3>
             <span class="muted chico">{{ sel.autoridad }}</span>
           </div>
           <span class="badge" :class="sel.estado === 'ACTIVO' ? 'badge-ok' : 'badge-muted'">{{ sel.estado }}</span>
@@ -298,7 +299,7 @@ onMounted(() => cargar());
           <div class="agregar">
             <select v-model="agregar" class="control">
               <option value="">Asignar este rol a un usuario…</option>
-              <option v-for="u in otrosUsuarios" :key="u.id" :value="u.id">{{ u.username }} · {{ u.persona || 'sin persona' }} ({{ u.rol }})</option>
+              <option v-for="u in otrosUsuarios" :key="u.id" :value="u.id">{{ u.username }} · {{ u.persona || 'sin persona' }} ({{ etiquetaRol(u.rol) }})</option>
             </select>
             <button class="btn btn-sm" :disabled="!agregar" @click="agregarUsuario">Asignar</button>
           </div>
@@ -312,7 +313,7 @@ onMounted(() => cargar());
                 <td><span class="badge" :class="u.estado === 'ACTIVO' ? 'badge-ok' : 'badge-muted'">{{ u.estado }}</span></td>
                 <td>
                   <select class="control control-sm" :value="u.rolId" @change="asignarRol(u, Number($event.target.value)); $event.target.value = u.rolId">
-                    <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.nombre }}</option>
+                    <option v-for="r in roles" :key="r.id" :value="r.id">{{ etiquetaRol(r.nombre) }}</option>
                   </select>
                 </td>
               </tr>

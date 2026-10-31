@@ -1,7 +1,8 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { apiFetch, jsonOError } from '../../api';
 import TableroVentas from './TableroVentas.vue';
+import { actividadElegida, conEdicion } from '../../ui/actividadElegida';
 
 const tablero = ref(null);
 const error = ref('');
@@ -10,7 +11,7 @@ const cargando = ref(true);
 async function cargar() {
   cargando.value = true;
   try {
-    tablero.value = await jsonOError(await apiFetch('/api/app/control-ventas'), 'No se pudieron cargar los cobros');
+    tablero.value = await jsonOError(await apiFetch(conEdicion('/api/app/control-ventas')), 'No se pudieron cargar los cobros');
     error.value = '';
   } catch (e) {
     error.value = e.message;
@@ -20,6 +21,8 @@ async function cargar() {
 }
 
 onMounted(cargar);
+
+watch(actividadElegida, () => cargar());
 </script>
 
 <template>

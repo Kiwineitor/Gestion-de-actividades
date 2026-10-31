@@ -56,6 +56,16 @@ public class RegistroVentaService {
         return Math.max(1, casetas) * RESPONSABLES_POR_CASETA;
     }
 
+    @Transactional(readOnly = true)
+    public int personasIncluidas(List<Long> puestos) {
+        int total = 0;
+        for (Long id : puestos) {
+            Puesto p = puestoService.findById(id);
+            total += p != null && p.getCategoria() != null ? p.getCategoria().personasIncluidas() : RESPONSABLES_POR_CASETA;
+        }
+        return Math.max(1, total);
+    }
+
     private static final String RESPONSABLE = "RESPONSABLE";
     private static final String ACTIVO = "ACTIVO";
     private static final String PENDIENTE = "PENDIENTE";
@@ -80,6 +90,7 @@ public class RegistroVentaService {
     private final ReciboPdfService reciboPdf;
     private final CredencialImagenService credencialImagen;
     private final CredencialService credencialService;
+    private final PlantillaCredencialService plantillas;
     @Value("${app.base-url:http://localhost:7676}")
     private String baseUrl;
 
@@ -265,10 +276,10 @@ public class RegistroVentaService {
         if (req.responsables() == null || req.responsables().isEmpty()) {
             return "Hace falta al menos el Responsable 1";
         }
-        int derecho = maxResponsables(req.puestos().size());
+        int derecho = personasIncluidas(req.puestos());
         if (req.responsables().size() > derecho) {
-            return req.puestos().size() + " caseta(s) dan derecho a " + derecho
-                 + " responsables. Los adicionales se agregan desde Mis ventas, con su pago.";
+            return req.puestos().size() + " puesto(s) incluyen " + derecho
+                 + " persona(s). Las adicionales se agregan después, con su pago.";
         }
         for (DatosPersona p : req.responsables()) {
             if (vacio(p.nombre())) return "Cada responsable necesita nombre";
@@ -423,7 +434,7 @@ public class RegistroVentaService {
             log.info("[WHATSAPP-VENTA] Recibo generado inscripcion={} bytes={}",
                     inscripcionId, salidaRecibo.size());
 
-            PlantillaCredencial plantilla = PlantillaCredencial.actual(PlantillaCredencial.CREDENCIAL_VIRTUAL);
+            PlantillaCredencial plantilla = plantillas.paraInscripcion(inscripcionId);
             var datosCredenciales = credencialService.porInscripcion(inscripcionId);
             log.info("[WHATSAPP-VENTA] Credenciales encontradas inscripcion={} cantidad={}",
                     inscripcionId, datosCredenciales.size());

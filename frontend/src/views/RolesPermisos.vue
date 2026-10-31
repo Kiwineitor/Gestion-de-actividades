@@ -6,7 +6,7 @@ import UiModal from '../components/UiModal.vue';
 import PermisosUsuario from '../components/PermisosUsuario.vue';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
-import { alertaConAccion } from '../ui/alerta';
+import { alertaConAccion, confirmar } from '../ui/alerta';
 import { usePermisosStore } from '../stores/permisos';
 
 const route = useRoute();
@@ -28,7 +28,7 @@ const guardando = ref(false);
 const abiertos = ref(new Set());
 const nuevo = reactive({ abierto: false, nombre: '', descripcion: '', guardando: false });
 
-watch(() => route.query.m, (m) => { vista.value = m === 'permisos' ? 'usuarios' : 'roles'; });
+watch(() => route.query.m, (m) => { if (m === 'permisos' || m === 'roles') vista.value = m === 'permisos' ? 'usuarios' : 'roles'; });
 
 const sel = computed(() => roles.value.find((r) => r.id === selId.value) || null);
 const filaMatriz = computed(() => (sel.value ? matriz.value.get(sel.value.id) : null));
@@ -83,9 +83,9 @@ async function cargar(conservar = selId.value) {
   }
 }
 
-function elegir(id, forzar = false) {
+async function elegir(id, forzar = false) {
   if (!forzar && (permisosCambiados.value || infoCambiada.value)
-      && !confirm('Hay cambios sin guardar en este rol. ¿Descartarlos?')) return;
+      && !(await confirmar('Hay cambios sin guardar en este rol. ¿Descartarlos?', { titulo: 'Cambios sin guardar', aceptar: 'Descartar cambios' }))) return;
   selId.value = id;
   const r = roles.value.find((x) => x.id === id);
   info.nombre = r?.nombre ?? '';

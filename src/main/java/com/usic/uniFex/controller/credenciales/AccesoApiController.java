@@ -11,6 +11,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -26,6 +27,7 @@ import com.usic.uniFex.model.IService.IPersonalApoyoService;
 import com.usic.uniFex.model.service.ApoyoCodigoService;
 import com.usic.uniFex.model.service.CredencialCodigoService;
 import com.usic.uniFex.model.service.CredencialService;
+import com.usic.uniFex.model.service.IngresoEventoService;
 import com.usic.uniFex.security.JwtUser;
 import com.usic.uniFex.security.Roles;
 
@@ -47,6 +49,7 @@ public class AccesoApiController {
     private final IPersonalApoyoService apoyo;
     private final ApoyoAccesoDao accesosApoyo;
     private final SimpMessagingTemplate messaging;
+    private final IngresoEventoService ingresosEvento;
 
     public record Movimiento(String codigo, String sentido) {}
 
@@ -148,6 +151,7 @@ public class AccesoApiController {
     @PreAuthorize(Roles.CONTROLA_ACCESO)
     public Map<String, Object> movimientos(
             @RequestParam(required = false) Long categoriaId,
+            @RequestParam(required = false) Long edicion,
             @RequestParam(required = false) String desde,
             @RequestParam(required = false) String hasta,
             @RequestParam(required = false) String sentido,
@@ -157,7 +161,7 @@ public class AccesoApiController {
         LocalDateTime d = (desde != null && !desde.isBlank()) ? LocalDateTime.parse(desde) : null;
         LocalDateTime h = (hasta != null && !hasta.isBlank()) ? LocalDateTime.parse(hasta) : null;
 
-        var filtros = new CredencialAccesoDao.Filtros(categoriaId, d, h, sentido, limite, offset);
+        var filtros = new CredencialAccesoDao.Filtros(categoriaId, edicion, d, h, sentido, limite, offset);
         List<Map<String, Object>> datos = accesos.listarConFiltros(filtros);
         int total = accesos.contarConFiltros(filtros);
 
@@ -168,28 +172,40 @@ public class AccesoApiController {
     @PreAuthorize(Roles.CONTROLA_ACCESO)
     public List<Map<String, Object>> resumenPorCategoria(
             @RequestParam(required = false) String desde,
-            @RequestParam(required = false) String hasta) {
+            @RequestParam(required = false) String hasta,
+            @RequestParam(required = false) Long edicion) {
 
         LocalDateTime d = (desde != null && !desde.isBlank()) ? LocalDateTime.parse(desde) : null;
         LocalDateTime h = (hasta != null && !hasta.isBlank()) ? LocalDateTime.parse(hasta) : null;
-        return accesos.resumenPorCategoria(d, h);
+        return accesos.resumenPorCategoria(d, h, edicion);
     }
 
     @GetMapping("/resumen/usuario")
     @PreAuthorize(Roles.CONTROLA_ACCESO)
     public List<Map<String, Object>> resumenPorUsuario(
             @RequestParam(required = false) String desde,
-            @RequestParam(required = false) String hasta) {
+            @RequestParam(required = false) String hasta,
+            @RequestParam(required = false) Long edicion) {
 
         LocalDateTime d = (desde != null && !desde.isBlank()) ? LocalDateTime.parse(desde) : null;
         LocalDateTime h = (hasta != null && !hasta.isBlank()) ? LocalDateTime.parse(hasta) : null;
-        return accesos.resumenPorUsuario(d, h);
+        return accesos.resumenPorUsuario(d, h, edicion);
     }
 
     @GetMapping("/dentro/detalle")
     @PreAuthorize(Roles.CONTROLA_ACCESO)
-    public List<Map<String, Object>> quienesEstanDentro() {
-        return accesos.quienesEstanDentro();
+    public List<Map<String, Object>> quienesEstanDentro(@RequestParam(required = false) Long edicion) {
+        return accesos.quienesEstanDentro(edicion);
+    }
+
+    @GetMapping("/evento/{eventoId}")
+    @PreAuthorize(Roles.CONTROLA_ACCESO + " or " + Roles.REGISTRA_INGRESO + " or @acceso.puede('control-acceso')")
+    public Map<String, Object> ingresosDeEvento(@PathVariable Long eventoId,
+            @RequestParam(required = false) String desde,
+            @RequestParam(required = false) String hasta) {
+        LocalDateTime d = (desde != null && !desde.isBlank()) ? LocalDateTime.parse(desde) : null;
+        LocalDateTime h = (hasta != null && !hasta.isBlank()) ? LocalDateTime.parse(hasta) : null;
+        return ingresosEvento.resumen(eventoId, d, h);
     }
 
     private List<Map<String, Object>> historial(Long responsableId) {

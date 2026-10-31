@@ -10,7 +10,10 @@ public record UsuarioDTO(
         String persona,
         Long rolId,
         String rol,
-        String estado) {
+        String estado,
+        String ci,
+        String celular,
+        String correo) {
 
     public static UsuarioDTO de(Usuario u) {
         Persona p = u.getPersona();
@@ -21,7 +24,10 @@ public record UsuarioDTO(
                 nombreCompleto(p),
                 u.getRol() != null ? u.getRol().getId() : null,
                 u.getRol() != null ? u.getRol().getNombre() : null,
-                u.getEstado());
+                u.getEstado(),
+                p != null ? p.getCi() : null,
+                p != null ? p.getCelular() : null,
+                p != null ? p.getCorreo() : null);
     }
 
     private static String nombreCompleto(Persona p) {

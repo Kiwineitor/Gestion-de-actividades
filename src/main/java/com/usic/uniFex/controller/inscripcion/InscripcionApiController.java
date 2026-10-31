@@ -58,6 +58,7 @@ public class InscripcionApiController {
     private final RegistroVentaService registroVenta;
     private final EdicionVentaService edicionVenta;
     private final ReciboPdfService reciboPdfService;
+    private final com.usic.uniFex.model.service.EntregaVentaService entregas;
     private final CancelarInscripcionService cancelarInscripcion;
     private final ResponsableFotoService responsableFoto;
     private final VendedorAsignacionService vendedorAsignacion;
@@ -173,6 +174,18 @@ public class InscripcionApiController {
         return r.ok()
                 ? ResponseEntity.ok(Map.of("ok", true, "mensaje", r.mensaje()))
                 : ResponseEntity.badRequest().body(Map.of("ok", false, "mensaje", r.mensaje()));
+    }
+
+    @GetMapping("/{id}/entrega")
+    public ResponseEntity<Map<String, Object>> entrega(@PathVariable Long id) {
+        Long usuarioId = usuarioActual();
+        if (usuarioId == null) return ResponseEntity.status(401).build();
+        Inscripcion i = inscripcionService.findById(id);
+        if (i == null) return ResponseEntity.notFound().build();
+        if (!usuarioId.equals(i.getRegistroIdUsuario()) && !esAdministracion()) {
+            return ResponseEntity.status(403).build();
+        }
+        return ResponseEntity.ok(entregas.deInscripcion(id));
     }
 
     @GetMapping("/{id}/recibo")
@@ -354,8 +367,8 @@ public class InscripcionApiController {
 
     @GetMapping("/responsables-extra")
     @PreAuthorize(Roles.VE_INSCRIPCIONES)
-    public List<ResponsableExtraService.ExtraListado> responsablesExtra() {
-        return responsableExtra.listarExtras();
+    public List<ResponsableExtraService.ExtraListado> responsablesExtra(@RequestParam(required = false) Long edicion) {
+        return responsableExtra.listarExtras(edicion);
     }
 
     @GetMapping("/{id}/responsables/cupo")

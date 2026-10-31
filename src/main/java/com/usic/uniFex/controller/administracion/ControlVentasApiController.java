@@ -45,13 +45,14 @@ public class ControlVentasApiController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate desde,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
             @RequestParam(required = false) String estado,
-            @RequestParam(required = false) String q) {
-        return control.tablero(filtrosDe(vendedor, categoria, desde, hasta, estado, q));
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Long edicion) {
+        return control.tablero(filtrosDe(vendedor, categoria, desde, hasta, estado, q, edicion));
     }
 
     @GetMapping("/filtros")
-    public Map<String, Object> filtros() {
-        Map<String, Object> r = new LinkedHashMap<>(control.opcionesDeFiltro());
+    public Map<String, Object> filtros(@RequestParam(required = false) Long edicion) {
+        Map<String, Object> r = new LinkedHashMap<>(control.opcionesDeFiltro(edicion));
         Long soloDe = soloDe();
         if (soloDe != null) {
             @SuppressWarnings("unchecked")
@@ -70,8 +71,9 @@ public class ControlVentasApiController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate desde,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
             @RequestParam(required = false) String estado,
-            @RequestParam(required = false) String q) {
-        return control.ventas(filtrosDe(vendedor, categoria, desde, hasta, estado, q));
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Long edicion) {
+        return control.ventas(filtrosDe(vendedor, categoria, desde, hasta, estado, q, edicion));
     }
 
     @GetMapping("/ventas/{id}")
@@ -91,8 +93,9 @@ public class ControlVentasApiController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate desde,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
             @RequestParam(required = false) String estado,
-            @RequestParam(required = false) String q) {
-        byte[] datos = exportacion.excel(filtrosDe(vendedor, categoria, desde, hasta, estado, q));
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Long edicion) {
+        byte[] datos = exportacion.excel(filtrosDe(vendedor, categoria, desde, hasta, estado, q, edicion));
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(XLSX))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"control-ventas.xlsx\"")
@@ -106,8 +109,9 @@ public class ControlVentasApiController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate desde,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
             @RequestParam(required = false) String estado,
-            @RequestParam(required = false) String q) {
-        Filtros f = filtrosDe(vendedor, categoria, desde, hasta, estado, q);
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Long edicion) {
+        Filtros f = filtrosDe(vendedor, categoria, desde, hasta, estado, q, edicion);
         byte[] datos = exportacion.pdf(f);
         String archivo = f.vendedorId() == null ? "control-ventas.pdf" : "rendicion-vendedor-" + f.vendedorId() + ".pdf";
         return ResponseEntity.ok()
@@ -117,9 +121,9 @@ public class ControlVentasApiController {
     }
 
     private static Filtros filtrosDe(Long vendedor, Long categoria, LocalDate desde, LocalDate hasta,
-                                     String estado, String q) {
+                                     String estado, String q, Long edicion) {
         Long soloDe = soloDe();
-        return new Filtros(soloDe != null ? soloDe : vendedor, categoria, desde, hasta, estado, q);
+        return new Filtros(soloDe != null ? soloDe : vendedor, categoria, desde, hasta, estado, q, edicion);
     }
 
     private static Long soloDe() {

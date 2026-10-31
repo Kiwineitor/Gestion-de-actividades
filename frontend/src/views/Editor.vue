@@ -1,11 +1,18 @@
 <script setup>
+import { confirmar, pedirTexto } from '../ui/alerta';
 import { usePermisosStore } from '../stores/permisos';
-import { ref, reactive, computed, watch, nextTick, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue';
+import { ref, reactive, computed, watch, nextTick, onMounted, onActivated, onDeactivated, onUnmounted, defineAsyncComponent } from 'vue';
 import { aModulo } from '../modulos';
 import { useRouter } from 'vue-router';
 import { primeraPaginaEnCanvas } from '../ui/pdf';
 import PanZoom from '../components/PanZoom.vue';
 import RotuloPlano from '../components/RotuloPlano.vue';
+import ModalFondo from '../components/ModalFondo.vue';
+import ModalForma from '../components/ModalForma.vue';
+import CambiarPlano from '../components/CambiarPlano.vue';
+import { useActividadStore } from '../stores/actividad';
+import { imagenPlanoFeria } from '../ui/imagenPlano';
+import { guardarBlob } from '../ui/descargas';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
 import { useAuthStore } from '../stores/auth';
@@ -31,6 +38,7 @@ const ESTADOS = [
 
 const auth = useAuthStore();
 const router = useRouter();
+const actividadEnCurso = useActividadStore();
 const tienda = usePuestosStore();
 const planoTienda = usePlanoStore();
 const textosTienda = usePlanoTextosStore();
@@ -65,12 +73,10 @@ const guardadoReciente = ref(false);
 const menuMas = ref(false);
 const numeracion = reactive({ inicio: 1, orden: 'filas' });
 
-const plano = ref(null);
 const lienzo = ref(null);
 const guiaEl = ref(null);
 const cajaEl = ref(null);
 const entradaFoto = ref(null);
-const entradaPlano = ref(null);
 const entradaTexto = ref(null);
 
 let quitarGuardia = null;
@@ -188,7 +194,7 @@ async function cambiarCategoria(evento) {
   const categoriaId = Number(evento.target.value);
   if (!p || !categoriaId || categoriaId === p.categoriaId) return;
   const destino = categorias.value.find((c) => c.id === categoriaId);
-  if (!confirm(`¿Pasar el puesto ${p.codigo} a ${destino?.nombre ?? 'otra categoría'}? Toma su color, forma y precio.`)) {
+  if (!(await confirmar(`¿Pasar el puesto ${p.codigo} a ${destino?.nombre ?? 'otra categoría'}? Toma su color, forma y precio.`, { titulo: 'Confirmar', aceptar: 'Sí, continuar' }))) {
     evento.target.value = p.categoriaId;
     return;
   }
@@ -202,12 +208,29 @@ async function cambiarCategoria(evento) {
   toast('Categoría cambiada ✓', 'ok', 1600);
 }
 
+const Categorias = defineAsyncComponent(() => import('./Categorias.vue'));
+const modalFondo = ref(false);
+const cajonCategorias = ref(false);
+const puedeCategorias = computed(() => auth.puedeEditarPlano || permisos.puedeVer('categorias'));
+
+async function cerrarCategorias() {
+  cajonCategorias.value = false;
+  await tienda.recargar();
+}
+const modalForma = ref(false);
+const conFondoPropio = computed(() => Boolean(planoTienda.src && planoTienda.plano.propio && !planoTienda.plano.sinFondo));
+const ayudaAbierta = ref(false);
+const generandoImagen = ref(false);
+const CLAVE_AYUDA = 'ayuda.editor-feria.vista';
 const textoSelId = ref(null);
 const textoSel = computed(() => textosTienda.textos.find((t) => t.id === textoSelId.value) || null);
 
 const ayuda = computed(() => {
   if (!enDiseno.value) return 'Arrastra el mapa para moverte · clic en un puesto para ver sus datos';
   if (herramienta.value === 'texto') return 'Haz clic en el mapa para agregar texto';
+  if (herramienta.value === 'zona') return 'Haz clic en el mapa para agregar una zona con recuadro (ej. Escenario, Patio de comidas)';
+  if (textoSel.value?.fondo) return 'Arrastra la zona para moverla · la esquina blanca cambia su tamaño · se guarda sola y el público la ve al instante';
+  if (textoSel.value) return 'Arrastra el texto para moverlo · se guarda solo y el público lo ve al instante';
   if (herramienta.value === 'colocar') {
     return activa.value
       ? `Clic coloca un puesto de ${activa.value.nombre}; arrastra para colocar una fila`
@@ -240,7 +263,7 @@ function elegirHerramienta(h) {
 }
 
 function norm(e) {
-  const r = plano.value.getBoundingClientRect();
+  const r = lienzo.value.getBoundingClientRect();
   return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
 }
 
@@ -252,6 +275,7 @@ const pinEls = new Map();
 let arrastre = null;
 let arrastreTexto = null;
 let redimension = null;
+let redimZona = null;
 let toqueFondo = null;
 
 function capturar(e) {
@@ -279,10 +303,11 @@ function pintarCaja() {
 function onDown(e) {
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   const p = norm(e);
-  if (enDiseno.value && herramienta.value === 'texto') {
+  if (enDiseno.value && (herramienta.value === 'texto' || herramienta.value === 'zona')) {
     e.stopPropagation();
+    const zona = herramienta.value === 'zona';
     herramienta.value = null;
-    crearTexto(p);
+    crearTexto(p, zona);
     return;
   }
   if (enDiseno.value && herramienta.value === 'colocar') {
@@ -320,7 +345,7 @@ function alSoltarFondo(e) {
 }
 
 function onPinDown(e, p) {
-  if (enDiseno.value && (herramienta.value === 'colocar' || herramienta.value === 'texto')) return;
+  if (enDiseno.value && (herramienta.value === 'colocar' || herramienta.value === 'texto' || herramienta.value === 'zona')) return;
   e.stopPropagation();
   textoSelId.value = null;
   menuMas.value = false;
@@ -359,7 +384,24 @@ function onTextoDown(e, t) {
   arrastreTexto = { id: t.id, x0: q.x, y0: q.y, base: { x: t.mapaX ?? 0.5, y: t.mapaY ?? 0.5 }, movido: false };
 }
 
+function onAsaZonaDown(e) {
+  const t = textoSel.value;
+  if (!t?.fondo) return;
+  e.stopPropagation();
+  capturar(e);
+  redimZona = { id: t.id, cx: t.mapaX ?? 0.5, cy: t.mapaY ?? 0.5 };
+}
+
 function onMove(e) {
+  if (redimZona) {
+    const q = norm(e);
+    const t = textosTienda.textos.find((x) => x.id === redimZona.id);
+    if (t) {
+      t.ancho = Math.min(1, Math.max(0.02, aRejilla(Math.abs(q.x - redimZona.cx) * 2)));
+      t.alto = Math.min(1, Math.max(0.02, aRejilla(Math.abs(q.y - redimZona.cy) * 2)));
+    }
+    return;
+  }
   if (arrastreTexto) {
     const q = norm(e);
     const dx = q.x - arrastreTexto.x0;
@@ -414,6 +456,13 @@ function onMove(e) {
 }
 
 function onUp() {
+  if (redimZona) {
+    const { id } = redimZona;
+    redimZona = null;
+    const t = textosTienda.textos.find((x) => x.id === id);
+    if (t) editarTexto({ ancho: t.ancho, alto: t.alto }, id);
+    return;
+  }
   if (arrastreTexto) {
     const { id, movido } = arrastreTexto;
     arrastreTexto = null;
@@ -516,6 +565,16 @@ const asaEstilo = computed(() => {
   };
 });
 
+const asaZona = computed(() => {
+  const t = textoSel.value;
+  if (!enDiseno.value || !t?.fondo || t.rotacion) return null;
+  return {
+    left: `${((t.mapaX ?? 0.5) + (t.ancho ?? 0.16) / 2) * 100}%`,
+    top: `${((t.mapaY ?? 0.5) + (t.alto ?? 0.08) / 2) * 100}%`,
+    '--asa': 'calc(var(--mundo, 1200) * 0.012)',
+  };
+});
+
 const escalaSeleccion = computed(() => principal.value?.mapaEscala ?? 1);
 let antesEscala = null;
 
@@ -590,7 +649,7 @@ async function eliminarCasetas() {
   const objetivo = seleccionadas.value;
   if (!objetivo.length) return;
   const rotulo = objetivo.map((p) => `${p.categoria} ${p.codigo}`).join(', ');
-  if (!confirm(`¿Eliminar ${objetivo.length} puesto(s)?\n\n${rotulo}\n\nNo se puede deshacer. Los que tengan ventas no se eliminarán.`)) return;
+  if (!(await confirmar(`¿Eliminar ${objetivo.length} puesto(s)?\n\n${rotulo}\n\nNo se puede deshacer. Los que tengan ventas no se eliminarán.`, { titulo: 'Eliminar', aceptar: 'Sí, eliminar' }))) return;
   const categoriasTocadas = [...new Set(objetivo.map((p) => p.categoriaId))];
   ocupado.value = true;
   try {
@@ -900,7 +959,9 @@ async function ubicacionSeleccion() {
   menuMas.value = false;
   const ids = [...seleccion.value];
   if (!ids.length) return;
-  const texto = prompt('Ubicación de los puestos seleccionados (ej. frente a la puerta 3):', principal.value?.referencia || '');
+  const texto = await pedirTexto('Escribe dónde están los puestos seleccionados.', {
+    titulo: 'Ubicación', valor: principal.value?.referencia || '', marcador: 'Ej. frente a la puerta 3',
+  });
   if (texto == null) return;
   ocupado.value = true;
   try {
@@ -922,15 +983,8 @@ async function pdfAImagen(archivo) {
   return new Blob([await new Promise((resolve) => canvas.toBlob(resolve, 'image/png', 0.9))], { type: 'image/png' });
 }
 
-async function subirPlano(evento) {
-  const archivo = evento.target.files?.[0];
-  evento.target.value = '';
+async function subirPlano(archivo) {
   if (!archivo) return;
-  const n = colocadas.value.length;
-  const aviso = n
-    ? `Hay ${n} puesto(s) colocados. Si el plano nuevo tiene otro encuadre quedarán fuera de lugar. ¿Continuar?`
-    : '¿Reemplazar el plano?';
-  if (!confirm(aviso)) return;
   ocupado.value = true;
   try {
     let subir = archivo;
@@ -941,6 +995,7 @@ async function subirPlano(evento) {
     const d = await r.json().catch(() => ({}));
     if (r.ok && d.ok) {
       planoTienda.aplicar(d.plano);
+      modalFondo.value = false;
       toast(d.mensaje || 'Plano actualizado', 'ok');
     } else {
       toast(d.mensaje || 'No se pudo actualizar el plano', 'error');
@@ -952,38 +1007,129 @@ async function subirPlano(evento) {
   }
 }
 
+async function quitarFondo() {
+  const si = await confirmar('Los puestos, textos y zonas se quedan donde están; el plano pasa a un lienzo liso.', { titulo: '¿Quitar el fondo?', aceptar: 'Sí, quitar fondo' });
+  if (!si) return;
+  ocupado.value = true;
+  try {
+    const r = await apiFetch('/api/app/plano', { method: 'DELETE' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) { toast(d.mensaje || 'No se pudo quitar el fondo', 'error'); return; }
+    planoTienda.aplicar(d.plano);
+    modalFondo.value = false;
+    toast('Fondo quitado', 'ok', 1500);
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+async function aplicarForma(forma) {
+  if (dirty.value.size) await guardar();
+  if (dirty.value.size) return;
+  ocupado.value = true;
+  try {
+    const r = await apiFetch('/api/app/plano/forma', { method: 'PATCH', body: JSON.stringify(forma) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) { toast(d.mensaje || 'No se pudo cambiar la forma', 'error'); return; }
+    planoTienda.aplicar(d.plano);
+    tienda.recargar();
+    textosTienda.cargar();
+    modalForma.value = false;
+    toast('Forma del plano actualizada', 'ok', 1600);
+  } finally {
+    ocupado.value = false;
+  }
+}
+
+function cerrarAyuda() {
+  ayudaAbierta.value = false;
+  guardarPreferencia(CLAVE_AYUDA, '1');
+}
+
+function pantallaCompleta() {
+  try {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else document.documentElement.requestFullscreen?.();
+  } catch { }
+}
+
+function abrirPublico() {
+  window.open(router.resolve({ path: '/', query: { v: 'actividad' } }).href, '_blank', 'noopener');
+}
+
+async function descargarImagen() {
+  generandoImagen.value = true;
+  try {
+    const blob = await imagenPlanoFeria({
+      titulo: 'Plano de la actividad', subtitulo: `${colocadas.value.length} puestos · ${categorias.value.length} categorías`,
+      aspecto: planoTienda.aspecto || 1, fondoUrl: planoTienda.src, puestos: colocadas.value, textos: textosTienda.textos,
+      leyenda: categorias.value.map((c) => ({ color: c.color || '#94a3b8', texto: c.nombre })),
+    });
+    const r = await guardarBlob(blob, 'plano-actividad.png');
+    toast(r.destino === 'telefono' ? 'Imagen guardada en Documentos' : 'Imagen descargada', 'ok', 1800);
+  } catch (e) {
+    toast(`No se pudo generar la imagen: ${e.message}`, 'error');
+  } finally {
+    generandoImagen.value = false;
+  }
+}
+
 const pendientesTexto = new Map();
+const sinConfirmar = new Map();
+const guardandoTextos = ref(false);
+const contenidoEdit = ref('');
 let temporizadorTexto = null;
+const soltarProteccionTextos = textosTienda.protegerLocales((id) => sinConfirmar.get(id) || null);
+
+watch(textoSelId, () => { contenidoEdit.value = textoSel.value?.contenido ?? ''; });
+
+function escribirTexto(valor) {
+  contenidoEdit.value = valor;
+  if (valor.trim()) editarTexto({ contenido: valor });
+}
+
+function terminarTexto() {
+  if (!contenidoEdit.value.trim() && textoSel.value) contenidoEdit.value = textoSel.value.contenido;
+}
 
 function editarTexto(campos, id = textoSelId.value) {
   const t = textosTienda.textos.find((x) => x.id === id);
   if (!t) return;
   Object.assign(t, campos);
   pendientesTexto.set(id, { ...(pendientesTexto.get(id) || {}), ...campos });
+  sinConfirmar.set(id, { ...(sinConfirmar.get(id) || {}), ...campos });
+  guardandoTextos.value = true;
+  guardadoReciente.value = false;
   clearTimeout(temporizadorTexto);
   temporizadorTexto = setTimeout(enviarTextos, 350);
 }
 
 async function enviarTextos() {
+  guardandoTextos.value = true;
   for (const [id, cambios] of [...pendientesTexto]) {
     pendientesTexto.delete(id);
     try {
       const r = await apiFetch(`/api/app/plano-textos/${id}`, { method: 'PATCH', body: JSON.stringify(cambios) });
       if (!r.ok) { toast('No se pudo guardar el texto', 'error'); continue; }
       const d = await r.json();
-      textosTienda.aplicar({ ...d, ...(pendientesTexto.get(id) || {}) });
+      if (!pendientesTexto.has(id)) sinConfirmar.delete(id);
+      textosTienda.aplicar(d);
     } catch (e) {
       toast(e.message, 'error');
     }
   }
+  if (!pendientesTexto.size) {
+    guardandoTextos.value = false;
+    guardadoReciente.value = true;
+  }
 }
 
-async function crearTexto(punto) {
+async function crearTexto(punto, zona = false) {
   try {
-    const r = await apiFetch('/api/app/plano-textos', {
-      method: 'POST',
-      body: JSON.stringify({ contenido: 'TEXTO', mapaX: aRejilla(punto.x), mapaY: aRejilla(punto.y) }),
-    });
+    const cuerpo = zona
+      ? { contenido: 'ZONA', mapaX: aRejilla(punto.x), mapaY: aRejilla(punto.y), fondo: '#7c5cff', ancho: 0.16, alto: 0.08, color: '#3b2a8f', tamano: 0.02 }
+      : { contenido: 'TEXTO', mapaX: aRejilla(punto.x), mapaY: aRejilla(punto.y) };
+    const r = await apiFetch('/api/app/plano-textos', { method: 'POST', body: JSON.stringify(cuerpo) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { toast(d.mensaje || 'No se pudo crear el texto', 'error'); return; }
     textosTienda.aplicar(d);
@@ -999,7 +1145,7 @@ async function crearTexto(punto) {
 
 async function borrarTexto() {
   const t = textoSel.value;
-  if (!t || !confirm(`¿Quitar el texto "${t.contenido}" del plano?`)) return;
+  if (!t || !(await confirmar(`«${t.contenido}» se quitará del plano.`, { titulo: t.fondo ? '¿Quitar la zona?' : '¿Quitar el texto?', aceptar: 'Sí, quitar' }))) return;
   try {
     const r = await apiFetch(`/api/app/plano-textos/${t.id}`, { method: 'DELETE' });
     if (!r.ok) { toast('No se pudo quitar el texto', 'error'); return; }
@@ -1014,6 +1160,10 @@ async function borrarTexto() {
 const aMilesimas = (v) => Math.round((Number(v) || 0) * 1000);
 
 function onTecla(e) {
+  if (cajonCategorias.value) {
+    if (e.key === 'Escape' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName)) cerrarCategorias();
+    return;
+  }
   const etiqueta = e.target?.tagName;
   if (etiqueta === 'INPUT' || etiqueta === 'TEXTAREA' || etiqueta === 'SELECT') {
     if (e.key === 'Escape') e.target.blur();
@@ -1060,6 +1210,7 @@ onMounted(async () => {
   textosTienda.asegurar();
   await tienda.asegurar(sesionCaducada);
   if (catSel.value == null && categorias.value.length) catSel.value = categorias.value[0].id;
+  if (puedeDisenar.value && leerPreferencia(CLAVE_AYUDA) !== '1') ayudaAbierta.value = true;
 });
 onActivated(() => {
   cargarPagados();
@@ -1076,6 +1227,7 @@ onUnmounted(() => {
   clearTimeout(temporizadorTexto);
   clearTimeout(temporizadorPagados);
   if (pendientesTexto.size) enviarTextos();
+  soltarProteccionTextos();
   if (quitarGuardia) quitarGuardia();
 });
 </script>
@@ -1083,6 +1235,9 @@ onUnmounted(() => {
 <template>
   <div class="editor">
     <header class="barra">
+      <router-link :to="aModulo('actividades')" class="herr volver" title="Volver al Centro de actividades">← Centro</router-link>
+      <CambiarPlano v-if="actividadEnCurso.actual" :actual="`f-${actividadEnCurso.actual.id}`" />
+      <button v-if="puedeCategorias" type="button" class="herr" title="Categorías, precios y personas por puesto de esta feria" @click="cajonCategorias = true">🏷️ Categorías y precios</button>
       <div v-if="puedeDisenar" class="segmentado" role="tablist" aria-label="Modo del editor">
         <button role="tab" :aria-selected="modo === 'gestion'" :class="{ on: modo === 'gestion' }"
                 @click="modo = 'gestion'">Gestión</button>
@@ -1096,25 +1251,34 @@ onUnmounted(() => {
         <button class="herr" :class="{ on: herramienta === 'seleccionar' }" @click="elegirHerramienta('seleccionar')"
                 title="Seleccionar varios arrastrando un recuadro">⬚ Seleccionar</button>
         <button class="herr" :class="{ on: herramienta === 'texto' }" @click="elegirHerramienta('texto')"
-                title="Agregar un texto al plano">T Texto</button>
+                title="Agregar un texto suelto al plano">T Texto</button>
+        <button class="herr" :class="{ on: herramienta === 'zona' }" @click="elegirHerramienta('zona')"
+                title="Agregar una zona con recuadro de color y nombre, ej. Escenario o Patio de comidas">▭ Zona</button>
       </div>
 
       <div class="grupo">
         <button class="herr" :class="{ on: rejilla }" :aria-pressed="rejilla" @click="rejilla = !rejilla"
-                title="Mostrar la cuadrícula y alinear a ella">⊞ Rejilla</button>
+                title="Muestra una cuadrícula y hace que puestos, textos y zonas se acomoden a ella al moverlos">⊞ Rejilla e imán</button>
         <button class="herr" :class="{ on: numerosVisibles }" :aria-pressed="numerosVisibles"
                 @click="numerosVisibles = !numerosVisibles" title="Mostrar el número de cada puesto"># Números</button>
       </div>
 
       <div v-if="enDiseno" class="grupo">
-        <input ref="entradaPlano" type="file" accept="image/png,image/jpeg,application/pdf" class="oculto" @change="subirPlano" />
-        <button class="herr" :disabled="ocupado" @click="entradaPlano?.click()"
-                :title="`Imagen o PDF del plano · actual ${planoTienda.plano.ancho}×${planoTienda.plano.alto}`">⇆ Cambiar plano</button>
+        <button class="herr" :disabled="ocupado" @click="modalFondo = true"
+                :title="`Poner, cambiar o quitar la imagen o PDF debajo del plano · ${planoTienda.plano.ancho}×${planoTienda.plano.alto}`">🖼 Fondo{{ planoTienda.src ? ' ✓' : '' }}</button>
+        <button class="herr" :disabled="ocupado" title="Elegir si el plano es horizontal, cuadrado o vertical" @click="modalForma = true">📐 Forma</button>
+      </div>
+
+      <div class="grupo">
+        <button class="herr" title="Ver la página pública de la actividad" @click="abrirPublico">👁 Vista pública</button>
+        <button class="herr" :disabled="generandoImagen" title="Descargar el plano como imagen PNG" @click="descargarImagen">{{ generandoImagen ? 'Generando…' : '⬇ Imagen' }}</button>
+        <button class="herr icono" title="Pantalla completa" @click="pantallaCompleta">⛶</button>
+        <button class="herr icono" title="Cómo se usa el editor" @click="ayudaAbierta = true">?</button>
       </div>
 
       <div class="grupo derecha">
         <span v-if="enDiseno" class="estado-guardado" :class="{ pendiente: dirty.size }">
-          <template v-if="ocupado && dirty.size">Guardando…</template>
+          <template v-if="(ocupado && dirty.size) || guardandoTextos">Guardando…</template>
           <template v-else-if="dirty.size">{{ dirty.size }} sin guardar</template>
           <template v-else-if="guardadoReciente">Guardado ✓</template>
         </span>
@@ -1128,13 +1292,13 @@ onUnmounted(() => {
     </header>
 
     <div class="zona">
-      <PanZoom :key="planoTienda.src" llenar :aspect="planoTienda.aspecto"
+      <PanZoom :key="`${planoTienda.src}-${planoTienda.plano.version}`" llenar :aspect="planoTienda.aspecto"
                :focus="{ x: 0.5, y: 0.45, scale: 1.4 }" :max-ancho="topeZoom">
         <div ref="lienzo" class="plano"
              :class="[`herr-${enDiseno ? herramienta || 'ninguna' : 'gestion'}`, { 'con-numeros': numerosVisibles, disenando: enDiseno }]"
              :style="{ aspectRatio: planoTienda.aspecto ? 1 / planoTienda.aspecto : 'auto', '--aspecto': planoTienda.aspecto || 1 }"
              @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp">
-          <img ref="plano" :src="planoTienda.src" :key="planoTienda.src" alt="Plano"
+          <img v-if="planoTienda.src" :src="planoTienda.src" :key="planoTienda.src" alt="Plano"
                :width="planoTienda.plano.ancho" :height="planoTienda.plano.alto"
                decoding="async" draggable="false" />
 
@@ -1157,6 +1321,8 @@ onUnmounted(() => {
 
           <div v-if="asaEstilo" class="asa" :style="asaEstilo" title="Arrastra para cambiar el tamaño"
                @pointerdown="onAsaDown"></div>
+          <div v-if="asaZona" class="asa" :style="asaZona" title="Arrastra para cambiar el tamaño de la zona"
+               @pointerdown="onAsaZonaDown"></div>
           <div v-if="lineaActiva" ref="guiaEl" class="guia"></div>
           <div v-if="cajaActiva" ref="cajaEl" class="caja"></div>
         </div>
@@ -1182,7 +1348,7 @@ onUnmounted(() => {
             <label class="mini">Por fila <input type="number" min="1" max="60" v-model.number="porLinea" /></label>
             <button class="btn btn-sm" :disabled="ocupado || !activa" @click="agregarCaseta">＋ 1 puesto</button>
           </div>
-          <router-link :to="aModulo('categorias')" class="enlace">Administrar categorías →</router-link>
+          <button v-if="puedeCategorias" type="button" class="enlace" @click="cajonCategorias = true">Categorías y precios →</button>
         </template>
       </section>
 
@@ -1229,11 +1395,11 @@ onUnmounted(() => {
 
       <aside v-if="textoSel && enDiseno" class="flotante panel-texto">
         <div class="panel-cab">
-          <strong>Texto</strong>
+          <strong>{{ textoSel.fondo ? 'Zona' : 'Texto' }}</strong>
           <button class="cerrar" @click="textoSelId = null" title="Cerrar (Esc)">✕</button>
         </div>
-        <input ref="entradaTexto" class="control" :value="textoSel.contenido" maxlength="200"
-               @input="editarTexto({ contenido: $event.target.value })" />
+        <input ref="entradaTexto" class="control" :value="contenidoEdit" maxlength="200" placeholder="Escribe el texto"
+               @input="escribirTexto($event.target.value)" @blur="terminarTexto" />
         <label class="fila-control">
           <span>Tamaño</span>
           <input type="range" min="5" max="120" :value="aMilesimas(textoSel.tamano)"
@@ -1253,8 +1419,59 @@ onUnmounted(() => {
           <input type="range" min="0" max="400" :value="aMilesimas(textoSel.grosorBorde)"
                  @input="editarTexto({ grosorBorde: Number($event.target.value) / 1000 })" />
         </label>
-        <button class="btn btn-sm btn-peligro" @click="borrarTexto">Eliminar texto</button>
+        <label class="check">
+          <input type="checkbox" :checked="Boolean(textoSel.fondo)"
+                 @change="editarTexto($event.target.checked ? { fondo: '#7c5cff', ancho: textoSel.ancho || 0.16, alto: textoSel.alto || 0.08 } : { fondo: '' })" />
+          Con recuadro de color (zona)
+        </label>
+        <template v-if="textoSel.fondo">
+          <div class="fila-control colores">
+            <label>Recuadro <input type="color" :value="textoSel.fondo" @input="editarTexto({ fondo: $event.target.value })" /></label>
+          </div>
+          <label class="fila-control">
+            <span>Ancho</span>
+            <input type="range" min="20" max="1000" :value="aMilesimas(textoSel.ancho)" @input="editarTexto({ ancho: Number($event.target.value) / 1000 })" />
+          </label>
+          <label class="fila-control">
+            <span>Alto</span>
+            <input type="range" min="20" max="1000" :value="aMilesimas(textoSel.alto)" @input="editarTexto({ alto: Number($event.target.value) / 1000 })" />
+          </label>
+        </template>
+        <button class="btn btn-sm btn-peligro" @click="borrarTexto">{{ textoSel.fondo ? 'Eliminar zona' : 'Eliminar texto' }}</button>
       </aside>
+
+      <ModalForma v-if="modalForma" :aspecto="planoTienda.aspecto || 1" :con-fondo="conFondoPropio" :ocupado="ocupado"
+                  objetos="puestos, textos y zonas" @aplicar="aplicarForma" @quitar-fondo="quitarFondo" @cerrar="modalForma = false" />
+
+      <div v-if="cajonCategorias" class="cajon-fondo" @click.self="cerrarCategorias">
+        <aside class="cajon" role="dialog" aria-modal="true" aria-label="Categorías y precios">
+          <header class="cajon-cab">
+            <div><strong>🏷️ Categorías y precios</strong><p>Lo que cambies aquí se ve en el plano al cerrar este panel.</p></div>
+            <button type="button" class="btn btn-fantasma btn-icono" aria-label="Cerrar" @click="cerrarCategorias">✕</button>
+          </header>
+          <div class="cajon-cuerpo"><Categorias /></div>
+        </aside>
+      </div>
+      <ModalFondo v-if="modalFondo" :fondo-url="planoTienda.src" acepta="image/png,image/jpeg,application/pdf"
+                  sobre="los puestos, los textos y las zonas" :ocupado="ocupado"
+                  @elegir="subirPlano" @quitar="quitarFondo" @cerrar="modalFondo = false" />
+
+      <div v-if="ayudaAbierta" class="ayuda-velo" @click.self="cerrarAyuda">
+        <section class="ayuda-caja" role="dialog" aria-modal="true" aria-label="Cómo se usa el editor del plano">
+          <h3>Cómo armar el plano de la actividad</h3>
+          <ol>
+            <li><b>Gestión / Diseño:</b> en Gestión ves y consultas puestos; en <b>Diseño</b> los creas, mueves y cambias de tamaño.</li>
+            <li><b>＋ Puesto:</b> elige una categoría y haz clic en el plano (o arrastra para colocar una fila entera).</li>
+            <li><b>T Texto y ▭ Zona:</b> rotula el plano (Ingreso, Baños…) o marca áreas con recuadro de color (Escenario, Patio de comidas). Arrastra para mover; la esquina blanca cambia el tamaño de la zona.</li>
+            <li><b>🖼 Fondo:</b> pon una imagen o PDF del lugar debajo del plano, cámbiala o quítala para trabajar sobre un lienzo liso.</li>
+            <li><b>📐 Forma:</b> elige si el plano es horizontal, cuadrado o vertical, o escribe las medidas del lugar en metros.</li>
+            <li><b>Rejilla e imán:</b> muestra una cuadrícula y acomoda todo a ella para que las filas queden rectas.</li>
+            <li><b>Guardar:</b> los puestos que mueves o cambias de tamaño se guardan con «Guardar» o Ctrl + S. Los textos, las zonas, el fondo y la forma se guardan solos al instante (verás «Guardando…» y «Guardado ✓»). Todo llega a la página pública sin recargar.</li>
+            <li><b>Vista pública e Imagen:</b> mira cómo lo ve el público o descarga el plano como imagen para compartirlo.</li>
+          </ol>
+          <div class="acciones-ayuda"><button class="btn btn-primario" @click="cerrarAyuda">Entendido</button></div>
+        </section>
+      </div>
 
       <aside v-if="fichaPuesto" class="flotante panel-ficha">
         <div class="panel-cab">
@@ -1328,6 +1545,17 @@ onUnmounted(() => {
 <style scoped>
 .editor { display: flex; flex-direction: column; flex: 1; min-height: 0; height: 100%; }
 
+.cajon-fondo { position: fixed; inset: 0; z-index: 950; background: rgba(15, 18, 25, 0.45); display: flex; justify-content: flex-end; }
+.cajon {
+  width: min(760px, 100vw); height: 100%; background: var(--bg, var(--panel)); display: flex; flex-direction: column;
+  box-shadow: var(--sombra-md); border-left: 1px solid var(--border);
+}
+.cajon-cab {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.cajon-cab p { margin: 0.1rem 0 0; font-size: 0.8rem; color: var(--muted); }
+.cajon-cuerpo { flex: 1; overflow: auto; padding: 1rem; }
 .barra {
   display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
   padding: 0.45rem 0.75rem; background: var(--panel); border-bottom: 1px solid var(--border);
@@ -1343,6 +1571,7 @@ onUnmounted(() => {
 }
 .segmentado button.on { background: var(--acento); color: var(--acento-texto); }
 
+.volver { text-decoration: none; display: inline-flex; align-items: center; }
 .herr {
   display: inline-flex; align-items: center; gap: 0.3rem;
   border: 1px solid var(--border); background: var(--panel); color: var(--text);
@@ -1394,7 +1623,7 @@ onUnmounted(() => {
 .pie-cat { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; padding: 0.5rem 0.7rem 0.2rem; border-top: 1px solid var(--border); }
 .mini { display: flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; color: var(--muted); }
 .mini input { width: 3.4rem; padding: 0.2rem 0.3rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; }
-.enlace { display: block; padding: 0.35rem 0.7rem 0.6rem; font-size: 0.78rem; }
+.enlace { display: block; padding: 0.35rem 0.7rem 0.6rem; font-size: 0.78rem; background: none; border: 0; color: var(--acento); cursor: pointer; font-weight: 600; text-align: left; }
 
 .muestra { width: 14px; height: 14px; flex: none; display: inline-block; }
 .muestra.forma-cuadrado { border-radius: 3px; }
@@ -1491,13 +1720,18 @@ onUnmounted(() => {
 .chico { font-size: 0.8rem; margin: 0; }
 .acciones-ficha { display: flex; gap: 0.5rem; padding-top: 0.2rem; margin-top: auto; }
 
-.plano { position: relative; width: 100%; }
+.plano { position: relative; width: 100%; background: #f4f5fb; }
+.ayuda-velo { position: fixed; inset: 0; z-index: 90; background: rgba(2, 6, 23, 0.55); display: grid; place-items: center; padding: 1rem; }
+.ayuda-caja { background: var(--panel); color: var(--text); border-radius: var(--radio); box-shadow: var(--sombra-md); padding: 1.2rem 1.4rem; max-width: 600px; width: 100%; max-height: 90vh; overflow: auto; display: flex; flex-direction: column; gap: 0.7rem; }
+.ayuda-caja h3 { margin: 0; }
+.ayuda-caja ol { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.92rem; }
+.acciones-ayuda { display: flex; justify-content: flex-end; }
 .plano img {
   width: 100%; height: auto; display: block;
   pointer-events: none; user-select: none; -webkit-user-select: none;
   transform: translateZ(0);
 }
-.herr-colocar, .herr-texto { cursor: crosshair; }
+.herr-colocar, .herr-texto, .herr-zona { cursor: crosshair; }
 .herr-seleccionar { cursor: default; }
 
 .rejilla {
@@ -1510,7 +1744,7 @@ onUnmounted(() => {
 }
 
 .pin {
-  position: absolute; width: 100px; height: var(--alto, 100px);
+  position: absolute; width: 100px; height: var(--alto, 100px); z-index: 1;
   transform-origin: 0 0;
   transform: scale(calc(var(--pin, 20) / 100)) rotate(var(--giro, 0deg)) translate(-50%, -50%);
   --borde: 5px;

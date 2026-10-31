@@ -27,6 +27,7 @@ class RegistroErroresApiTest {
     @MockitoBean MantenimientoService mantenimiento;
 
     @BeforeEach void preparar() {
+        org.slf4j.MDC.clear();
         when(jwt.validar("administrador")).thenReturn(new JwtUser(1L, "admin", "SUPER USUARIO"));
         when(jwt.validar("vendedor")).thenReturn(new JwtUser(2L, "vendedor", "ADMINISTRATIVO"));
         when(jwt.validar("gerente")).thenReturn(new JwtUser(3L, "gerente", "ADMINISTRADOR"));

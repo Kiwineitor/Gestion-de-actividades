@@ -54,12 +54,17 @@ public class ResponsableExtraService {
         Inscripcion i = inscripcionService.findById(inscripcionId);
         if (i == null) return null;
         int casetas = inscripcionPuestoDao.contarActivosDeInscripcion(inscripcionId);
-        int derecho = RegistroVentaService.maxResponsables(casetas);
+        int derecho = (int) Math.max(1, inscripcionPuestoDao.personasIncluidasDeInscripcion(inscripcionId));
         List<Responsable> vivos = responsableDao.vivosDeEntidad(i.getEntidad().getId());
         int extras = (int) vivos.stream().filter(Responsable::isEsExtra).count();
         boolean dentro = vivos.size() < derecho;
         return new Cupo(casetas, derecho, vivos.size(), extras, dentro,
-                dentro ? BigDecimal.ZERO : RegistroVentaService.COSTO_RESPONSABLE_EXTRA);
+                dentro ? BigDecimal.ZERO : costoExtraDe(inscripcionId));
+    }
+
+    private BigDecimal costoExtraDe(Long inscripcionId) {
+        BigDecimal c = inscripcionPuestoDao.costoPersonaExtraDeInscripcion(inscripcionId);
+        return c != null ? c : RegistroVentaService.COSTO_RESPONSABLE_EXTRA;
     }
 
     @Transactional
@@ -72,10 +77,11 @@ public class ResponsableExtraService {
 
         Cupo cupo = cupoDe(inscripcionId);
         boolean cobra = !cupo.dentroDelDerecho();
-        if (cobra && (comprobante == null || comprobante.isEmpty())) {
-            return Resultado.error("Este responsable pasa de los " + cupo.derecho()
-                    + " que dan sus " + cupo.casetas() + " caseta(s): hace falta el comprobante de "
-                    + RegistroVentaService.COSTO_RESPONSABLE_EXTRA + " Bs");
+        BigDecimal costo = cupo.costoSiguiente();
+        if (cobra && costo.signum() > 0 && (comprobante == null || comprobante.isEmpty())) {
+            return Resultado.error("Esta persona pasa de las " + cupo.derecho()
+                    + " que incluyen sus " + cupo.casetas() + " puesto(s): hace falta el comprobante de "
+                    + costo + " Bs");
         }
 
         String ruta = null;
@@ -111,7 +117,7 @@ public class ResponsableExtraService {
         r.setEsExtra(cobra);
         r.setComprobanteExtra(ruta);
         if (cobra) {
-            r.setMontoExtra(RegistroVentaService.COSTO_RESPONSABLE_EXTRA);
+            r.setMontoExtra(costo);
         }
         r.setEstado(RESPONSABLE);
         r.setRegistro(ahora);
@@ -122,7 +128,7 @@ public class ResponsableExtraService {
                 cobra ? "extra, cobrado" : "dentro del derecho");
         return new Resultado(true,
                 cobra ? "Responsable agregado y cobro registrado" : "Responsable agregado",
-                r.getId(), cobra, cobra ? RegistroVentaService.COSTO_RESPONSABLE_EXTRA : BigDecimal.ZERO);
+                r.getId(), cobra, cobra ? costo : BigDecimal.ZERO);
     }
 
     public record ExtraListado(Long responsableId, String nombre, String ci, String celular,
@@ -132,8 +138,8 @@ public class ResponsableExtraService {
     }
 
     @Transactional(readOnly = true)
-    public List<ExtraListado> listarExtras() {
-        return responsableDao.listarExtrasDeEdicionActiva().stream().map(f -> new ExtraListado(
+    public List<ExtraListado> listarExtras(Long edicion) {
+        return responsableDao.listarExtrasDeEdicion(edicion).stream().map(f -> new ExtraListado(
                 numero(f[0]),
                 texto(f[1]),
                 texto(f[2]),

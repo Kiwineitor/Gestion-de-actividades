@@ -1,4 +1,5 @@
 <script setup>
+import { confirmar } from '../ui/alerta';
 import { computed, onMounted, ref } from 'vue';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
@@ -126,7 +127,7 @@ async function guardar() {
   const partes = [];
   if (cambiosPrecio.value.length) partes.push(`el precio de ${cambiosPrecio.value.length} puesto(s)`);
   if (cambios.value.length) partes.push(`el número de ${cambios.value.length} puesto(s)`);
-  if (!confirm(`Se cambiará ${partes.join(' y ')}. ¿Continuar?`)) return;
+  if (!(await confirmar(`Se cambiará ${partes.join(' y ')}. ¿Continuar?`, { titulo: 'Confirmar', aceptar: 'Sí, continuar' }))) return;
 
   guardando.value = true;
   try {

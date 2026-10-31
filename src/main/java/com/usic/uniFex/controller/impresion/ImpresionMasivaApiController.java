@@ -32,11 +32,12 @@ public class ImpresionMasivaApiController {
     private final CredencialService credencialService;
 
     @GetMapping
-    public List<CredencialDTO> listar(@RequestParam(required = false) Long vendedorId) {
+    public List<CredencialDTO> listar(@RequestParam(required = false) Long vendedorId,
+                                     @RequestParam(required = false) Long edicion) {
         if (vendedorId != null) {
-            return impresion.listarDeVendedor(vendedorId);
+            return impresion.listarDeVendedor(vendedorId, edicion);
         }
-        return impresion.listarTodas();
+        return impresion.listarTodas(edicion);
     }
 
     @PostMapping(value = "/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
@@ -44,7 +45,7 @@ public class ImpresionMasivaApiController {
             @RequestBody(required = false) PeticionPdf req) {
 
         List<CredencialDTO> credenciales = (req == null || req.responsables() == null || req.responsables().isEmpty())
-                ? impresion.listarTodas()
+                ? impresion.listarTodas(req == null ? null : req.edicion())
                 : impresion.porResponsables(req.responsables());
 
         if (credenciales.isEmpty()) {
@@ -79,6 +80,6 @@ public class ImpresionMasivaApiController {
                 .body(pdf);
     }
 
-    public record PeticionPdf(@com.fasterxml.jackson.annotation.JsonAlias("ids") List<Long> responsables) {
+    public record PeticionPdf(@com.fasterxml.jackson.annotation.JsonAlias("ids") List<Long> responsables, Long edicion) {
     }
 }

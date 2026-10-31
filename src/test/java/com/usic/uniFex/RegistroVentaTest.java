@@ -297,7 +297,7 @@ class RegistroVentaTest {
     @Test
     void rechazaMasResponsablesDeLosQueDanLasCasetas() {
         NuevaVenta base = venta(libres.stream().map(Puesto::getId).toList());
-        int derecho = RegistroVentaService.maxResponsables(base.puestos().size());
+        int derecho = registro.personasIncluidas(base.puestos());
         List<DatosPersona> deMas = java.util.stream.IntStream.rangeClosed(1, derecho + 1)
                 .mapToObj(i -> new DatosPersona("R" + i, "A", "A", String.valueOf(i), null, null))
                 .toList();
@@ -313,7 +313,7 @@ class RegistroVentaTest {
         RegistroVentaService.Resultado r = registro.registrar(conDeMas, 1L);
 
         assertThat(r.ok()).isFalse();
-        assertThat(r.mensaje()).contains("derecho a " + derecho + " responsables");
+        assertThat(r.mensaje()).contains("incluyen " + derecho + " persona(s)");
         for (Long id : base.puestos()) {
             assertThat(puestoDao.findById(id).orElseThrow().getEstadoPuesto())
                     .isEqualTo(Puesto.LIBRE);

@@ -23,12 +23,12 @@ public class ReporteVentasService {
     private EntityManager em;
 
     public record Filtros(LocalDate desde, LocalDate hasta, String responsable,
-                          List<Long> categorias, List<Long> promotores) {
+                          List<Long> categorias, List<Long> promotores, Long edicion) {
     }
 
     @Transactional(readOnly = true)
     public List<ReporteVentaDTO> buscar(Filtros filtros) {
-        Filtros f = filtros == null ? new Filtros(null, null, null, List.of(), List.of()) : filtros;
+        Filtros f = filtros == null ? new Filtros(null, null, null, List.of(), List.of(), null) : filtros;
         StringBuilder sql = new StringBuilder("""
                 select i.id,
                        i.fecha_compra,
@@ -50,8 +50,7 @@ public class ReporteVentasService {
                   left join responsable r on r.id_entidad = e.id and (r."_estado" is null or r."_estado" <> 'X')
                   left join persona rp on rp.id = r.id_persona
                  where i."_estado" <> 'X'
-                   and i.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
-                """);
+                   and i.id_edicion = """ + edicion(f.edicion()) + "\n");
         Map<String, Object> params = new LinkedHashMap<>();
         if (f.desde() != null) {
             sql.append(" and date(i.fecha_compra) >= :desde");
@@ -88,22 +87,31 @@ public class ReporteVentasService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> filtros() {
+        return filtros(null);
+    }
+
+    private static String edicion(Long edicion) {
+        return edicion == null ? "(select ed.id from edicion ed where ed.activa limit 1)" : Long.toString(edicion);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> filtros(Long edicion) {
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("categorias", opciones("""
                 select c.id, c.nombre from categoria c
                  where (c."_estado" is null or c."_estado" <> 'X')
-                   and c.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
+                   and c.id_edicion = %s
                  order by c.nombre
-                """));
+                """.formatted(edicion(edicion))));
         r.put("promotores", opciones("""
                 select distinct u.id, coalesce(nullif(btrim(concat_ws(' ', p.nombre, p.paterno, p.materno)), ''), u.username) as nombre
                   from inscripcion i
                   join usuario u on u.id = i._registro_id_usuario
                   left join persona p on p.id = u.persona_id
                  where i."_estado" <> 'X'
-                   and i.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
+                   and i.id_edicion = %s
                  order by nombre
-                """));
+                """.formatted(edicion(edicion))));
         return r;
     }
 

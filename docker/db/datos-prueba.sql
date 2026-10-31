@@ -297,8 +297,8 @@ ON CONFLICT DO NOTHING;
 INSERT INTO rol_pantalla (id_rol, pantalla)
 SELECT r.id, v.pantalla
   FROM (VALUES
-        ('ADMINISTRADOR', 'inicio'), ('ADMINISTRADOR', 'mapa'), ('ADMINISTRADOR', 'venta'),
-        ('ADMINISTRADOR', 'mis-ventas'), ('ADMINISTRADOR', 'catalogo'), ('ADMINISTRADOR', 'tablero'),
+        ('ADMINISTRADOR', 'inicio'), ('ADMINISTRADOR', 'mapa'),
+        ('ADMINISTRADOR', 'mis-ventas'), ('ADMINISTRADOR', 'catalogo'),
         ('ADMINISTRADOR', 'editor'), ('ADMINISTRADOR', 'categorias'), ('ADMINISTRADOR', 'puestos'),
         ('ADMINISTRADOR', 'seguimiento'), ('ADMINISTRADOR', 'anuncios'),
         ('ADMINISTRADOR', 'seguimiento-facultad'), ('ADMINISTRADOR', 'responsables-extra'),
@@ -310,97 +310,53 @@ SELECT r.id, v.pantalla
         ('ADMINISTRADOR', 'escaner'), ('ADMINISTRADOR', 'control-acceso'), ('ADMINISTRADOR', 'usuarios'),
         ('ADMINISTRADOR', 'roles'), ('ADMINISTRADOR', 'permisos'), ('ADMINISTRADOR', 'personas'),
         ('ADMINISTRADOR', 'personal-apoyo'), ('ADMINISTRADOR', 'notificaciones'),
-        ('ADMINISTRATIVO', 'inicio'), ('ADMINISTRATIVO', 'mapa'), ('ADMINISTRATIVO', 'venta'),
+        ('ADMINISTRATIVO', 'inicio'), ('ADMINISTRATIVO', 'mapa'),
         ('ADMINISTRATIVO', 'mis-ventas'), ('ADMINISTRATIVO', 'catalogo'),
         ('ADMINISTRATIVO', 'inscripciones'), ('ADMINISTRATIVO', 'credenciales'),
         ('ADMINISTRATIVO', 'notificaciones'),
         ('CONTROL', 'inicio'), ('CONTROL', 'escaner'), ('CONTROL', 'control-acceso'),
         ('CONTROL', 'notificaciones'),
-        ('ASESORIA', 'inicio'), ('ASESORIA', 'catalogo'), ('ASESORIA', 'tablero'),
+        ('ASESORIA', 'inicio'), ('ASESORIA', 'catalogo'),
         ('ASESORIA', 'inscripciones'), ('ASESORIA', 'control-ventas'),
         ('ASESORIA', 'seguimiento-facultad'), ('ASESORIA', 'notificaciones')
        ) AS v(rol, pantalla)
   JOIN rol r ON r.nombre = v.rol
 ON CONFLICT DO NOTHING;
 
-CREATE TEMP TABLE _venta (n int, vendedor text, tipo text, entidad text, nit text,
-                          representante text, ci_rep text, celular text, contado boolean,
-                          banco text, comprobante text, casetas text[], hace interval);
-INSERT INTO _venta VALUES
-  (1, 'vendedor1', 'EMPRENDEDOR',     'POLLOS A LA BRASA DON BETO', NULL,
-      'ROBERTO AÑEZ SALVATIERRA', '4100001', '71100001', true,  NULL,  NULL,     ARRAY['1'],         '3 days'),
-  (2, 'vendedor2', 'EMPRESA PRIVADA', 'DISTRIBUIDORA AMAZONIA SRL', '102030405',
-      'PATRICIA MENDEZ ROJAS',    '4100002', '71100002', false, 'BNB', '784512', ARRAY['33', '34'], '2 days'),
-  (3, 'vendedor1', 'EMPRENDEDOR',     'ARTESANIAS TACANA',          NULL,
-      'ELENA CHAO MERCADO',       '4100003', '71100003', true,  NULL,  NULL,     ARRAY['114'],        '1 day');
+INSERT INTO mesa_evento (nombre, local_nombre, local_direccion, descripcion, fecha_inicio, hora_limite, minutos_bloqueo,
+                         pago_banco, pago_cuenta, pago_titular, pago_instrucciones, celular_contacto, politicas,
+                         publicado, tipos_pase, plano_elementos)
+SELECT 'Noche Neón', 'Euphoria Club', 'Av. Ejemplo 123 (local de prueba)', 'Evento de ejemplo para probar la reserva directa de mesas.', date_trunc('day', now()) + interval '30 days' + '22:00:00'::interval,
+       date_trunc('day', now()) + interval '30 days' + '23:30:00'::interval, 5, 'Banco de Ejemplo', '1000-2000-3000', 'Euphoria Club (cuenta ficticia)', 'Transfiere el monto exacto de tu mesa. Es una cuenta ficticia de ejemplo.', '70000000', NULL, TRUE, NULL, '[{"id":"ezonavip","tipo":"texto","texto":"ZONA VIP","x":0.03,"y":0.05,"ancho":0.15,"alto":0.06,"color":"#ff4fa3","fondo":null,"tamano":0.018,"rotacion":0.0},{"id":"eescenario","tipo":"zona","texto":"ESCENARIO · DJ uwur","x":0.326,"y":0.042,"ancho":0.353,"alto":0.114,"color":"#e4dcff","fondo":"#7c5cff","tamano":0.024,"rotacion":0.0},{"id":"epista","tipo":"zona","texto":"PISTA","x":0.294,"y":0.334,"ancho":0.416,"alto":0.336,"color":"#9a96c8","fondo":"#6b6f9e","tamano":0.022,"rotacion":0.0},{"id":"ebarra","tipo":"zona","texto":"BARRA","x":0.862,"y":0.222,"ancho":0.097,"alto":0.569,"color":"#8ce6d6","fondo":"#2bb5a0","tamano":0.018,"rotacion":0.0},{"id":"eingreso","tipo":"zona","texto":"INGRESO","x":0.438,"y":0.905,"ancho":0.128,"alto":0.076,"color":"#aab3cc","fondo":"#6b7a99","tamano":0.016,"rotacion":0.0}]'
+ WHERE NOT EXISTS (SELECT 1 FROM mesa_evento WHERE nombre = 'Noche Neón');
 
-DO $$
-DECLARE
-    v          record;
-    v_vendedor bigint;
-    v_entidad  bigint;
-    v_insc     bigint;
-    v_persona  bigint;
-    v_codigo   text;
-    v_puesto   record;
-    v_opcion   record;
-    v_fecha    timestamp;
-    v_edicion  bigint := (SELECT id FROM edicion WHERE activa ORDER BY id DESC LIMIT 1);
-BEGIN
-    FOR v IN SELECT * FROM _venta ORDER BY n LOOP
-        IF EXISTS (SELECT 1 FROM entidad WHERE nombre = v.entidad) THEN
-            CONTINUE;
-        END IF;
-        v_vendedor := (SELECT id FROM usuario WHERE username = v.vendedor);
-        v_fecha    := now() - v.hace;
-
-        INSERT INTO entidad (nombre, nit, representante_legal, ci_representante, celular_representante,
-                             descripcion, objeto, id_tipo_entidad, _estado,
-                             _fecha_registro, _registro_id_usuario, _fecha_modificacion, _modificacion_id_usuario)
-        VALUES (v.entidad, v.nit, v.representante, v.ci_rep, v.celular,
-                'Venta de ejemplo (datos de prueba)', 'Exposicion y venta',
-                (SELECT id FROM tipo_entidad WHERE nombre = v.tipo), 'ACTIVO',
-                v_fecha, v_vendedor, v_fecha, v_vendedor)
-        RETURNING id INTO v_entidad;
-
-        FOR i IN 1..2 LOOP
-            INSERT INTO persona (nombre, paterno, materno, ci, celular, _estado,
-                                 _fecha_registro, _registro_id_usuario, _fecha_modificacion, _modificacion_id_usuario)
-            VALUES (CASE WHEN i = 1 THEN split_part(v.representante, ' ', 1) ELSE 'AYUDANTE ' || v.n END,
-                    CASE WHEN i = 1 THEN split_part(v.representante, ' ', 2) ELSE 'PRUEBA' END,
-                    CASE WHEN i = 1 THEN split_part(v.representante, ' ', 3) ELSE NULL END,
-                    CASE WHEN i = 1 THEN v.ci_rep ELSE '42000' || v.n END,
-                    v.celular, 'RESPONSABLE', v_fecha, v_vendedor, v_fecha, v_vendedor)
-            RETURNING id INTO v_persona;
-
-            INSERT INTO responsable (id_entidad, id_persona, es_titular, es_extra, _estado,
-                                     _fecha_registro, _registro_id_usuario, _fecha_modificacion, _modificacion_id_usuario)
-            VALUES (v_entidad, v_persona, i = 1, false, 'RESPONSABLE', v_fecha, v_vendedor, v_fecha, v_vendedor);
-        END LOOP;
-
-        INSERT INTO inscripcion (id_entidad, id_edicion, fecha_compra, inscripcion_estado, pago_contado,
-                                 entidad_bancaria, num_comprobante, _estado,
-                                 _fecha_registro, _registro_id_usuario, _fecha_modificacion, _modificacion_id_usuario)
-        VALUES (v_entidad, v_edicion, v_fecha, 'PENDIENTE', v.contado, v.banco, v.comprobante, 'ACTIVO',
-                v_fecha, v_vendedor, v_fecha, v_vendedor)
-        RETURNING id INTO v_insc;
-
-        FOREACH v_codigo IN ARRAY v.casetas LOOP
-            SELECT id, id_categoria, precio INTO v_puesto FROM puesto WHERE codigo = v_codigo;
-            SELECT id, precio INTO v_opcion FROM categoria_opcion
-             WHERE id_categoria = v_puesto.id_categoria AND predeterminada AND _estado <> 'X';
-
-            INSERT INTO inscripcion_puesto (id_inscripcion, id_puesto, costo, id_categoria_opcion, _estado,
-                                            _fecha_registro, _registro_id_usuario, _fecha_modificacion, _modificacion_id_usuario)
-            VALUES (v_insc, v_puesto.id, coalesce(v_puesto.precio, v_opcion.precio), v_opcion.id, 'ACTIVO',
-                    v_fecha, v_vendedor, v_fecha, v_vendedor);
-
-            UPDATE puesto SET estado_puesto = 'O', version = version + 1,
-                              _fecha_modificacion = v_fecha, _modificacion_id_usuario = v_vendedor
-             WHERE id = v_puesto.id;
-        END LOOP;
-    END LOOP;
-END $$;
+INSERT INTO mesa (id_evento, codigo, zona, capacidad, precio, beneficios, forma, color, mapa_x, mapa_y, tamano)
+SELECT e.id, v.codigo, v.zona, v.capacidad, v.precio, v.beneficios, v.forma, v.color, v.mapa_x, v.mapa_y, v.tamano
+  FROM mesa_evento e, (VALUES
+    ('V1', 'VIP', 8, 800.00::numeric, '1 botella premium + 6 mixers + hielo', 'rectangulo', '#ff6fb5', 0.12::float8, 0.3::float8, 0.07::float8),
+    ('V2', 'VIP', 8, 800.00::numeric, '1 botella premium + 6 mixers + hielo', 'rectangulo', '#ff6fb5', 0.21::float8, 0.3::float8, 0.07::float8),
+    ('V3', 'VIP', 8, 800.00::numeric, '1 botella premium + 6 mixers + hielo', 'rectangulo', '#ff6fb5', 0.12::float8, 0.52::float8, 0.07::float8),
+    ('V4', 'VIP', 8, 800.00::numeric, '1 botella premium + 6 mixers + hielo', 'rectangulo', '#ff6fb5', 0.21::float8, 0.52::float8, 0.07::float8),
+    ('V5', 'VIP', 8, 800.00::numeric, '1 botella premium + 6 mixers + hielo', 'rectangulo', '#ff6fb5', 0.12::float8, 0.74::float8, 0.07::float8),
+    ('V6', 'VIP', 8, 800.00::numeric, '1 botella premium + 6 mixers + hielo', 'rectangulo', '#ff6fb5', 0.21::float8, 0.74::float8, 0.07::float8),
+    ('1', 'General', 5, 400.00::numeric, '1 botella + 4 mixers', 'circulo', '#6d5bd0', 0.32::float8, 0.25::float8, 0.05::float8),
+    ('2', 'General', 5, 400.00::numeric, '1 botella + 4 mixers', 'circulo', '#6d5bd0', 0.392::float8, 0.25::float8, 0.05::float8),
+    ('3', 'General', 5, 400.00::numeric, '1 botella + 4 mixers', 'circulo', '#6d5bd0', 0.46399999999999997::float8, 0.25::float8, 0.05::float8),
+    ('4', 'General', 5, 400.00::numeric, '1 botella + 4 mixers', 'circulo', '#6d5bd0', 0.536::float8, 0.25::float8, 0.05::float8),
+    ('5', 'General', 5, 400.00::numeric, '1 botella + 4 mixers', 'circulo', '#6d5bd0', 0.608::float8, 0.25::float8, 0.05::float8),
+    ('6', 'General', 5, 400.00::numeric, '1 botella + 4 mixers', 'circulo', '#6d5bd0', 0.6799999999999999::float8, 0.25::float8, 0.05::float8),
+    ('7', 'General', 5, 400.00::numeric, '1 botella + 4 mixers', 'circulo', '#6d5bd0', 0.32::float8, 0.76::float8, 0.05::float8),
+    ('8', 'General', 5, 400.00::numeric, '1 botella + 4 mixers', 'circulo', '#6d5bd0', 0.392::float8, 0.76::float8, 0.05::float8),
+    ('9', 'General', 5, 400.00::numeric, '1 botella + 4 mixers', 'circulo', '#6d5bd0', 0.46399999999999997::float8, 0.76::float8, 0.05::float8),
+    ('10', 'General', 5, 400.00::numeric, '1 botella + 4 mixers', 'circulo', '#6d5bd0', 0.536::float8, 0.76::float8, 0.05::float8),
+    ('11', 'General', 5, 400.00::numeric, '1 botella + 4 mixers', 'circulo', '#6d5bd0', 0.608::float8, 0.758::float8, 0.05::float8),
+    ('12', 'General', 5, 400.00::numeric, '1 botella + 4 mixers', 'circulo', '#6d5bd0', 0.676::float8, 0.762::float8, 0.05::float8),
+    ('B1', 'Barra', 4, 250.00::numeric, '2 jarras de cerveza', 'cuadrado', '#2f8f8a', 0.8::float8, 0.28::float8, 0.045::float8),
+    ('B2', 'Barra', 4, 250.00::numeric, '2 jarras de cerveza', 'cuadrado', '#2f8f8a', 0.8::float8, 0.43::float8, 0.045::float8),
+    ('B3', 'Barra', 4, 250.00::numeric, '2 jarras de cerveza', 'cuadrado', '#2f8f8a', 0.8::float8, 0.58::float8, 0.045::float8),
+    ('B4', 'Barra', 4, 250.00::numeric, '2 jarras de cerveza', 'cuadrado', '#2f8f8a', 0.8::float8, 0.73::float8, 0.045::float8)
+  ) AS v(codigo, zona, capacidad, precio, beneficios, forma, color, mapa_x, mapa_y, tamano)
+ WHERE e.nombre = 'Noche Neón' AND NOT EXISTS (SELECT 1 FROM mesa m WHERE m.id_evento = e.id);
 
 UPDATE categoria
    SET id_edicion = (SELECT id FROM edicion WHERE activa ORDER BY anio DESC, id DESC LIMIT 1)

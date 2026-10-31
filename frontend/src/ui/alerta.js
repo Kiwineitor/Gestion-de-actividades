@@ -8,6 +8,11 @@ export const alertaConfig = reactive({
   tipo: 'info',
   ms: 4000,
   mostrarConfirmar: false,
+  textoConfirmar: 'Confirmar',
+  textoCancelar: 'Cancelar',
+  conEntrada: false,
+  entrada: '',
+  marcador: '',
   onConfirmar: null,
   onCerrar: null,
   serie: 0,
@@ -27,6 +32,11 @@ function mostrar(opciones, resolve) {
     tipo: opciones.tipo,
     ms: opciones.ms,
     mostrarConfirmar: Boolean(opciones.onConfirmar),
+    textoConfirmar: opciones.textoConfirmar || 'Confirmar',
+    textoCancelar: opciones.textoCancelar || 'Cancelar',
+    conEntrada: Boolean(opciones.conEntrada),
+    entrada: opciones.entrada ?? '',
+    marcador: opciones.marcador || '',
     onConfirmar: opciones.onConfirmar || null,
     onCerrar: null,
     serie: alertaConfig.serie + 1,
@@ -46,6 +56,20 @@ export function aviso(mensaje, tipo = 'ok', ms = 2000, titulo = null) {
 export function alertaConAccion(mensaje, tipo, onConfirmar, ms = 0) {
   return new Promise((resolve) =>
     mostrar({ mensaje, tipo, ms, onConfirmar: () => onConfirmar?.() }, resolve));
+}
+
+export function confirmar(mensaje, opciones = {}) {
+  const { titulo = '¿Estás seguro?', aceptar = 'Sí, continuar', cancelar = 'Cancelar', tipo = 'advertencia' } = opciones;
+  return new Promise((resolve) => mostrar({
+    mensaje, tipo, ms: 0, titulo, textoConfirmar: aceptar, textoCancelar: cancelar, onConfirmar: () => {},
+  }, resolve));
+}
+
+export function pedirTexto(mensaje, opciones = {}) {
+  const { titulo = 'Escribe el dato', aceptar = 'Guardar', valor = '', marcador = '' } = opciones;
+  return new Promise((resolve) => mostrar({
+    mensaje, tipo: 'info', ms: 0, titulo, textoConfirmar: aceptar, conEntrada: true, entrada: valor, marcador, onConfirmar: () => {},
+  }, (si) => resolve(si ? alertaConfig.entrada : null)));
 }
 
 export function cerrar(confirmado = false) {

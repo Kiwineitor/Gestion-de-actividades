@@ -32,12 +32,21 @@ public class AnalisisVentasService {
               join puesto p on p.id = ip.id_puesto
             """;
 
-    private static final String SOLO_VIVAS_EDICION_ACTIVA = """
-             where (i."_estado" is null or i."_estado" <> 'X')
-               and i.id_edicion = """ + EDICION_ACTIVA;
+    private static String edicion(Long edicionId) {
+        return edicionId == null ? EDICION_ACTIVA : Long.toString(edicionId);
+    }
+
+    private static String soloVivas(Long edicionId) {
+        return " where (i.\"_estado\" is null or i.\"_estado\" <> 'X') and i.id_edicion = " + edicion(edicionId) + " ";
+    }
 
     @Transactional(readOnly = true)
     public List<AnalisisDTO.Ocupacion> ocupacion() {
+        return ocupacion(null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AnalisisDTO.Ocupacion> ocupacion(Long edicionId) {
         String sql = """
                 with vendido as (
                     select p.id_categoria, sum(ip.costo) as bs
@@ -63,10 +72,10 @@ public class AnalisisVentasService {
                   left join vendido v on v.id_categoria = c.id
                  where (p."_estado" is null or p."_estado" <> 'X')
                    and (c."_estado" is null or c."_estado" <> 'X')
-                   and c.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
+                   and c.id_edicion = %s
                  group by c.id, c.nombre, v.bs
                  order by c.nombre
-                """.formatted(EDICION_ACTIVA);
+                """.formatted(edicion(edicionId), edicion(edicionId));
 
         @SuppressWarnings("unchecked")
         List<Object[]> filas = em.createNativeQuery(sql).getResultList();
@@ -89,6 +98,11 @@ public class AnalisisVentasService {
 
     @Transactional(readOnly = true)
     public List<AnalisisDTO.Vendedor> vendedores() {
+        return vendedores(null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AnalisisDTO.Vendedor> vendedores(Long edicionId) {
         String sql = """
                 select u.id,
                        coalesce(nullif(btrim(concat_ws(' ', pe.nombre, pe.paterno, pe.materno)), ''), u.username),
@@ -101,7 +115,7 @@ public class AnalisisVentasService {
                   left join persona pe on pe.id = u.persona_id
                   left join carrera ca on ca.id = pe.id_carrera
                   left join area a on a.id = ca.id_area
-                """ + SOLO_VIVAS_EDICION_ACTIVA + """
+                """ + soloVivas(edicionId) + """
                  group by u.id, pe.nombre, pe.paterno, pe.materno, u.username, a.sigla, ca.nombre
                  order by total_bs desc, casetas desc
                 """;
@@ -122,6 +136,11 @@ public class AnalisisVentasService {
 
     @Transactional(readOnly = true)
     public List<AnalisisDTO.Facultad> porFacultad() {
+        return porFacultad(null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AnalisisDTO.Facultad> porFacultad(Long edicionId) {
         String sql = """
                 select a.sigla, a.nombre,
                        count(distinct u.id)::int as vendedores,
@@ -133,7 +152,7 @@ public class AnalisisVentasService {
                   left join persona pe on pe.id = u.persona_id
                   left join carrera ca on ca.id = pe.id_carrera
                   left join area a on a.id = ca.id_area
-                """ + SOLO_VIVAS_EDICION_ACTIVA + """
+                """ + soloVivas(edicionId) + """
                  group by a.sigla, a.nombre
                  order by total_bs desc
                 """;
@@ -167,7 +186,12 @@ public class AnalisisVentasService {
 
     @Transactional(readOnly = true)
     public List<AnalisisDTO.VendidoCategoria> vendidoPorCategoria() {
-        List<AnalisisDTO.Ocupacion> base = ocupacion();
+        return vendidoPorCategoria(null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AnalisisDTO.VendidoCategoria> vendidoPorCategoria(Long edicionId) {
+        List<AnalisisDTO.Ocupacion> base = ocupacion(edicionId);
         BigDecimal total = base.stream()
                 .map(AnalisisDTO.Ocupacion::bsVendido)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -184,6 +208,11 @@ public class AnalisisVentasService {
 
     @Transactional(readOnly = true)
     public AnalisisDTO.Cobros cobros() {
+        return cobros(null);
+    }
+
+    @Transactional(readOnly = true)
+    public AnalisisDTO.Cobros cobros(Long edicionId) {
         String cortes = """
                 select case
                          when (i.img_comprobante is not null and i.img_comprobante <> '') then 'Con comprobante'
@@ -191,7 +220,7 @@ public class AnalisisVentasService {
                          else 'Sin comprobante'
                        end as concepto,
                        count(distinct i.id)::int, count(ip.id)::int, coalesce(sum(ip.costo), 0)
-                """ + DESDE_VENTAS + SOLO_VIVAS_EDICION_ACTIVA + """
+                """ + DESDE_VENTAS + soloVivas(edicionId) + """
                  group by 1
                  order by 1
                 """;
@@ -217,7 +246,7 @@ public class AnalisisVentasService {
                   join entidad e on e.id = i.id_entidad
                   left join usuario u on u.id = i."_registro_id_usuario"
                   left join persona pe on pe.id = u.persona_id
-                """ + SOLO_VIVAS_EDICION_ACTIVA + """
+                """ + soloVivas(edicionId) + """
                    and (i.img_comprobante is null or i.img_comprobante = '')
                  group by i.id, e.nombre, pe.nombre, pe.paterno, pe.materno, u.username,
                           i.pago_contado, i.fecha_compra
@@ -236,10 +265,15 @@ public class AnalisisVentasService {
 
     @Transactional(readOnly = true)
     public List<AnalisisDTO.Dia> avance() {
+        return avance(null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AnalisisDTO.Dia> avance(Long edicionId) {
         String sql = """
                 select date(i.fecha_compra) as dia,
                        count(distinct i.id)::int, count(ip.id)::int, coalesce(sum(ip.costo), 0)
-                """ + DESDE_VENTAS + SOLO_VIVAS_EDICION_ACTIVA + """
+                """ + DESDE_VENTAS + soloVivas(edicionId) + """
                    and i.fecha_compra is not null
                  group by 1
                  order by 1

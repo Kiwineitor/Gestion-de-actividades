@@ -41,7 +41,7 @@ const puedeLinterna = computed(() => {
 
 function codigoDe(texto) {
   const t = (texto || '').trim();
-  const m = t.match(/FX[CA]-[0-9A-Z]+-[0-9A-Za-z_-]{12}/i);
+  const m = t.match(/FX[CA]-[0-9A-Z]+-[0-9A-Za-z_-]{12}/i) || t.match(/MSA-[A-Z0-9]{10}(-\d{1,2})?/i);
   return m ? m[0].toUpperCase() : t.toUpperCase();
 }
 
@@ -156,6 +156,10 @@ async function verificar() {
   buscando.value = true;
   resultado.value = null;
   error.value = '';
+  if (c.startsWith('MSA-')) {
+    await registrarPase(c);
+    return;
+  }
   try {
     const r = await apiFetch('/api/app/accesos', {
       method: 'POST',
@@ -176,6 +180,20 @@ async function verificar() {
     error.value = e.message === 'Sesion expirada'
       ? 'Tu sesión caducó. Vuelve a entrar para seguir controlando la puerta.'
       : 'No se pudo verificar. Revisa la conexión.';
+  } finally {
+    buscando.value = false;
+  }
+}
+
+async function registrarPase(c) {
+  try {
+    const r = await apiFetch('/api/app/mesas/ingreso', { method: 'POST', body: JSON.stringify({ codigo: c }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 403) error.value = 'No tienes permiso para registrar pases de mesa.';
+    else if (d.ok) resultado.value = { ...d, tipo: 'mesa', sentido: d.reserva?.sentido || 'E' };
+    else error.value = d.mensaje || 'Este pase no es válido';
+  } catch {
+    error.value = 'No se pudo verificar. Revisa la conexión.';
   } finally {
     buscando.value = false;
   }
@@ -251,7 +269,7 @@ const mensajeRepetido = computed(() =>
         Si el QR no se deja leer, escribe el código impreso debajo.
       </p>
       <form class="fila" @submit.prevent="verificar">
-        <input v-model="codigo" class="control codigo" placeholder="FXC-1A-XXXXXXXXXXXX o FXA-1A-XXXXXXXXXXXX"
+        <input v-model="codigo" class="control codigo" placeholder="Credencial (FXC-… / FXA-…) o pase de mesa (MSA-…)"
                autocapitalize="characters" autocomplete="off" spellcheck="false" />
         <button class="btn btn-primario" :disabled="buscando || !codigo.trim()">
           {{ buscando ? 'Verificando…' : 'Verificar' }}
@@ -262,10 +280,30 @@ const mensajeRepetido = computed(() =>
     <section v-if="error" class="resultado invalido card">
       <span class="marca">✕</span>
       <div>
-        <h3>Credencial no válida</h3>
+        <h3>{{ codigoDe(codigo).startsWith('MSA-') ? 'Pase no válido' : 'Credencial no válida' }}</h3>
         <p>{{ error }}</p>
         <p class="pie">No permitir el ingreso con este código.</p>
         <button class="btn btn-sm" @click="siguiente">📷 Escanear otra</button>
+      </div>
+    </section>
+
+    <section v-else-if="resultado?.tipo === 'mesa'" class="resultado valido card" :class="{ salida: resultado.sentido === 'S' }">
+      <header>
+        <span class="marca">{{ resultado.sentido === 'S' ? '↩' : '✓' }}</span>
+        <h3>{{ resultado.mensaje || 'Ingreso registrado' }}</h3>
+      </header>
+      <dl v-if="resultado.reserva" class="datos">
+        <div><dt>Evento</dt><dd>{{ resultado.reserva.evento?.nombre || '—' }}</dd></div>
+        <div><dt>Mesa</dt><dd>{{ resultado.reserva.mesa }}<template v-if="resultado.reserva.zona"> · {{ resultado.reserva.zona }}</template></dd></div>
+        <div><dt>Movimiento</dt><dd>{{ resultado.sentido === 'S' ? 'Salida' : 'Entrada' }}</dd></div>
+        <div v-if="resultado.reserva.persona"><dt>Persona</dt><dd>{{ resultado.reserva.persona }}</dd></div>
+        <div><dt>Titular</dt><dd>{{ resultado.reserva.nombre }} {{ resultado.reserva.apellidos }}</dd></div>
+        <div><dt>Ingresaron</dt><dd>{{ resultado.reserva.ingresados }} de {{ resultado.reserva.personas }}</dd></div>
+        <div v-if="resultado.reserva.pase"><dt>Pase</dt><dd>{{ resultado.reserva.pase }}<template v-if="resultado.reserva.tipo"> · {{ resultado.reserva.tipo }}</template></dd></div>
+      </dl>
+      <div class="fila">
+        <button class="btn btn-primario" @click="siguiente">📷 Escanear el siguiente</button>
+        <button class="btn btn-fantasma" @click="limpiar">Limpiar</button>
       </div>
     </section>
 
@@ -406,6 +444,7 @@ const mensajeRepetido = computed(() =>
 
 .resultado { padding: 1.1rem; display: flex; flex-direction: column; gap: 0.9rem; }
 .resultado.valido { border-top: 6px solid var(--ok); }
+.resultado.valido.salida { border-top-color: var(--advertencia, #d98b0b); }
 .resultado.invalido { border-top: 6px solid var(--danger); flex-direction: row; align-items: flex-start; gap: 0.9rem; }
 .marca {
   display: grid; place-items: center; width: 42px; height: 42px; flex: none;

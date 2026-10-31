@@ -63,6 +63,7 @@ public class CredencialAccesoDao {
 
     public record Filtros(
             Long categoriaId,
+            Long edicion,
             LocalDateTime desde,
             LocalDateTime hasta,
             String sentido,
@@ -91,7 +92,10 @@ public class CredencialAccesoDao {
                 """);
 
         if (f.categoriaId() != null) {
-            sql.append(" AND c.id = ").append(f.categoriaId());
+            sql.append(" AND c.id = ").append(f.categoriaId()).append(" ");
+        }
+        if (f.edicion() != null) {
+            sql.append(" AND i.id_edicion = ").append(f.edicion().longValue()).append(" ");
         }
         if (f.desde() != null) {
             sql.append(" AND ca.cuando >= '").append(f.desde()).append("'");
@@ -131,7 +135,10 @@ public class CredencialAccesoDao {
                 """);
 
         if (f.categoriaId() != null) {
-            sql.append(" AND c.id = ").append(f.categoriaId());
+            sql.append(" AND c.id = ").append(f.categoriaId()).append(" ");
+        }
+        if (f.edicion() != null) {
+            sql.append(" AND i.id_edicion = ").append(f.edicion().longValue()).append(" ");
         }
         if (f.desde() != null) {
             sql.append(" AND ca.cuando >= '").append(f.desde()).append("'");
@@ -146,7 +153,7 @@ public class CredencialAccesoDao {
         return jdbc.queryForObject(sql.toString(), Integer.class);
     }
 
-    public List<Map<String, Object>> resumenPorCategoria(LocalDateTime desde, LocalDateTime hasta) {
+    public List<Map<String, Object>> resumenPorCategoria(LocalDateTime desde, LocalDateTime hasta, Long edicion) {
         StringBuilder sql = new StringBuilder("""
                 SELECT c.id AS categoria_id, c.nombre AS categoria,
                        COUNT(*) FILTER (WHERE ca.sentido = 'E') AS entradas,
@@ -171,6 +178,9 @@ public class CredencialAccesoDao {
         if (hasta != null) {
             sql.append(" AND ca.cuando <= '").append(hasta).append("'");
         }
+        if (edicion != null) {
+            sql.append(deEdicion(edicion));
+        }
 
         sql.append("""
                 GROUP BY c.id, c.nombre
@@ -180,7 +190,7 @@ public class CredencialAccesoDao {
         return jdbc.queryForList(sql.toString());
     }
 
-    public List<Map<String, Object>> resumenPorUsuario(LocalDateTime desde, LocalDateTime hasta) {
+    public List<Map<String, Object>> resumenPorUsuario(LocalDateTime desde, LocalDateTime hasta, Long edicion) {
         StringBuilder sql = new StringBuilder("""
                 SELECT u.username, u.id AS usuario_id,
                        COUNT(*) FILTER (WHERE ca.sentido = 'E') AS entradas,
@@ -197,6 +207,9 @@ public class CredencialAccesoDao {
         if (hasta != null) {
             sql.append(" AND ca.cuando <= '").append(hasta).append("'");
         }
+        if (edicion != null) {
+            sql.append(deEdicion(edicion));
+        }
 
         sql.append("""
                 GROUP BY u.id, u.username
@@ -206,10 +219,16 @@ public class CredencialAccesoDao {
         return jdbc.queryForList(sql.toString());
     }
 
-    public List<Map<String, Object>> quienesEstanDentro() {
+    private static String deEdicion(Long edicion) {
+        return " AND EXISTS (SELECT 1 FROM responsable rx JOIN inscripcion ix ON ix.id_entidad = rx.id_entidad"
+                + " AND (ix.\"_estado\" IS NULL OR ix.\"_estado\" <> 'X')"
+                + " WHERE rx.id = ca.id_responsable AND ix.id_edicion = " + edicion.longValue() + ")";
+    }
+
+    public List<Map<String, Object>> quienesEstanDentro(Long edicion) {
         return jdbc.queryForList("""
                 SELECT r.id AS responsable_id, p.nombre, p.paterno, p.materno, p.ci,
-                       e.nombre AS entidad, c.nombre AS categoria,
+                       e.nombre AS entidad, string_agg(DISTINCT c.nombre, ', ') AS categoria,
                        string_agg(DISTINCT pu.codigo, ', ' ORDER BY pu.codigo) AS casetas,
                        ca.cuando AS ultima_entrada
                 FROM (
@@ -231,6 +250,9 @@ public class CredencialAccesoDao {
                     WHERE ca2.id_responsable = ca.id_responsable
                     ORDER BY ca2.cuando DESC, ca2.id DESC LIMIT 1
                 ) = 'E'
+                """ + (edicion == null ? "" : " AND i.id_edicion = " + edicion.longValue() + " ") + """
+
+                GROUP BY r.id, p.nombre, p.paterno, p.materno, p.ci, e.nombre, ca.cuando
                 ORDER BY p.nombre
                 """);
     }

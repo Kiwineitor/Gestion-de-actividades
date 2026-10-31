@@ -18,6 +18,7 @@ import com.usic.uniFex.model.entity.Categoria;
 import com.usic.uniFex.model.entity.Edicion;
 import com.usic.uniFex.model.entity.Puesto;
 import com.usic.uniFex.model.dto.PlanoDTO;
+import com.usic.uniFex.model.service.PlanoTextoService;
 import com.usic.uniFex.model.service.VisitasPaginaService;
 
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,7 @@ public class FeriaPublicaController {
     private final IPuestoDao puestoDao;
     private final com.usic.uniFex.model.service.PlanoService planoService;
     private final VisitasPaginaService visitasService;
+    private final PlanoTextoService planoTextos;
     private final JdbcTemplate jdbc;
 
     @GetMapping
@@ -141,12 +143,14 @@ public class FeriaPublicaController {
 
         PlanoDTO plano = planoService.activo();
         if (plano != null) {
-            cuerpo.put("plano", Map.of(
-                    "url", plano.url(),
-                    "ancho", plano.ancho(),
-                    "alto", plano.alto(),
-                    "version", plano.version(),
-                    "propio", plano.propio()));
+            Map<String, Object> planoInfo = new LinkedHashMap<>();
+            planoInfo.put("url", plano.url());
+            planoInfo.put("ancho", plano.ancho());
+            planoInfo.put("alto", plano.alto());
+            planoInfo.put("version", plano.version());
+            planoInfo.put("propio", plano.propio());
+            planoInfo.put("sinFondo", plano.sinFondo());
+            cuerpo.put("plano", planoInfo);
         }
 
         return cuerpo;
@@ -154,7 +158,8 @@ public class FeriaPublicaController {
 
     private Map<String, Object> datosPublicos(Long id) {
         return jdbc.queryForObject("""
-                SELECT lugar, fechas_texto, descripcion_publica, contacto, portada_archivo, publica, recibe_interesados
+                SELECT lugar, fechas_texto, descripcion_publica, contacto, portada_archivo, publica, recibe_interesados,
+                       pago_qr_archivo, pago_banco, pago_cuenta, pago_titular, pago_instrucciones, pago_oficina
                   FROM edicion WHERE id = ?
                 """, (rs, i) -> {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -166,8 +171,73 @@ public class FeriaPublicaController {
             m.put("portadaUrl", portada == null ? null : "/files/" + portada);
             m.put("publica", rs.getBoolean("publica"));
             m.put("recibeInteresados", rs.getBoolean("recibe_interesados"));
+            String qr = rs.getString("pago_qr_archivo");
+            Map<String, Object> pago = new LinkedHashMap<>();
+            pago.put("qrUrl", qr == null ? null : "/files/" + qr);
+            pago.put("banco", rs.getString("pago_banco"));
+            pago.put("cuenta", rs.getString("pago_cuenta"));
+            pago.put("titular", rs.getString("pago_titular"));
+            pago.put("instrucciones", rs.getString("pago_instrucciones"));
+            pago.put("oficina", rs.getString("pago_oficina"));
+            m.put("pago", pago);
             return m;
         }, id);
+    }
+
+    @GetMapping("/plano")
+    public Map<String, Object> plano() {
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        Edicion activa = edicionDao.findFirstByActivaTrueOrderByAnioDesc().orElse(null);
+        Map<String, Object> publico = activa == null ? null : datosPublicos(activa.getId());
+        if (publico == null || !Boolean.TRUE.equals(publico.get("publica"))) {
+            cuerpo.put("disponible", false);
+            return cuerpo;
+        }
+        PlanoDTO plano = planoService.activo();
+        Map<String, Object> planoInfo = new LinkedHashMap<>();
+        planoInfo.put("url", plano.url());
+        planoInfo.put("ancho", plano.ancho());
+        planoInfo.put("alto", plano.alto());
+        planoInfo.put("propio", plano.propio());
+        planoInfo.put("sinFondo", plano.sinFondo());
+        cuerpo.put("disponible", true);
+        cuerpo.put("plano", planoInfo);
+        cuerpo.put("puestos", jdbc.query("""
+                SELECT p.id, p.codigo, p.tamano, p.estado_puesto, p.mapa_x, p.mapa_y, p.mapa_escala, p.mapa_rotacion,
+                       p.referencia, COALESCE(p.precio, c.precio_base, 0) AS precio,
+                       c.id AS categoria_id, c.nombre AS categoria, c.color, c.forma, c.tamano_mapa, c.mapa_proporcion,
+                       (SELECT max(CASE WHEN i.estado = 'ATENDIDO' AND i.id_inscripcion IS NULL THEN 2 WHEN i.estado = 'NUEVO' THEN 1 ELSE 0 END)
+                          FROM interesado_stand i WHERE i.id_puesto = p.id) AS solicitud
+                  FROM puesto p JOIN categoria c ON c.id = p.id_categoria
+                 WHERE c.id_edicion = ? AND p.mapa_x IS NOT NULL AND p.mapa_y IS NOT NULL
+                   AND (p."_estado" IS NULL OR p."_estado" <> 'X') AND (c."_estado" IS NULL OR c."_estado" <> 'X')
+                 ORDER BY c.nombre, p.codigo
+                """, (rs, i) -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            String estado = rs.getString("estado_puesto");
+            int solicitud = rs.getInt("solicitud");
+            if (Puesto.LIBRE.equals(estado) && solicitud == 2) estado = "R";
+            else if (Puesto.LIBRE.equals(estado) && solicitud == 1) estado = "S";
+            m.put("id", rs.getLong("id"));
+            m.put("codigo", rs.getString("codigo"));
+            m.put("tamano", rs.getString("tamano"));
+            m.put("estado", estado);
+            m.put("mapaX", rs.getDouble("mapa_x"));
+            m.put("mapaY", rs.getDouble("mapa_y"));
+            m.put("mapaEscala", rs.getObject("mapa_escala") == null ? 1.0 : rs.getDouble("mapa_escala"));
+            m.put("mapaRotacion", rs.getInt("mapa_rotacion"));
+            m.put("referencia", rs.getString("referencia"));
+            m.put("precio", rs.getBigDecimal("precio"));
+            m.put("categoriaId", rs.getLong("categoria_id"));
+            m.put("categoria", rs.getString("categoria"));
+            m.put("color", rs.getString("color"));
+            m.put("forma", rs.getString("forma"));
+            m.put("tamanoMapa", rs.getObject("tamano_mapa") == null ? 0.012 : rs.getDouble("tamano_mapa"));
+            m.put("mapaProporcion", rs.getObject("mapa_proporcion") == null ? 1.0 : rs.getDouble("mapa_proporcion"));
+            return m;
+        }, activa.getId()));
+        cuerpo.put("textos", planoTextos.listar());
+        return cuerpo;
     }
 
     @PostMapping("/visitas")

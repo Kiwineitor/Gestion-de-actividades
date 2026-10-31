@@ -8,6 +8,7 @@ import { escucharPublico, alCambiarPublico } from '../ui/canalPublico';
 import { avisoPublico } from '../ui/avisosPublicos';
 import { tokenPublico, enlaceWhatsApp } from '../ui/tokenPublico';
 import { marca } from '../ui/marca';
+import ReservaPendiente from '../components/ReservaPendiente.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -24,7 +25,7 @@ const condiciones = ref(false);
 const info = ref(false);
 const ampliado = ref(false);
 const resaltadas = ref(new Set());
-const cliente = reactive({ nombre: '', apellidos: '', ci: '', celular: '', correo: '' });
+const cliente = reactive({ nombre: '', apellidos: '', ci: '', celular: '', correo: '', personas: 1 });
 const soltar = [];
 let latido = null;
 let propia = null;
@@ -116,6 +117,7 @@ async function elegir(m) {
     const d = await apartar(m.id);
     if (!d.ok) { avisoPublico(d.mensaje || 'No se pudo apartar la mesa.', 'error'); return; }
     elegidaId.value = m.id;
+    cliente.personas = m.capacidad;
     confirmoDatos.value = false;
     clearInterval(latido);
     latido = setInterval(async () => {
@@ -189,6 +191,7 @@ onUnmounted(() => {
         <button type="button" class="pub-boton secundario chico" @click="info = true">Información</button>
         <a v-if="whatsapp" :href="whatsapp" target="_blank" rel="noopener" class="pub-boton whatsapp chico" aria-label="Consultas por WhatsApp">Consultas</a>
       </div>
+      <ReservaPendiente class="pendiente-barra" :evento-id="route.query.evento" />
     </header>
 
     <p v-if="error" class="vacio">{{ error }} <router-link to="/">Volver al inicio</router-link></p>
@@ -203,7 +206,7 @@ onUnmounted(() => {
         </div>
         <div class="lienzo" :class="{ ampliado }" :style="{ '--aspecto': aspecto }">
           <div class="ajuste">
-            <PlanoMesas :mesas="mesas" :plano-url="evento.planoUrl" :aspecto="aspecto" :seleccionada="elegidaId"
+            <PlanoMesas :mesas="mesas" :elementos="evento.elementos || []" :plano-url="evento.planoUrl" :aspecto="aspecto" :seleccionada="elegidaId"
                         :resaltadas="resaltadas" :ocupada="tomando" @elegir="elegir" />
           </div>
         </div>
@@ -236,7 +239,7 @@ onUnmounted(() => {
 
       <div class="resumen">
         <div><span>Precio</span><strong class="precio">{{ bs(elegida.precio) }}</strong></div>
-        <div><span>Capacidad</span><strong>{{ elegida.capacidad }} personas</strong></div>
+        <div><span>Capacidad</span><strong>Hasta {{ elegida.capacidad }} personas</strong></div>
         <div v-if="elegida.beneficios" class="ancho"><span>Incluye</span><strong>{{ elegida.beneficios }}</strong></div>
       </div>
       <p class="apartada">Esta mesa está apartada para ti mientras completas tus datos.</p>
@@ -247,7 +250,12 @@ onUnmounted(() => {
           <label class="pub-campo"><span>Apellidos</span><input id="r-apellidos" v-model="cliente.apellidos" autocomplete="family-name" maxlength="80" required /></label>
           <label class="pub-campo"><span>Número de carnet</span><input id="r-ci" v-model="cliente.ci" maxlength="20" required /></label>
           <label class="pub-campo"><span>Celular (WhatsApp)</span><input id="r-celular" v-model="cliente.celular" inputmode="tel" autocomplete="tel" maxlength="20" required /></label>
-          <label class="pub-campo ancho"><span>Correo (opcional)</span><input id="r-correo" v-model="cliente.correo" type="email" autocomplete="email" maxlength="120" /></label>
+          <label class="pub-campo"><span>¿Cuántas personas irán?</span>
+            <select id="r-personas" v-model.number="cliente.personas">
+              <option v-for="n in elegida.capacidad" :key="n" :value="n">{{ n }} persona{{ n === 1 ? '' : 's' }}</option>
+            </select>
+          </label>
+          <label class="pub-campo"><span>Correo (opcional)</span><input id="r-correo" v-model="cliente.correo" type="email" autocomplete="email" maxlength="120" /></label>
         </div>
         <label class="check">
           <input id="r-confirmo" v-model="confirmoDatos" type="checkbox" />
@@ -290,7 +298,8 @@ onUnmounted(() => {
   height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr); max-width: 1280px; margin: 0 auto;
   padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px)); box-sizing: border-box;
 }
-.barra { display: flex; align-items: center; gap: 12px; padding: calc(12px + env(safe-area-inset-top, 0px)) 0 10px; }
+.barra { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: calc(12px + env(safe-area-inset-top, 0px)) 0 10px; }
+.pendiente-barra { flex-basis: 100%; }
 .titulo { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .titulo h1 { margin: 0; font-size: clamp(1.15rem, 2.6vw, 1.7rem); line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cuando { color: var(--pub-suave); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: capitalize; }

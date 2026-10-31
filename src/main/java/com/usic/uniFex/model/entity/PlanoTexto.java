@@ -51,4 +51,10 @@ public class PlanoTexto extends AuditoriaConfig {
     private Double grosorBorde;
 
     private Double rotacion;
+
+    private String fondo;
+
+    private Double ancho;
+
+    private Double alto;
 }

@@ -21,10 +21,24 @@ const DURACIONES = [
   { v: 30, txt: '30 minutos' },
   { v: 120, txt: '2 horas' },
   { v: 480, txt: 'Toda la jornada (8 h)' },
+  { v: 1440, txt: '1 día' },
+  { v: 10080, txt: '1 semana' },
   { v: null, txt: 'Sin límite (hasta retirarlo)' },
+  { v: 'fecha', txt: 'Hasta una fecha y hora…' },
 ];
 
-const form = reactive({ titulo: '', mensaje: '', nivel: 'info', minutos: 120 });
+const DESTINOS = [
+  { v: 'INTERNO', txt: '👥 Usuarios del sistema', desc: 'Sale en la pantalla de quienes trabajan en el sistema.' },
+  { v: 'PUBLICO', txt: '🌐 Página pública', desc: 'Lo ven los visitantes: promociones, avisos, ofertas por tiempo limitado.' },
+  { v: 'AMBOS', txt: '📣 Ambos', desc: 'Para todos.' },
+];
+const ETIQUETA_DESTINO = { INTERNO: 'Usuarios', PUBLICO: 'Página pública', AMBOS: 'Usuarios y página pública' };
+
+const form = reactive({ titulo: '', mensaje: '', nivel: 'info', minutos: 120, destino: 'INTERNO', programar: false, desde: '', hasta: '', enlace: '' });
+const ahoraLocal = () => {
+  const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+  return d.toISOString().slice(0, 16);
+};
 
 const vigentes = computed(() => historial.value.filter((a) => a.activo && !vencido(a)));
 const pasados = computed(() => historial.value.filter((a) => !a.activo || vencido(a)));
@@ -32,6 +46,8 @@ const pasados = computed(() => historial.value.filter((a) => !a.activo || vencid
 function vencido(a) {
   return !!a.vigenteHasta && new Date(a.vigenteHasta) <= new Date();
 }
+
+const programado = (a) => !!a.vigenteDesde && new Date(a.vigenteDesde) > new Date();
 
 const cuando = (t) => {
   if (!t) return '';
@@ -54,8 +70,11 @@ onMounted(cargar);
 
 async function publicar() {
   if (!form.mensaje.trim()) { toast('Escribe el mensaje', 'error'); return; }
+  if (form.programar && !form.desde) { toast('Elige cuándo empieza', 'error'); return; }
+  if (form.minutos === 'fecha' && !form.hasta) { toast('Elige hasta cuándo se muestra', 'error'); return; }
+  const quien = form.destino === 'PUBLICO' ? 'la página pública' : form.destino === 'AMBOS' ? 'la página pública y la pantalla de todos los usuarios' : 'la pantalla de TODOS los usuarios conectados';
   const si = await alertaConAccion(
-    `Esto va a salir en la pantalla de TODOS los usuarios conectados ahora mismo. ¿Publicarlo?`,
+    `Esto va a salir en ${quien} ${form.programar ? 'desde la fecha elegida' : 'ahora mismo'}. ¿Publicarlo?`,
     form.nivel === 'urgente' ? 'advertencia' : 'info', () => {});
   if (!si || publicando.value) return;
 
@@ -67,14 +86,20 @@ async function publicar() {
         titulo: form.titulo.trim() || null,
         mensaje: form.mensaje.trim(),
         nivel: form.nivel,
-        minutos: form.minutos,
+        minutos: form.minutos === 'fecha' ? null : form.minutos,
+        hasta: form.minutos === 'fecha' ? form.hasta : null,
+        desde: form.programar ? form.desde : null,
+        destino: form.destino,
+        enlace: form.enlace.trim() || null,
       }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { await aviso(d.mensaje || 'No se pudo publicar', 'error', 0); return; }
-    tienda.aplicar(d);
+    if (d.destino !== 'PUBLICO' && !programado(d)) tienda.aplicar(d);
     form.titulo = '';
     form.mensaje = '';
+    form.enlace = '';
+    form.programar = false;
     await cargar();
     toast('Anuncio publicado', 'ok');
   } catch (e) {
@@ -106,10 +131,9 @@ async function retirar(a) {
 
 <template>
   <p class="muted nota">
-    Lo que publiques aquí aparece <strong>al instante</strong> en la pantalla de todos los
-    usuarios conectados, estén en el mapa, registrando una venta o en cualquier otra opción.
-    Sale arriba a la derecha y <strong>no les bloquea el trabajo</strong>: cada uno lo cierra
-    cuando lo leyó.
+    Publica avisos para quienes trabajan en el sistema (salen arriba a la derecha, sin bloquear el trabajo)
+    o para la <strong>página pública</strong> (anuncios, promociones o avisos por tiempo limitado).
+    Puedes programar cuándo empieza y cuándo termina: al vencer deja de verse solo.
   </p>
 
   <section class="card redactar">
@@ -128,6 +152,17 @@ async function retirar(a) {
     </label>
 
     <div class="campo">
+      <span>¿Quién lo ve?</span>
+      <div class="niveles">
+        <button v-for="d in DESTINOS" :key="d.v" type="button" class="nivel destino"
+                :class="{ marcado: form.destino === d.v }" @click="form.destino = d.v">
+          <strong>{{ d.txt }}</strong>
+          <span class="muted">{{ d.desc }}</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="campo">
       <span>Tipo</span>
       <div class="niveles">
         <button v-for="n in NIVELES" :key="n.v" type="button" class="nivel"
@@ -139,24 +174,38 @@ async function retirar(a) {
       </div>
     </div>
 
-    <label class="campo">
-      <span>Cuánto tiempo se muestra</span>
-      <select v-model="form.minutos" class="control">
-        <option v-for="d in DURACIONES" :key="String(d.v)" :value="d.v">{{ d.txt }}</option>
-      </select>
-      <span class="muted chico">
-        Pasado ese tiempo deja de verse solo. Con «sin límite» hay que retirarlo a mano.
-      </span>
+    <div class="fechas">
+      <label class="campo">
+        <span>Empieza</span>
+        <select v-model="form.programar" class="control">
+          <option :value="false">Ahora mismo</option>
+          <option :value="true">En una fecha y hora…</option>
+        </select>
+        <input v-if="form.programar" v-model="form.desde" type="datetime-local" class="control" :min="ahoraLocal()" />
+      </label>
+      <label class="campo">
+        <span>Se muestra</span>
+        <select v-model="form.minutos" class="control">
+          <option v-for="d in DURACIONES" :key="String(d.v)" :value="d.v">{{ d.txt }}</option>
+        </select>
+        <input v-if="form.minutos === 'fecha'" v-model="form.hasta" type="datetime-local" class="control" :min="form.desde || ahoraLocal()" />
+      </label>
+    </div>
+    <span class="muted chico">Al vencer deja de verse solo. Con «sin límite» hay que retirarlo a mano.</span>
+
+    <label v-if="form.destino !== 'INTERNO'" class="campo">
+      <span>Enlace <span class="muted">(opcional: botón «Ver más» en la página pública)</span></span>
+      <input v-model="form.enlace" class="control" maxlength="300" placeholder="https://…" inputmode="url" />
     </label>
 
     <button class="btn btn-primario btn-publicar" :disabled="publicando || !form.mensaje.trim()"
             @click="publicar">
-      {{ publicando ? 'Publicando…' : '📣 Publicar para todos' }}
+      {{ publicando ? 'Publicando…' : form.programar ? '🗓️ Programar comunicado' : '📣 Publicar' }}
     </button>
   </section>
 
   <section class="listado">
-    <h2>En pantalla ahora ({{ vigentes.length }})</h2>
+    <h2>Vigentes y programados ({{ vigentes.length }})</h2>
     <div v-if="cargando" class="vacio">Cargando…</div>
     <p v-else-if="!vigentes.length" class="muted">No hay ningún anuncio publicado.</p>
     <ul v-else class="lista">
@@ -165,7 +214,9 @@ async function retirar(a) {
           <strong v-if="a.titulo">{{ a.titulo }}</strong>
           <p class="mensaje">{{ a.mensaje }}</p>
           <span class="muted chico">
+            <b class="destino-chip">{{ ETIQUETA_DESTINO[a.destino] || 'Usuarios' }}</b>
             {{ a.publicadoPor || '—' }} · {{ cuando(a.publicado) }}
+            <template v-if="programado(a)"> · empieza {{ cuando(a.vigenteDesde) }}</template>
             <template v-if="a.vigenteHasta"> · hasta {{ cuando(a.vigenteHasta) }}</template>
             <template v-else> · sin límite</template>
           </span>
@@ -212,6 +263,10 @@ async function retirar(a) {
 .n-urgente { --color-nivel: var(--danger, #dc2626); }
 
 .btn-publicar { min-height: 50px; font-size: 1rem; }
+.destino { --color-nivel: var(--acento); }
+.fechas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.destino-chip { font-size: 0.72rem; padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--acento-suave); color: var(--acento); margin-right: 0.3rem; }
+@media (max-width: 560px) { .fechas { grid-template-columns: minmax(0, 1fr); } }
 
 .listado { display: flex; flex-direction: column; gap: 0.6rem; }
 .lista { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }

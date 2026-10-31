@@ -10,7 +10,7 @@ const CLAVE_CACHE = 'plano.cache.v1';
 function leerCache() {
   try {
     const guardado = JSON.parse(localStorage.getItem(CLAVE_CACHE) || 'null');
-    return guardado && guardado.url && guardado.ancho ? guardado : null;
+    return guardado && guardado.ancho && (guardado.url || guardado.sinFondo) ? guardado : null;
   } catch {
     return null;
   }
@@ -27,8 +27,10 @@ export const usePlanoStore = defineStore('plano', () => {
   const plano = ref(leerCache() || { ...RESPALDO });
   let promesa = null;
 
-  const src = computed(() =>
-    plano.value.propio ? urlServidor(plano.value.url) : plano.value.url);
+  const src = computed(() => {
+    if (!plano.value.url) return null;
+    return plano.value.propio ? urlServidor(plano.value.url) : plano.value.url;
+  });
 
   const aspecto = computed(() => (plano.value.alto || 1) / (plano.value.ancho || 1));
 

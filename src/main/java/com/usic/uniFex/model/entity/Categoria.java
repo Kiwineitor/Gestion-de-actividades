@@ -46,4 +46,18 @@ public class Categoria extends AuditoriaConfig{
 
     @Column(name = "precio_base")
     private java.math.BigDecimal precioBase;
+
+    @Column(name = "personas_por_puesto")
+    private Integer personasPorPuesto;
+
+    @Column(name = "costo_persona_extra")
+    private java.math.BigDecimal costoPersonaExtra;
+
+    public int personasIncluidas() {
+        return personasPorPuesto == null || personasPorPuesto < 1 ? 2 : personasPorPuesto;
+    }
+
+    public java.math.BigDecimal costoExtra() {
+        return costoPersonaExtra == null ? new java.math.BigDecimal("15") : costoPersonaExtra;
+    }
 }

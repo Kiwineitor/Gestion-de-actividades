@@ -62,6 +62,12 @@ public class EdicionApiController {
         return responder(actividades.editar(id, datos));
     }
 
+    @DeleteMapping("/{id}")
+    @PreAuthorize(Roles.GESTIONA_ACTIVIDADES)
+    public ResponseEntity<Map<String, Object>> eliminar(@PathVariable Long id) {
+        return responder(actividades.eliminar(id, usuarioActual()));
+    }
+
     @PostMapping("/{id}/activar")
     @PreAuthorize(Roles.SOLO_SUPER_USUARIO)
     public ResponseEntity<Map<String, Object>> activar(@PathVariable Long id) {
@@ -73,6 +79,28 @@ public class EdicionApiController {
     public ResponseEntity<Map<String, Object>> subirPortada(@PathVariable Long id, @RequestParam("archivo") MultipartFile archivo)
             throws IOException {
         return responder(actividades.subirPortada(id, archivo));
+    }
+
+    public record Habilitacion(Boolean habilitada) {
+    }
+
+    @PostMapping("/{id}/habilitar")
+    @PreAuthorize(Roles.GESTIONA_ACTIVIDADES)
+    public ResponseEntity<Map<String, Object>> habilitar(@PathVariable Long id, @RequestBody Habilitacion req) {
+        return responder(actividades.habilitar(id, req != null && Boolean.TRUE.equals(req.habilitada())));
+    }
+
+    @PostMapping(value = "/{id}/qr-pago", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize(Roles.GESTIONA_ACTIVIDADES)
+    public ResponseEntity<Map<String, Object>> subirQrPago(@PathVariable Long id, @RequestParam("archivo") MultipartFile archivo)
+            throws IOException {
+        return responder(actividades.subirQrPago(id, archivo));
+    }
+
+    @DeleteMapping("/{id}/qr-pago")
+    @PreAuthorize(Roles.GESTIONA_ACTIVIDADES)
+    public ResponseEntity<Map<String, Object>> quitarQrPago(@PathVariable Long id) {
+        return responder(actividades.quitarQrPago(id));
     }
 
     @DeleteMapping("/{id}/portada")

@@ -31,8 +31,17 @@ public class AnuncioService {
     private final IAnuncioDao dao;
     private final IUsuarioDao usuarioDao;
     private final SimpMessagingTemplate messaging;
+    private final AvisoPublicoService avisoPublico;
 
-    public record NuevoAnuncio(String titulo, String mensaje, String nivel, Integer minutos) {
+    private static final Set<String> DESTINOS = Set.of(Anuncio.INTERNO, Anuncio.PUBLICO, Anuncio.AMBOS);
+
+    public record NuevoAnuncio(String titulo, String mensaje, String nivel, Integer minutos,
+                               String destino, LocalDateTime desde, LocalDateTime hasta, String enlace) {
+    }
+
+    @Transactional(readOnly = true)
+    public List<AnuncioDTO> publicos() {
+        return dao.publicos(LocalDateTime.now()).stream().map(a -> AnuncioDTO.de(a, null)).toList();
     }
 
     @Transactional(readOnly = true)
@@ -54,9 +63,22 @@ public class AnuncioService {
         a.setTitulo(limpio(req.titulo()));
         a.setMensaje(mensaje);
         a.setNivel(NIVELES.contains(req.nivel()) ? req.nivel() : Anuncio.INFO);
-        if (req.minutos() != null && req.minutos() > 0) {
-            a.setVigenteHasta(LocalDateTime.now().plusMinutes(req.minutos()));
+        a.setDestino(DESTINOS.contains(req.destino()) ? req.destino() : Anuncio.INTERNO);
+        LocalDateTime inicio = req.desde() != null && req.desde().isAfter(LocalDateTime.now()) ? req.desde() : null;
+        a.setVigenteDesde(inicio);
+        if (req.hasta() != null) {
+            if (!req.hasta().isAfter(inicio != null ? inicio : LocalDateTime.now())) {
+                throw new IllegalArgumentException("La fecha de fin debe ser posterior al inicio");
+            }
+            a.setVigenteHasta(req.hasta());
+        } else if (req.minutos() != null && req.minutos() > 0) {
+            a.setVigenteHasta((inicio != null ? inicio : LocalDateTime.now()).plusMinutes(req.minutos()));
         }
+        String enlace = limpio(req.enlace());
+        if (enlace != null && !enlace.matches("(?i)^https?://\\S{3,290}$")) {
+            throw new IllegalArgumentException("El enlace debe empezar con http:// o https://");
+        }
+        a.setEnlace(enlace);
         a.setRegistro(new Date());
         a.setRegistroIdUsuario(usuarioId);
         a.setEstado(Anuncio.PUBLICADO);
@@ -81,10 +103,15 @@ public class AnuncioService {
     }
 
     private void difundir(AnuncioDTO dto) {
-        try {
-            messaging.convertAndSend(TOPIC, dto);
-        } catch (Exception e) {
-            log.warn("No se pudo difundir el anuncio {}: {}", dto.id(), e.getMessage());
+        if (!Anuncio.PUBLICO.equals(dto.destino())) {
+            try {
+                messaging.convertAndSend(TOPIC, dto);
+            } catch (Exception e) {
+                log.warn("No se pudo difundir el anuncio {}: {}", dto.id(), e.getMessage());
+            }
+        }
+        if (dto.destino() == null || !Anuncio.INTERNO.equals(dto.destino())) {
+            avisoPublico.cambio("anuncios", dto.id());
         }
     }
 

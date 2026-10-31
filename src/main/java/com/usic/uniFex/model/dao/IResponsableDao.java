@@ -157,14 +157,14 @@ public interface IResponsableDao extends JpaRepository<Responsable, Long> {
             ) ci_resumen ON ci_resumen.id_responsable = r.id
             WHERE (r._estado IS NULL OR r._estado <> 'X')
               AND (p._estado IS NULL OR p._estado <> 'X')
-              AND i.id_edicion = (SELECT ed.id FROM edicion ed WHERE ed.activa LIMIT 1)
+              AND i.id_edicion = coalesce(cast(:edicion as bigint), (select ed.id from edicion ed where ed.activa limit 1))
             ORDER BY e.nombre ASC, c.nombre ASC,
                      NULLIF(REGEXP_REPLACE(pu.codigo, '\\D', '', 'g'), '')::INT NULLS LAST,
                      pu.codigo ASC,
                      r.es_titular DESC,
                      p.paterno ASC, p.materno ASC, p.nombre ASC
             """, nativeQuery = true)
-    List<ResponsableReporteView> listarParaReporte();
+    List<ResponsableReporteView> listarParaReporte(@Param("edicion") Long edicion);
 
     @Query(value = """
     SELECT
@@ -230,8 +230,8 @@ List<ResponsableDetalleRow> findDetallePorCi(@Param("ci") String ci);
               LEFT  JOIN persona qp    ON qp.id = qu.persona_id
              WHERE r.es_extra = true
                AND (r."_estado" IS NULL OR r."_estado" <> 'X')
-               AND i.id_edicion = (SELECT ed.id FROM edicion ed WHERE ed.activa LIMIT 1)
+               AND i.id_edicion = coalesce(cast(:edicion as bigint), (select ed.id from edicion ed where ed.activa limit 1))
              ORDER BY r."_fecha_registro" DESC
             """, nativeQuery = true)
-    List<Object[]> listarExtrasDeEdicionActiva();
+    List<Object[]> listarExtrasDeEdicion(@Param("edicion") Long edicion);
 }

@@ -20,15 +20,15 @@ public class ImpresionMasivaService {
     private final ICredencialDao dao;
 
     @Transactional(readOnly = true)
-    public List<CredencialDTO> listarTodas() {
-        return dao.listarDeEdicionActiva().stream()
+    public List<CredencialDTO> listarTodas(Long edicion) {
+        return dao.listarDeEdicion(edicion).stream()
                 .map(this::de)
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public List<CredencialDTO> listarDeVendedor(Long vendedorId) {
-        return dao.listarDeEdicionActivaDe(vendedorId).stream()
+    public List<CredencialDTO> listarDeVendedor(Long vendedorId, Long edicion) {
+        return dao.listarDeEdicionDe(vendedorId, edicion).stream()
                 .map(this::de)
                 .toList();
     }
@@ -46,7 +46,7 @@ public class ImpresionMasivaService {
     @Transactional(readOnly = true)
     public List<CredencialDTO> porInscripcion(Long inscripcionId) {
         if (inscripcionId == null) return List.of();
-        return listarTodas().stream()
+        return listarTodas(null).stream()
                 .filter(c -> inscripcionId.equals(c.inscripcionId()))
                 .toList();
     }

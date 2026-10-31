@@ -30,11 +30,22 @@ public class CategoriaMapaService {
 
     public record NuevaCategoria(String nombre, Integer cantidad, String color, String forma,
                                  Double tamanoMapa, BigDecimal precioBase, String tamano,
-                                 Double mapaProporcion) {
+                                 Double mapaProporcion, Integer personasPorPuesto, BigDecimal costoPersonaExtra) {
     }
 
     public record CambioCategoria(String nombre, String color, String forma, Double tamanoMapa,
-                                  BigDecimal precioBase, Double mapaProporcion, String tamano) {
+                                  BigDecimal precioBase, Double mapaProporcion, String tamano,
+                                  Integer personasPorPuesto, BigDecimal costoPersonaExtra) {
+    }
+
+    private static Integer personasValidas(Integer n) {
+        if (n == null) return null;
+        return Math.max(1, Math.min(50, n));
+    }
+
+    private static BigDecimal costoValido(BigDecimal c) {
+        if (c == null) return null;
+        return c.signum() < 0 ? BigDecimal.ZERO : c;
     }
 
     public record ResultadoAjuste(int creadas, int anuladas, int noQuitadas, List<Long> afectados) {
@@ -56,6 +67,10 @@ public class CategoriaMapaService {
         c.setTamanoMapa(req.tamanoMapa() != null ? req.tamanoMapa() : Categoria.TAMANO_MAPA_POR_DEFECTO);
         c.setMapaProporcion(proporcionValida(req.mapaProporcion()));
         c.setPrecioBase(req.precioBase() != null ? req.precioBase() : Categoria.PRECIO_POR_DEFECTO);
+        Integer personas = personasValidas(req.personasPorPuesto());
+        c.setPersonasPorPuesto(personas != null ? personas : 2);
+        BigDecimal extra = costoValido(req.costoPersonaExtra());
+        c.setCostoPersonaExtra(extra != null ? extra : new BigDecimal("15"));
         c.setEstado(Categoria.REGISTRO_ACTIVO);
         sellarRegistro(c, now, usuarioId);
         Categoria guardada = categoriaService.save(c);
@@ -80,6 +95,8 @@ public class CategoriaMapaService {
             puestoDao.actualizarTamanoDeCategoria(id, cambio.tamano().trim());
         }
         if (cambio.precioBase() != null) c.setPrecioBase(cambio.precioBase());
+        if (cambio.personasPorPuesto() != null) c.setPersonasPorPuesto(personasValidas(cambio.personasPorPuesto()));
+        if (cambio.costoPersonaExtra() != null) c.setCostoPersonaExtra(costoValido(cambio.costoPersonaExtra()));
         c.setModificacion(new Date());
         return categoriaService.save(c);
     }

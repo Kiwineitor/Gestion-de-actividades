@@ -57,6 +57,8 @@ public class CategoriaApiController {
                     m.put("cantidad", puestoDao.idsActivosDeCategoria(c.getId()).size());
                     m.put("tamano", puestoDao.tamanosDeCategoria(c.getId()).stream().findFirst().orElse(null));
                     m.put("precioBase", c.getPrecioBase());
+                    m.put("personasPorPuesto", c.personasIncluidas());
+                    m.put("costoPersonaExtra", c.costoExtra());
                     m.put("opciones", porCategoria.getOrDefault(c.getId(), List.of()).stream()
                             .map(CategoriaApiController::opcionComoMapa).toList());
                     return m;

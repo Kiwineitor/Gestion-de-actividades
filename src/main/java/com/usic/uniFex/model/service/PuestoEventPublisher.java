@@ -25,6 +25,7 @@ public class PuestoEventPublisher {
 
     private final SimpMessagingTemplate messaging;
     private final IPuestoDao puestoDao;
+    private final AvisoPublicoService avisoPublico;
 
     @Transactional(readOnly = true)
     public void publicar(Long puestoId) {
@@ -51,6 +52,7 @@ public class PuestoEventPublisher {
                 messaging.convertAndSend(TOPIC, PuestoEstadoDTO.de(p));
             }
             log.info("Difundidas {} casetas de {} pedidas", casetas.size(), puestoIds.size());
+            if (!casetas.isEmpty()) avisoPublico.cambio("feria", casetas.get(0).getId());
         } catch (Exception e) {
             log.error("No se pudo difundir el estado de {} caseta(s)", puestoIds.size(), e);
         }

@@ -8,6 +8,8 @@ import { escucharPublico } from '../ui/canalPublico';
 import { avisoPublico } from '../ui/avisosPublicos';
 import { enlaceWhatsApp } from '../ui/tokenPublico';
 import { marca } from '../ui/marca';
+import { recordarReserva, olvidarReserva } from '../ui/reservasGuardadas';
+import { guardarBlob } from '../ui/descargas';
 
 const route = useRoute();
 const reserva = ref(null);
@@ -18,8 +20,11 @@ const mensaje = ref('');
 const archivo = ref(null);
 const vistaPrevia = ref('');
 const qr = ref('');
+const paseActual = ref(0);
+const qrPases = ref([]);
 const condiciones = ref(false);
 const confirmarCancelar = ref(false);
+const guardandoQr = ref(false);
 let reloj = null;
 let sondeo = null;
 let soltarCanal = null;
@@ -51,10 +56,12 @@ const bs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO')}`;
 async function cargar() {
   try {
     const r = await fetch(urlApi(`/api/publico/mesas/reservas/${encodeURIComponent(route.query.reserva)}`));
+    if (r.status === 404) olvidarReserva(String(route.query.reserva));
     if (!r.ok) { error.value = 'No encontramos esta reserva. Revisa el código.'; return; }
     const antes = reserva.value?.estado;
     reserva.value = await r.json();
     segundos.value = reserva.value.segundosRestantes || 0;
+    recordarReserva(reserva.value);
     if (antes && antes !== reserva.value.estado) avisoPublico(ESTADOS[reserva.value.estado]?.txt || 'Tu reserva cambió');
   } catch {
     error.value = 'Sin conexión. Vuelve a intentar.';
@@ -64,8 +71,24 @@ async function cargar() {
 watch(() => reserva.value?.estado, async (e) => {
   clearInterval(sondeo);
   if (e === 'EN_REVISION' || e === 'BLOQUEADA') sondeo = setInterval(cargar, 30000);
-  if (e === 'CONFIRMADA') qr.value = await QRCode.toDataURL(reserva.value.codigo, { width: 320, margin: 1, errorCorrectionLevel: 'M' });
+  if (e === 'CONFIRMADA') await prepararPases();
 });
+
+const pases = computed(() => reserva.value?.pases ?? []);
+const pase = computed(() => pases.value[paseActual.value] || null);
+const urlPdf = computed(() => (reserva.value ? urlApi(`/api/publico/mesas/reservas/${encodeURIComponent(reserva.value.codigo)}/pases.pdf`) : ''));
+
+async function prepararPases() {
+  const lista = reserva.value?.pases ?? [];
+  if (!lista.length) {
+    qr.value = await QRCode.toDataURL(reserva.value.codigo, { width: 320, margin: 1, errorCorrectionLevel: 'M' });
+    return;
+  }
+  qrPases.value = await Promise.all(lista.map((p) => QRCode.toDataURL(p.codigo, { width: 320, margin: 1, errorCorrectionLevel: 'M' })));
+  paseActual.value = Math.min(paseActual.value, lista.length - 1);
+}
+
+watch(() => JSON.stringify(reserva.value?.pases ?? []), () => { if (reserva.value?.estado === 'CONFIRMADA') prepararPases(); });
 
 watch(() => evento.value?.id, (id) => {
   soltarCanal?.();
@@ -109,6 +132,27 @@ async function cancelar() {
   await cargar();
 }
 
+async function guardarQr() {
+  if (!evento.value?.pagoQrUrl) return;
+  guardandoQr.value = true;
+  try {
+    const r = await fetch(urlApi(evento.value.pagoQrUrl));
+    if (!r.ok) throw new Error();
+    const blob = await r.blob();
+    const ext = (blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+    await guardarBlob(blob, `qr-pago-${reserva.value.codigo}.${ext}`);
+    avisoPublico('QR guardado. Ábrelo desde la app de tu banco y vuelve aquí.');
+  } catch {
+    window.open(urlApi(evento.value.pagoQrUrl), '_blank', 'noopener');
+  } finally {
+    guardandoQr.value = false;
+  }
+}
+
+function alVolver() {
+  if (document.visibilityState === 'visible' && reserva.value) cargar();
+}
+
 async function copiar(texto, que) {
   try {
     await navigator.clipboard.writeText(texto);
@@ -119,6 +163,8 @@ async function copiar(texto, que) {
 }
 
 onMounted(async () => {
+  document.addEventListener('visibilitychange', alVolver);
+  window.addEventListener('pageshow', alVolver);
   await cargar();
   reloj = setInterval(() => {
     if (reserva.value?.estado !== 'BLOQUEADA') return;
@@ -127,6 +173,8 @@ onMounted(async () => {
   }, 1000);
 });
 onUnmounted(() => {
+  document.removeEventListener('visibilitychange', alVolver);
+  window.removeEventListener('pageshow', alVolver);
   clearInterval(reloj);
   clearInterval(sondeo);
   soltarCanal?.();
@@ -159,6 +207,7 @@ onUnmounted(() => {
           <div><dt>Total</dt><dd>{{ bs(reserva.monto) }}</dd></div>
           <div><dt>Titular</dt><dd>{{ reserva.nombre }} {{ reserva.apellidos }}</dd></div>
           <div><dt>Carnet</dt><dd>{{ reserva.ci }}</dd></div>
+          <div><dt>Personas</dt><dd>{{ reserva.personas }}<small v-if="reserva.tipoPase"> · {{ reserva.tipoPase }}</small></dd></div>
         </dl>
         <div v-if="reserva.estado === 'BLOQUEADA'" class="tiempo" :class="{ urgente: segundos < 60 }">
           <div class="anillo" :style="{ '--avance': avance }"><strong>{{ minutos }}</strong></div>
@@ -166,7 +215,8 @@ onUnmounted(() => {
         </div>
         <p class="whatsapp-nota">
           <span class="icono" aria-hidden="true">💬</span>
-          <span>Te escribiremos por WhatsApp<template v-if="reserva.celular"> al <b>{{ reserva.celular }}</b></template> cuando el encargado revise tu pago.</span>
+          <span v-if="reserva.estado === 'CONFIRMADA'">Te enviamos tus pases por WhatsApp<template v-if="reserva.celular"> al <b>{{ reserva.celular }}</b></template>; también están aquí abajo.</span>
+          <span v-else>Te escribiremos por WhatsApp<template v-if="reserva.celular"> al <b>{{ reserva.celular }}</b></template> cuando el encargado revise tu pago.</span>
         </p>
       </section>
 
@@ -174,7 +224,10 @@ onUnmounted(() => {
         <template v-if="reserva.estado === 'BLOQUEADA'">
           <h2><span class="paso">1</span> Paga {{ bs(reserva.monto) }}</h2>
           <div class="pago">
-            <img v-if="evento.pagoQrUrl" :src="urlApi(evento.pagoQrUrl)" alt="QR de pago" class="qr-pago" />
+            <div v-if="evento.pagoQrUrl" class="qr-caja">
+              <img :src="urlApi(evento.pagoQrUrl)" alt="QR de pago" class="qr-pago" />
+              <button type="button" class="pub-boton chico guardar-qr" :disabled="guardandoQr" @click="guardarQr">{{ guardandoQr ? 'Guardando…' : '⬇ Guardar QR' }}</button>
+            </div>
             <dl v-if="evento.pagoCuenta || evento.pagoBanco" class="cuenta">
               <div v-if="evento.pagoBanco"><dt>Banco</dt><dd>{{ evento.pagoBanco }}</dd></div>
               <div v-if="evento.pagoCuenta"><dt>Cuenta</dt><dd><button type="button" class="copiable" @click="copiar(evento.pagoCuenta, 'Número de cuenta')">{{ evento.pagoCuenta }}</button></dd></div>
@@ -183,6 +236,10 @@ onUnmounted(() => {
             </dl>
           </div>
           <p v-if="evento.pagoInstrucciones" class="nota">{{ evento.pagoInstrucciones }}</p>
+          <p class="salir-volver">
+            <span aria-hidden="true">📱</span>
+            <span>¿Pagas desde este celular? Guarda el QR, ábrelo en la app de tu banco y <b>vuelve a esta página</b>: tu reserva queda guardada aquí y también te la enviamos por WhatsApp.</span>
+          </p>
 
           <h2><span class="paso">2</span> Adjunta tu comprobante</h2>
           <label class="archivo" :class="{ lleno: archivo }">
@@ -203,8 +260,21 @@ onUnmounted(() => {
         </div>
 
         <div v-else-if="reserva.estado === 'CONFIRMADA'" class="mensaje-estado confirmada">
-          <img v-if="qr" :src="qr" alt="Código QR de ingreso" class="qr" />
-          <p>Muestra este QR y tu carnet en el ingreso.</p>
+          <template v-if="pases.length">
+            <div class="pase-cab">
+              <button type="button" class="flecha" :disabled="paseActual === 0" aria-label="Pase anterior" @click="paseActual--">‹</button>
+              <span>Pase <b>{{ paseActual + 1 }}</b> de {{ pases.length }}<template v-if="pase?.tipo"> · {{ pase.tipo }}</template></span>
+              <button type="button" class="flecha" :disabled="paseActual >= pases.length - 1" aria-label="Pase siguiente" @click="paseActual++">›</button>
+            </div>
+            <img v-if="qrPases[paseActual]" :src="qrPases[paseActual]" :alt="`QR del pase ${paseActual + 1}`" class="qr" :class="{ usado: pase?.ingresoEn }" />
+            <p v-if="pase?.ingresoEn" class="nota ok">Este pase ya ingresó ✓</p>
+            <p>Cada persona muestra su propio pase en la puerta.</p>
+            <a :href="urlPdf" target="_blank" rel="noopener" class="pub-boton chico">⬇ Descargar los {{ pases.length }} pases (PDF)</a>
+          </template>
+          <template v-else>
+            <img v-if="qr" :src="qr" alt="Código QR de ingreso" class="qr" />
+            <p>Muestra este QR y tu carnet en el ingreso.</p>
+          </template>
           <p v-if="evento.horaLimiteTexto" class="nota">Llega antes de las <b>{{ evento.horaLimiteTexto }}</b>.</p>
           <p v-if="reserva.beneficios" class="nota">Incluye: {{ reserva.beneficios }}</p>
           <p v-if="reserva.ingresoEn" class="nota ok">Ingreso registrado ✓</p>
@@ -276,7 +346,11 @@ onUnmounted(() => {
 .accion h2 { margin: 0; font-size: 1.05rem; display: flex; align-items: center; gap: 8px; }
 .paso { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--pub-acento); font: 700 0.8rem 'Public Sans', sans-serif; color: #fff; }
 .pago { display: flex; gap: 14px; align-items: flex-start; }
-.qr-pago { width: clamp(110px, 20vh, 170px); aspect-ratio: 1; object-fit: contain; background: #fff; border-radius: 12px; padding: 6px; flex: none; }
+.qr-caja { display: flex; flex-direction: column; align-items: stretch; gap: 6px; flex: none; }
+.qr-pago { width: clamp(110px, 20vh, 170px); aspect-ratio: 1; object-fit: contain; background: #fff; border-radius: 12px; padding: 6px; flex: none; box-sizing: border-box; }
+.guardar-qr { justify-content: center; }
+.salir-volver { margin: 0; display: flex; gap: 8px; align-items: flex-start; font-size: 0.82rem; color: var(--pub-suave); padding: 8px 10px; border-radius: 10px; background: var(--pub-panel-2); }
+.salir-volver b { color: var(--pub-texto); }
 .cuenta { margin: 0; display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; font-size: 0.9rem; }
 .cuenta div { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px dashed var(--pub-linea); padding-bottom: 4px; }
 .cuenta dt { color: var(--pub-suave); }
@@ -296,7 +370,11 @@ onUnmounted(() => {
 .mensaje-estado p { margin: 0; color: var(--pub-suave); max-width: 30rem; }
 .mensaje-estado b { color: var(--pub-texto); }
 .grande { font-size: 2.4rem; }
-.qr { width: clamp(150px, 30vh, 240px); background: #fff; border-radius: 14px; padding: 8px; }
+.qr { width: clamp(140px, 26vh, 230px); background: #fff; border-radius: 14px; padding: 8px; }
+.qr.usado { opacity: 0.35; }
+.pase-cab { display: flex; align-items: center; gap: 12px; }
+.flecha { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--pub-linea); background: var(--pub-panel-2); color: var(--pub-texto); font-size: 1.2rem; cursor: pointer; }
+.flecha:disabled { opacity: 0.35; cursor: default; }
 .aviso-error { margin: 0; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--pub-error) 14%, transparent); color: var(--pub-error); font-size: 0.9rem; }
 .pie { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0 calc(12px + env(safe-area-inset-bottom, 0px)); }
 .enlace { border: 0; background: none; color: var(--pub-suave); text-decoration: underline; cursor: pointer; font: inherit; font-size: 0.86rem; padding: 0; }
@@ -310,7 +388,9 @@ onUnmounted(() => {
   .datos { grid-template-columns: 1fr 1fr; gap: 6px 10px; }
   .tiempo .anillo { width: 58px; height: 58px; }
   .tiempo .anillo strong { width: 46px; height: 46px; font-size: 0.85rem; }
-  .qr-pago { width: 104px; }
+  .pago { flex-direction: column; align-items: center; }
+  .qr-pago { width: min(62vw, 220px); }
+  .cuenta { width: 100%; }
   .whatsapp-nota { font-size: 0.8rem; padding: 8px 10px; }
 }
 </style>

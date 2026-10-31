@@ -49,9 +49,13 @@ public class ControlVentasService {
     private static final String EDICION_ACTIVA =
             "(select ed.id from edicion ed where ed.activa limit 1)";
 
-    private static final String VENTA_VIVA = """
-            (i."_estado" is null or i."_estado" <> 'X')
-               and i.id_edicion = """ + EDICION_ACTIVA;
+    private static String edicion(Long edicionId) {
+        return edicionId == null ? EDICION_ACTIVA : Long.toString(edicionId);
+    }
+
+    private static String ventaViva(Long edicionId) {
+        return "(i.\"_estado\" is null or i.\"_estado\" <> 'X') and i.id_edicion = " + edicion(edicionId);
+    }
 
     private static String nombreUsuario(String u, String p) {
         return "coalesce(nullif(btrim(concat_ws(' ', " + p + ".nombre, " + p + ".paterno, " + p
@@ -64,16 +68,16 @@ public class ControlVentasService {
     private final AnalisisVentasService analisis;
 
     public record Filtros(Long vendedorId, Long categoriaId, LocalDate desde, LocalDate hasta,
-                          String estadoPago, String texto) {
+                          String estadoPago, String texto, Long edicionId) {
 
         public static Filtros ninguno() {
-            return new Filtros(null, null, null, null, null, null);
+            return new Filtros(null, null, null, null, null, null, null);
         }
     }
 
     public record Calculo(List<Venta> ventas, Map<Long, List<Puesto>> puestos,
                           Map<Long, List<Responsable>> responsables,
-                          Map<Long, Set<Long>> categoriasDeVenta) {
+                          Map<Long, Set<Long>> categoriasDeVenta, Long edicionId) {
 
         public List<Puesto> puestosDe(Long id) {
             return puestos.getOrDefault(id, List.of());
@@ -86,17 +90,22 @@ public class ControlVentasService {
 
     @Transactional(readOnly = true)
     public Calculo calcular() {
-        return cargar();
+        return cargar(null);
+    }
+
+    @Transactional(readOnly = true)
+    public Calculo calcular(Long edicionId) {
+        return cargar(edicionId);
     }
 
     @Transactional(readOnly = true)
     public List<Venta> ventas(Filtros f) {
-        return filtrar(cargar(), f);
+        return filtrar(cargar(f == null ? null : f.edicionId()), f);
     }
 
     @Transactional(readOnly = true)
     public java.util.Optional<ControlVentasDTO.Ficha> ficha(Long inscripcionId) {
-        Calculo c = cargar();
+        Calculo c = cargar(edicionDeVenta(inscripcionId));
         return c.ventas().stream()
                 .filter(v -> v.getInscripcionId().equals(inscripcionId))
                 .findFirst()
@@ -106,7 +115,7 @@ public class ControlVentasService {
 
     @Transactional(readOnly = true)
     public ControlVentasDTO.Tablero tablero(Filtros f) {
-        Calculo c = cargar();
+        Calculo c = cargar(f == null ? null : f.edicionId());
         List<Venta> ventas = filtrar(c, f);
         return new ControlVentasDTO.Tablero(resumen(ventas), vendedores(ventas),
                 categorias(c, ventas), avance(ventas));
@@ -114,6 +123,17 @@ public class ControlVentasService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> opcionesDeFiltro() {
+        return opcionesDeFiltro(null);
+    }
+
+    private Long edicionDeVenta(Long inscripcionId) {
+        List<?> r = em.createNativeQuery("select id_edicion from inscripcion where id = ?1")
+                .setParameter(1, inscripcionId).getResultList();
+        return r.isEmpty() || r.get(0) == null ? null : ((Number) r.get(0)).longValue();
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> opcionesDeFiltro(Long edicionId) {
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("vendedores", opciones("""
                 select distinct u.id, %s as nombre
@@ -122,13 +142,13 @@ public class ControlVentasService {
                   left join persona pe on pe.id = u.persona_id
                  where %s
                  order by nombre
-                """.formatted(nombreUsuario("u", "pe"), VENTA_VIVA)));
+                """.formatted(nombreUsuario("u", "pe"), ventaViva(edicionId))));
         r.put("categorias", opciones("""
                 select c.id, c.nombre from categoria c
                  where (c."_estado" is null or c."_estado" <> 'X')
-                   and c.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
+                   and c.id_edicion = %s
                  order by c.nombre
-                """));
+                """.formatted(edicion(edicionId))));
         return r;
     }
 
@@ -183,7 +203,7 @@ public class ControlVentasService {
         }
 
         Map<String, Integer> vendibles = new HashMap<>();
-        for (AnalisisDTO.Ocupacion o : analisis.ocupacion()) {
+        for (AnalisisDTO.Ocupacion o : analisis.ocupacion(c.edicionId())) {
             if (o.categoria() == null) continue;
             vendibles.put(o.categoria(), Math.max(0, o.total() - o.bloqueadas()));
             conteo.computeIfAbsent(o.categoria(), k -> new int[2]);
@@ -276,7 +296,8 @@ public class ControlVentasService {
                 String.valueOf(v.getInscripcionId()))));
     }
 
-    private Calculo cargar() {
+    private Calculo cargar(Long edicionId) {
+        String ventaViva = ventaViva(edicionId);
         List<Object[]> filasVenta = lista("""
                 select i.id, i.nota_codigo, i.fecha_compra, i.inscripcion_estado,
                        u.id, %s, u.username,
@@ -290,7 +311,7 @@ public class ControlVentasService {
                   left join persona vp on vp.id = u.persona_id
                  where %s
                  order by i.fecha_compra desc nulls last, i.id desc
-                """.formatted(nombreUsuario("u", "vp"), VENTA_VIVA));
+                """.formatted(nombreUsuario("u", "vp"), ventaViva));
 
         List<Object[]> filasPuesto = lista("""
                 select ip.id_inscripcion, p.id, p.codigo, c.id, c.nombre,
@@ -310,7 +331,7 @@ public class ControlVentasService {
                    and (ip."_estado" is null or ip."_estado" <> 'X')
                    and %s
                  order by ip.id_inscripcion, p.codigo
-                """.formatted(VENTA_VIVA));
+                """.formatted(ventaViva));
 
         List<Object[]> filasResp = lista("""
                 select i.id, r.id, r.es_titular, r.es_extra, r.monto_extra, r.comprobante_extra,
@@ -332,7 +353,7 @@ public class ControlVentasService {
                   left join persona pue on pue.id = ue.persona_id
                  where %s
                  order by i.id, r.es_titular desc, r.es_extra, r.id
-                """.formatted(nombreUsuario("ue", "pue"), VENTA_VIVA));
+                """.formatted(nombreUsuario("ue", "pue"), ventaViva));
 
         Map<Long, List<Puesto>> puestos = new LinkedHashMap<>();
         Map<Long, Set<Long>> categoriasDeVenta = new HashMap<>();
@@ -454,7 +475,7 @@ public class ControlVentasService {
                 .collect(Collectors.groupingBy(Venta::getCodigoExpositor, Collectors.counting()));
         for (Venta v : ventas) v.setComprasExpositor(compras.get(v.getCodigoExpositor()).intValue());
 
-        return new Calculo(ventas, puestos, responsables, categoriasDeVenta);
+        return new Calculo(ventas, puestos, responsables, categoriasDeVenta, edicionId);
     }
 
     private Puesto puesto(Venta v, Object[] p) {

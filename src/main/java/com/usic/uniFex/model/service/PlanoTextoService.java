@@ -25,9 +25,11 @@ public class PlanoTextoService {
     private final IPlanoTextoDao dao;
     private final IEdicionDao edicionDao;
     private final SimpMessagingTemplate messaging;
+    private final AvisoPublicoService avisoPublico;
 
     public record CambioTexto(String contenido, Double mapaX, Double mapaY, Double tamano,
-                              String color, String colorBorde, Double grosorBorde, Double rotacion) {
+                              String color, String colorBorde, Double grosorBorde, Double rotacion,
+                              String fondo, Double ancho, Double alto) {
     }
 
     @Transactional(readOnly = true)
@@ -51,6 +53,11 @@ public class PlanoTextoService {
         t.setColorBorde(req.colorBorde() == null ? "#ffffff" : req.colorBorde());
         t.setGrosorBorde(req.grosorBorde() == null ? PlanoTexto.GROSOR_BORDE_POR_DEFECTO : req.grosorBorde());
         t.setRotacion(req.rotacion() == null ? 0d : req.rotacion());
+        t.setFondo(color(req.fondo()));
+        if (t.getFondo() != null) {
+            t.setAncho(req.ancho() == null ? 0.16 : medida(req.ancho()));
+            t.setAlto(req.alto() == null ? 0.08 : medida(req.alto()));
+        }
         t.setEdicion(edicionDao.findFirstByActivaTrueOrderByAnioDesc().orElse(null));
         t.setRegistro(new Date());
         t.setRegistroIdUsuario(usuarioId);
@@ -74,6 +81,13 @@ public class PlanoTextoService {
         if (req.colorBorde() != null) t.setColorBorde(req.colorBorde());
         if (req.grosorBorde() != null) t.setGrosorBorde(req.grosorBorde());
         if (req.rotacion() != null) t.setRotacion(req.rotacion());
+        if (req.fondo() != null) t.setFondo(color(req.fondo()));
+        if (req.ancho() != null) t.setAncho(medida(req.ancho()));
+        if (req.alto() != null) t.setAlto(medida(req.alto()));
+        if (t.getFondo() != null && (t.getAncho() == null || t.getAlto() == null)) {
+            t.setAncho(t.getAncho() == null ? 0.16 : t.getAncho());
+            t.setAlto(t.getAlto() == null ? 0.08 : t.getAlto());
+        }
         t.setModificacion(new Date());
         t.setModificacionIdUsuario(usuarioId);
 
@@ -95,12 +109,28 @@ public class PlanoTextoService {
         return true;
     }
 
+    @Transactional(readOnly = true)
+    public void difundirTodos() {
+        listar().forEach(this::difundir);
+    }
+
     private void difundir(PlanoTextoDTO dto) {
+        avisoPublico.cambio("feria", dto.id());
         try {
             messaging.convertAndSend(TOPIC, dto);
         } catch (Exception e) {
             log.warn("No se pudo difundir el rotulo {}: {}", dto.id(), e.getMessage());
         }
+    }
+
+    private static String color(String c) {
+        if (c == null) return null;
+        String t = c.trim();
+        return t.matches("#[0-9a-fA-F]{6}") ? t : null;
+    }
+
+    private static double medida(double v) {
+        return Math.max(0.01, Math.min(1, v));
     }
 
     private static double acotar(double v) {

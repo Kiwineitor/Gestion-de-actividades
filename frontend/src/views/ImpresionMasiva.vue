@@ -1,10 +1,11 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { apiFetch } from '../api';
 import { url as urlApi } from '../config.js';
 import { toast } from '../ui/toast';
 import { descargarPdf } from '../ui/descargas';
 import { alerta } from '../ui/alerta';
+import { actividadElegida, edicionElegida, eventoElegido, esEventoElegido, actividadActual, conEdicion } from '../ui/actividadElegida';
 
 const cargando = ref(true);
 const busqueda = ref('');
@@ -16,9 +17,19 @@ const rotas = ref(new Set());
 async function cargar() {
   cargando.value = true;
   try {
-    const r = await apiFetch('/api/app/impresion-masiva');
-    if (!r.ok) throw new Error('No se pudo cargar la lista de expositores.');
-    credenciales.value = await r.json();
+    if (esEventoElegido.value) {
+      const r = await apiFetch(`/api/app/mesas/eventos/${eventoElegido.value}/reservas?estado=CONFIRMADA`);
+      if (!r.ok) throw new Error('No se pudo cargar la lista de reservas.');
+      credenciales.value = (await r.json()).map((x) => ({
+        responsableId: x.id, nombre: `${x.nombre} ${x.apellidos}`.trim(), ci: x.ci, entidad: x.codigo,
+        casetas: `Mesa ${x.mesa}`, categoria: x.tipoPase || x.zona, personas: x.personas,
+      }));
+    } else {
+      const r = await apiFetch(conEdicion('/api/app/impresion-masiva'));
+      if (!r.ok) throw new Error('No se pudo cargar la lista de expositores.');
+      credenciales.value = await r.json();
+    }
+    seleccion.value = new Set();
   } catch (e) {
     toast(e.message, 'error');
   } finally {
@@ -53,10 +64,18 @@ async function imprimir(ids, etiqueta) {
   if (generando.value) return;
   generando.value = true;
   try {
+    if (esEventoElegido.value) {
+      await descargarPdf('/api/app/mesas/pases/pdf', `pases-${etiqueta}.pdf`, {
+        method: 'POST',
+        body: JSON.stringify({ reservas: ids.length ? ids : credenciales.value.map((c) => c.responsableId) }),
+      });
+      toast('Pases generados', 'ok');
+      return;
+    }
     const nombre = `credenciales-duplex-a4-${etiqueta}.pdf`;
     await descargarPdf('/api/app/impresion-masiva/pdf', nombre, {
       method: 'POST',
-      body: JSON.stringify({ responsables: ids }),
+      body: JSON.stringify({ responsables: ids, edicion: edicionElegida.value || null }),
     });
     toast('Credenciales de expositor generadas', 'ok');
   } catch (e) {
@@ -75,14 +94,16 @@ function imprimirTodas() {
 }
 
 onMounted(cargar);
+
+watch(actividadElegida, () => cargar());
 </script>
 
 <template>
   <div class="impresion-masiva">
     <header class="fila entre encabezado">
-      <h1>🖨️ Impresión Masiva — Expositores</h1>
+      <h1>🖨️ Impresión masiva — {{ esEventoElegido ? `Pases de ${actividadActual?.nombre || 'el evento'}` : 'Expositores' }}</h1>
       <div class="acciones">
-        <input v-model="busqueda" class="control busca" placeholder="Buscar por nombre, C.I., entidad, caseta…" />
+        <input v-model="busqueda" class="control busca" :placeholder="esEventoElegido ? 'Buscar por titular, C.I., código, mesa…' : 'Buscar por nombre, C.I., entidad, caseta…'" />
         <button class="btn" :disabled="generando || !marcadas.length" @click="imprimirMarcadas">
           Imprimir {{ marcadas.length || '' }} marcada{{ marcadas.length === 1 ? '' : 's' }}
         </button>
@@ -92,9 +113,14 @@ onMounted(cargar);
       </div>
     </header>
 
-    <p class="muted nota">
+    <p v-if="esEventoElegido" class="muted nota">
+      Imprime los pases de las reservas <strong>confirmadas</strong> del evento elegido arriba, con el diseño de credencial
+      vinculado al evento (o la «Credencial virtual» si no tiene uno). Cada pase lleva su QR y permite un ingreso;
+      salen dos por fila en hoja A4.
+    </p>
+    <p v-else class="muted nota">
       Imprime credenciales de expositores con la plantilla <strong>EXPOSITOR</strong> (10×13 cm, foto izq, QR der).
-      No exige comprobante ni foto: imprime TODOS los expositores de la edición activa.
+      No exige comprobante ni foto: imprime TODOS los expositores de la actividad elegida arriba.
       Se descarga <strong>un solo PDF duplex</strong>: cada lote de 4 ocupa 2 páginas seguidas en hoja A4 de
       <strong>21 × 29,7 cm</strong> — la primera con los 4 frentes en cuadrícula 2×2 y la segunda con sus 4 reversos fijos,
       ya espejados para que caigan detrás de su frente. Las credenciales llenan la hoja hasta el borde a lo alto.
@@ -103,11 +129,12 @@ onMounted(cargar);
     </p>
 
     <div v-if="cargando" class="vacio">Cargando…</div>
-    <div v-else-if="filtradas.length === 0" class="vacio">No hay expositores para mostrar.</div>
+    <div v-else-if="filtradas.length === 0" class="vacio">{{ esEventoElegido ? 'No hay reservas confirmadas en este evento.' : 'No hay expositores para mostrar.' }}</div>
 
     <table v-else class="tabla">
       <thead>
-        <tr><th></th><th></th><th>Nombre</th><th>C.I.</th><th>Entidad</th><th>Casetas</th><th>Zona</th></tr>
+        <tr v-if="esEventoElegido"><th></th><th></th><th>Titular</th><th>C.I.</th><th>Código</th><th>Mesa</th><th>Pases</th></tr>
+        <tr v-else><th></th><th></th><th>Nombre</th><th>C.I.</th><th>Entidad</th><th>Casetas</th><th>Zona</th></tr>
       </thead>
       <tbody>
         <tr v-for="c in filtradas" :key="c.responsableId">
@@ -121,7 +148,7 @@ onMounted(cargar);
           <td>{{ c.ci }}</td>
           <td>{{ c.entidad }}</td>
           <td>{{ c.casetas || '—' }}</td>
-          <td>{{ c.categoria || '—' }}</td>
+          <td>{{ esEventoElegido ? `${c.personas} · ${c.categoria || 'General'}` : (c.categoria || '—') }}</td>
         </tr>
       </tbody>
     </table>

@@ -212,6 +212,7 @@ public class VendedorAsignacionService {
     @Transactional(readOnly = true)
     public List<Long> casetasNoPermitidas(Long vendedorId, List<Long> puestoIds) {
         if (puestoIds == null || puestoIds.isEmpty()) return List.of();
+        if (getPuestoIdsDeVendedor(vendedorId).isEmpty()) return List.of();
         java.util.Set<Long> permitidas = dao.puestosPermitidosDe(vendedorId, puestoIds);
         return puestoIds.stream().filter(id -> !permitidas.contains(id)).toList();
     }

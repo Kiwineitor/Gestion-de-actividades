@@ -35,11 +35,12 @@ public class PlantillaCredencialService {
     private static final String COLUMNAS = """
             id, codigo, etiqueta, detalle, imagen, requiere_foto, centrado, mayusculas,
             foto_circular, multilinea, color_texto, tipo_texto, cajas, orden, predeterminada,
-            uso, id_edicion, id_dependencia, imagen_reverso
+            uso, id_edicion, id_dependencia, imagen_reverso, id_evento, foto_forma
             """;
 
     public static final String USO_EXPOSITOR = "EXPOSITOR";
     public static final String USO_APOYO = "APOYO";
+    public static final String CODIGO_PASE_EVENTO = "PASE_EVENTO";
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
@@ -51,11 +52,11 @@ public class PlantillaCredencialService {
                         Boolean fotoCircular, Boolean multilinea, String colorTexto,
                         String tipoTexto, Map<String, Caja> cajas, Integer orden,
                         Boolean predeterminada, String uso, Long idEdicion, Long idDependencia,
-                        String imagenReverso) {
+                        String imagenReverso, Long idEvento, String fotoForma) {
     }
 
     public record Fila(Long id, PlantillaCredencial plantilla, int orden, boolean predeterminada,
-                       String uso, Long idEdicion, Long idDependencia) {
+                       String uso, Long idEdicion, Long idDependencia, Long idEvento) {
         public boolean deApoyo() {
             return USO_APOYO.equals(uso);
         }
@@ -72,7 +73,7 @@ public class PlantillaCredencialService {
     @EventListener(ApplicationReadyEvent.class)
     public void iniciar() {
         try {
-            Integer n = jdbc.queryForObject("SELECT count(*) FROM plantilla_credencial", Integer.class);
+            Integer n = jdbc.queryForObject("SELECT count(*) FROM plantilla_credencial WHERE codigo <> ?", Integer.class, CODIGO_PASE_EVENTO);
             if (n != null && n == 0) sembrar();
             recargar();
         } catch (RuntimeException e) {
@@ -83,7 +84,7 @@ public class PlantillaCredencialService {
     private void sembrar() {
         int orden = 0;
         for (PlantillaCredencial p : PlantillaCredencial.CATALOGO) {
-            insertar(p, orden++, p.id().equals(PlantillaCredencial.POR_DEFECTO.id()), USO_EXPOSITOR, null, null, null);
+            insertar(p, orden++, p.id().equals(PlantillaCredencial.POR_DEFECTO.id()), USO_EXPOSITOR, null, null, null, null);
         }
         log.info("Plantillas de credencial iniciales cargadas: {}", PlantillaCredencial.CATALOGO.size());
     }
@@ -91,6 +92,7 @@ public class PlantillaCredencialService {
     public synchronized void recargar() {
         Long edicion = edicionActiva();
         List<Fila> filas = listar().stream()
+                .filter(f -> f.idEvento() == null)
                 .filter(f -> f.idEdicion() == null || f.idEdicion().equals(edicion))
                 .toList();
         vigentes = filas;
@@ -119,6 +121,29 @@ public class PlantillaCredencialService {
                 .orElse(null);
     }
 
+    public PlantillaCredencial paraActividad(Long edicionId, Long eventoId) {
+        if (edicionId != null || eventoId != null) {
+            for (Fila f : listar()) {
+                if (f.deApoyo()) continue;
+                boolean coincide = eventoId != null ? eventoId.equals(f.idEvento())
+                        : f.idEvento() == null && edicionId.equals(f.idEdicion());
+                if (coincide) return f.plantilla();
+            }
+        }
+        if (eventoId != null) {
+            for (Fila f : listar()) {
+                if (CODIGO_PASE_EVENTO.equals(f.plantilla().id())) return f.plantilla();
+            }
+        }
+        return PlantillaCredencial.actual(PlantillaCredencial.CREDENCIAL_VIRTUAL);
+    }
+
+    public PlantillaCredencial paraInscripcion(Long inscripcionId) {
+        List<Long> ed = inscripcionId == null ? List.of()
+                : jdbc.queryForList("SELECT id_edicion FROM inscripcion WHERE id = ?", Long.class, inscripcionId);
+        return paraActividad(ed.isEmpty() ? null : ed.get(0), null);
+    }
+
     private Long edicionActiva() {
         List<Long> ids = jdbc.queryForList("SELECT id FROM edicion WHERE activa ORDER BY id DESC LIMIT 1", Long.class);
         return ids.isEmpty() ? null : ids.get(0);
@@ -138,12 +163,13 @@ public class PlantillaCredencialService {
                         c.get("codigo"), c.get("zona"), c.get("foto"), c.get("tipo"),
                         rs.getString("tipo_texto"), rs.getString("color_texto"),
                         rs.getBoolean("foto_circular"), rs.getBoolean("multilinea"),
-                        rs.getString("imagen_reverso")),
+                        rs.getString("imagen_reverso"), rs.getString("foto_forma")),
                 rs.getInt("orden"),
                 rs.getBoolean("predeterminada"),
                 rs.getString("uso"),
                 rs.getObject("id_edicion", Long.class),
-                rs.getObject("id_dependencia", Long.class));
+                rs.getObject("id_dependencia", Long.class),
+                rs.getObject("id_evento", Long.class));
         });
     }
 
@@ -160,8 +186,10 @@ public class PlantillaCredencialService {
         String uso = usoValido(d.uso());
         boolean predeterminada = Boolean.TRUE.equals(d.predeterminada()) && USO_EXPOSITOR.equals(uso);
         if (predeterminada) quitarPredeterminada();
+        Long idEvento = predeterminada || USO_APOYO.equals(uso) ? null : d.idEvento();
+        Long idEdicion = predeterminada || idEvento != null ? null : d.idEdicion();
         Long id = insertar(p, d.orden() == null ? siguienteOrden() : d.orden(), predeterminada, uso,
-                predeterminada ? null : d.idEdicion(), USO_APOYO.equals(uso) ? d.idDependencia() : null, usuarioId);
+                idEdicion, USO_APOYO.equals(uso) ? d.idDependencia() : null, idEvento, usuarioId);
         recargar();
         return buscar(id);
     }
@@ -176,26 +204,28 @@ public class PlantillaCredencialService {
         if (predeterminada && USO_APOYO.equals(uso)) {
             throw new PlantillaInvalida("Una plantilla de personal de apoyo no puede ser la predeterminada");
         }
-        if (predeterminada && d.idEdicion() != null) {
+        if (predeterminada && (d.idEdicion() != null || d.idEvento() != null)) {
             throw new PlantillaInvalida("La plantilla predeterminada debe estar disponible en todas las actividades");
         }
         if (actual.predeterminada() && !predeterminada) {
             throw new PlantillaInvalida("Elige otra plantilla como predeterminada antes de quitarle la marca a esta");
         }
         if (predeterminada && !actual.predeterminada()) quitarPredeterminada();
+        Long idEvento = USO_APOYO.equals(uso) ? null : d.idEvento();
+        Long idEdicion = idEvento != null ? null : d.idEdicion();
         jdbc.update("""
                 UPDATE plantilla_credencial
                    SET etiqueta = ?, detalle = ?, imagen = ?, requiere_foto = ?, centrado = ?,
                        mayusculas = ?, foto_circular = ?, multilinea = ?, color_texto = ?,
                        tipo_texto = ?, cajas = ?, orden = ?, predeterminada = ?, uso = ?,
-                       id_edicion = ?, id_dependencia = ?, imagen_reverso = ?,
+                       id_edicion = ?, id_dependencia = ?, imagen_reverso = ?, id_evento = ?, foto_forma = ?,
                        "_fecha_modificacion" = now(), "_modificacion_id_usuario" = ?
                  WHERE id = ? AND "_estado" = 'A'
                 """,
                 p.etiqueta(), p.detalle(), p.imagen(), p.requiereFoto(), p.centrado(), p.mayusculas(),
                 p.fotoCircular(), p.multilinea(), p.colorTexto(), p.tipoTexto(), cajasJson(p),
                 d.orden() == null ? actual.orden() : d.orden(), predeterminada, uso,
-                d.idEdicion(), USO_APOYO.equals(uso) ? d.idDependencia() : null, p.imagenReverso(),
+                idEdicion, USO_APOYO.equals(uso) ? d.idDependencia() : null, p.imagenReverso(), idEvento, p.formaFoto(),
                 usuarioId, id);
         recargar();
         return buscar(id);
@@ -210,9 +240,9 @@ public class PlantillaCredencialService {
         PlantillaCredencial copia = new PlantillaCredencial(codigo, recortar(o.etiqueta() + " (copia)", 80),
                 o.detalle(), o.imagen(), o.requiereFoto(), o.centrado(), o.mayusculas(), o.qr(), o.nombre(),
                 o.empresa(), o.ci(), o.codigo(), o.zona(), o.foto(), o.tipo(), o.tipoTexto(), o.colorTexto(),
-                o.fotoCircular(), o.multilinea(), o.imagenReverso());
+                o.fotoCircular(), o.multilinea(), o.imagenReverso(), o.fotoForma());
         Long nuevo = insertar(copia, siguienteOrden(), false, origen.uso(), origen.idEdicion(),
-                origen.idDependencia(), usuarioId);
+                origen.idDependencia(), origen.idEvento(), usuarioId);
         recargar();
         return buscar(nuevo);
     }
@@ -275,7 +305,18 @@ public class PlantillaCredencialService {
                 validar(cajas.get("ci"), "C.I."), validar(cajas.get("codigo"), "puesto"),
                 validar(cajas.get("zona"), "zona"), validar(cajas.get("foto"), "foto"),
                 validar(cajas.get("tipo"), "cargo"), recortar(d.tipoTexto(), 40), color,
-                Boolean.TRUE.equals(d.fotoCircular()), Boolean.TRUE.equals(d.multilinea()), reverso);
+                Boolean.TRUE.equals(d.fotoCircular()) || PlantillaCredencial.FORMA_CIRCULO.equals(d.fotoForma()),
+                Boolean.TRUE.equals(d.multilinea()), reverso, formaValida(d.fotoForma()));
+    }
+
+    private static String formaValida(String forma) {
+        if (forma == null || forma.isBlank()) return null;
+        String f = forma.trim().toUpperCase();
+        if (!f.equals(PlantillaCredencial.FORMA_CUADRADA) && !f.equals(PlantillaCredencial.FORMA_CIRCULO)
+                && !f.equals(PlantillaCredencial.FORMA_ROMBO)) {
+            throw new PlantillaInvalida("Forma de foto no válida");
+        }
+        return f;
     }
 
     private static String usoValido(String uso) {
@@ -296,6 +337,7 @@ public class PlantillaCredencialService {
         m.put("centrado", p.centrado());
         m.put("mayusculas", p.mayusculas());
         m.put("fotoCircular", p.fotoCircular());
+        m.put("fotoForma", p.formaFoto());
         m.put("multilinea", p.multilinea());
         m.put("colorTexto", p.colorTexto());
         m.put("tipoTexto", p.tipoTexto());
@@ -306,6 +348,7 @@ public class PlantillaCredencialService {
         m.put("idEdicion", f.idEdicion());
         m.put("idDependencia", f.idDependencia());
         m.put("imagenReverso", p.imagenReverso());
+        m.put("idEvento", f.idEvento());
         return m;
     }
 
@@ -318,20 +361,20 @@ public class PlantillaCredencialService {
     }
 
     private Long insertar(PlantillaCredencial p, int orden, boolean predeterminada, String uso,
-                          Long idEdicion, Long idDependencia, Long usuarioId) {
+                          Long idEdicion, Long idDependencia, Long idEvento, Long usuarioId) {
         return jdbc.queryForObject("""
                 INSERT INTO plantilla_credencial
                        (codigo, etiqueta, detalle, imagen, requiere_foto, centrado, mayusculas,
                         foto_circular, multilinea, color_texto, tipo_texto, cajas, orden,
-                        predeterminada, uso, id_edicion, id_dependencia, imagen_reverso,
+                        predeterminada, uso, id_edicion, id_dependencia, imagen_reverso, id_evento, foto_forma,
                         "_registro_id_usuario")
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 RETURNING id
                 """, Long.class,
                 p.id(), p.etiqueta(), p.detalle(), p.imagen(), p.requiereFoto(), p.centrado(),
                 p.mayusculas(), p.fotoCircular(), p.multilinea(), p.colorTexto(), p.tipoTexto(),
                 cajasJson(p), orden, predeterminada, uso, idEdicion, idDependencia, p.imagenReverso(),
-                usuarioId);
+                idEvento, p.formaFoto(), usuarioId);
     }
 
     private void quitarPredeterminada() {

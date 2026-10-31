@@ -12,7 +12,10 @@ public record AnuncioDTO(
         LocalDateTime vigenteHasta,
         LocalDateTime publicado,
         String publicadoPor,
-        boolean activo) {
+        boolean activo,
+        String destino,
+        LocalDateTime vigenteDesde,
+        String enlace) {
 
     public static AnuncioDTO de(Anuncio a, String autor) {
         return new AnuncioDTO(
@@ -21,10 +24,13 @@ public record AnuncioDTO(
                         : LocalDateTime.ofInstant(a.getRegistro().toInstant(),
                                                   java.time.ZoneId.systemDefault()),
                 autor,
-                Anuncio.PUBLICADO.equals(a.getEstado()));
+                Anuncio.PUBLICADO.equals(a.getEstado()),
+                a.getDestino() == null ? Anuncio.INTERNO : a.getDestino(),
+                a.getVigenteDesde(),
+                a.getEnlace());
     }
 
     public static AnuncioDTO retirado(Long id) {
-        return new AnuncioDTO(id, null, null, null, null, null, null, false);
+        return new AnuncioDTO(id, null, null, null, null, null, null, false, null, null, null);
     }
 }

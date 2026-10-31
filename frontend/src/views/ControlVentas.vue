@@ -5,6 +5,7 @@ import { toast } from '../ui/toast';
 import { descargarArchivo, nombreSeguro } from '../ui/descargas';
 import FichaVenta from '../components/control-ventas/FichaVenta.vue';
 import { bs, ent, pct, fecha, ESTADOS } from '../components/control-ventas/formato';
+import { edicionElegida as edicion } from '../ui/actividadElegida';
 
 const pestana = ref('ventas');
 const cargando = ref(true);
@@ -16,11 +17,12 @@ const tablero = ref(null);
 const ventas = ref([]);
 
 const filtros = ref({ vendedor: '', categoria: '', desde: '', hasta: '', estado: '', q: '' });
+
 const hayFiltros = computed(() => Object.values(filtros.value).some((v) => String(v).trim() !== ''));
 
 function parametros(extra = {}) {
   const p = new URLSearchParams();
-  for (const [k, v] of Object.entries({ ...filtros.value, ...extra })) {
+  for (const [k, v] of Object.entries({ ...filtros.value, edicion: edicion.value, ...extra })) {
     if (String(v).trim() !== '') p.set(k, String(v).trim());
   }
   const qs = p.toString();
@@ -55,12 +57,22 @@ async function cargar() {
   }
 }
 
-onMounted(async () => {
+async function cargarOpciones() {
   try {
-    opciones.value = await leer('/api/app/control-ventas/filtros');
+    opciones.value = await leer(`/api/app/control-ventas/filtros${edicion.value ? `?edicion=${edicion.value}` : ''}`);
   } catch (e) {
     toast(e.message, 'error');
   }
+}
+
+onMounted(async () => {
+  await cargarOpciones();
+  await cargar();
+});
+
+watch(edicion, async () => {
+  filtros.value = { ...filtros.value, vendedor: '', categoria: '' };
+  await cargarOpciones();
   await cargar();
 });
 

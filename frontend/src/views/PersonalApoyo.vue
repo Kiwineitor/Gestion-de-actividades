@@ -1,4 +1,5 @@
 <script setup>
+import { confirmar } from '../ui/alerta';
 import { ref, reactive, computed, onMounted } from 'vue';
 import UiModal from '../components/UiModal.vue';
 import AutocompleteSelect from '../components/AutocompleteSelect.vue';
@@ -166,7 +167,7 @@ async function guardarCambioDependencia() {
 
 async function cambiarEstado(p) {
   const activar = (p.estado || 'A') !== 'A';
-  if (!activar && !confirm(`¿Desactivar a "${p.nombreCompleto}"? Su credencial dejará de permitir el ingreso hasta que se active.`)) return;
+  if (!activar && !(await confirmar(`¿Desactivar a "${p.nombreCompleto}"? Su credencial dejará de permitir el ingreso hasta que se active.`, { titulo: 'Desactivar', aceptar: 'Sí, desactivar' }))) return;
   const r = await apiFetch(`/api/app/personal-apoyo/${p.id}/estado`, { method: 'PATCH', body: JSON.stringify({ activo: activar }) });
   const d = await r.json().catch(() => ({}));
   if (!d.ok) { toast(d.mensaje || 'No se pudo cambiar el estado.', 'error'); return; }
@@ -343,7 +344,7 @@ async function quitarFoto() {
 }
 async function eliminarPersonal(p) {
   if (ocupado.value) return;
-  if (!confirm(`¿Eliminar a "${p.nombreCompleto}"?`)) return;
+  if (!(await confirmar(`¿Eliminar a "${p.nombreCompleto}"?`, { titulo: 'Eliminar', aceptar: 'Sí, eliminar' }))) return;
   ocupado.value = true;
   try {
     const r = await apiFetch(`/api/app/personal-apoyo/${p.id}`, { method: 'DELETE' });
@@ -358,7 +359,7 @@ async function eliminarPersonal(p) {
 
 async function eliminarDependencia(d) {
   if (ocupado.value) return;
-  if (!confirm(`¿Eliminar la dependencia "${d.nombre}"? Se perderán sus asignaciones.`)) return;
+  if (!(await confirmar(`¿Eliminar la dependencia "${d.nombre}"? Se perderán sus asignaciones.`, { titulo: 'Eliminar', aceptar: 'Sí, eliminar' }))) return;
   ocupado.value = true;
   try {
     const r = await apiFetch(`/api/app/personal-apoyo/dependencias/${d.id}`, { method: 'DELETE' });

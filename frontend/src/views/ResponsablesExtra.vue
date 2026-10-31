@@ -1,8 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
 import { url as urlApi } from '../config';
+import { actividadElegida, conEdicion } from '../ui/actividadElegida';
 
 const extras = ref([]);
 const cargando = ref(true);
@@ -22,7 +23,7 @@ const cuando = (t) => {
 async function cargar() {
   cargando.value = true;
   try {
-    const r = await apiFetch('/api/app/inscripciones/responsables-extra');
+    const r = await apiFetch(conEdicion('/api/app/inscripciones/responsables-extra'));
     if (!r.ok) { toast('No se pudo cargar el listado', 'error'); return; }
     extras.value = await r.json();
   } catch (e) {
@@ -55,6 +56,8 @@ const porEntidad = computed(() => {
 const sinComprobante = computed(() => extras.value.filter((e) => !e.comprobanteUrl));
 const totalCobrado = computed(() =>
   extras.value.reduce((s, e) => s + Number(e.monto || 0), 0));
+
+watch(actividadElegida, () => cargar());
 </script>
 
 <template>

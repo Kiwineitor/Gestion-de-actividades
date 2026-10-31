@@ -1,8 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
 import { descargarArchivo } from '../ui/descargas';
+import { actividadElegida, conEdicion } from '../ui/actividadElegida';
 
 const responsables = ref([]);
 const cargando = ref(true);
@@ -52,7 +53,7 @@ const sinCredencial = computed(() => total.value - conCredencial.value);
 async function cargar() {
   cargando.value = true;
   try {
-    const r = await apiFetch('/api/app/reportes/responsables');
+    const r = await apiFetch(conEdicion('/api/app/reportes/responsables'));
     if (!r.ok) throw new Error('No se pudo cargar el reporte de responsables');
     responsables.value = await r.json();
   } catch (e) {
@@ -76,7 +77,7 @@ async function exportarExcel() {
     return;
   }
   try {
-    await descargarArchivo('/api/app/reportes/responsables/excel', 'reporte-responsables.xlsx');
+    await descargarArchivo(conEdicion('/api/app/reportes/responsables/excel'), 'reporte-responsables.xlsx');
     toast('Reporte de responsables descargado en Excel', 'ok');
   } catch (e) {
     toast(e.message, 'error');
@@ -84,6 +85,8 @@ async function exportarExcel() {
 }
 
 onMounted(cargar);
+
+watch(actividadElegida, () => cargar());
 </script>
 
 <template>
@@ -92,7 +95,7 @@ onMounted(cargar);
       <div>
         <p class="eyebrow">Acreditación</p>
         <h2>Reporte de responsables por categoría</h2>
-        <p class="muted">Listado completo de la edición activa con estado de credencial y foto.</p>
+        <p class="muted">Listado completo de la actividad elegida arriba, con estado de credencial y foto.</p>
       </div>
       <div class="acciones-exportar">
         <button class="btn btn-fantasma" :disabled="cargando || !filtrados.length" @click="exportarExcel">

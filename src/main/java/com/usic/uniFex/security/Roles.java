@@ -35,7 +35,11 @@ public final class Roles {
 
     public static final String DISENA_MESAS = ADMINISTRA + " or @acceso.puede('mesas-diseno')";
 
-    public static final String GESTIONA_MESAS = VALIDA_MESAS + " or @acceso.puede('mesas-diseno')";
+    public static final String REGISTRA_INGRESO = VALIDA_MESAS + " or @acceso.puede('mesas-ingreso')";
+
+    public static final String VENDE_MESAS = VALIDA_MESAS + " or @acceso.puede('mapa')";
+
+    public static final String GESTIONA_MESAS = REGISTRA_INGRESO + " or @acceso.puede('mesas-diseno') or @acceso.puede('mapa')";
 
     public static final String GESTIONA_ACTIVIDADES = ADMINISTRA + " or @acceso.puede('actividades')";
 

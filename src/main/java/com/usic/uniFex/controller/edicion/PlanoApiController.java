@@ -8,8 +8,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
@@ -43,8 +47,29 @@ public class PlanoApiController {
             return ResponseEntity.status(401).body(Map.of("ok", false, "mensaje", "No autenticado"));
         }
 
-        PlanoService.Resultado r = planoService.reemplazar(archivo, usuarioId);
+        return responder(planoService.reemplazar(archivo, usuarioId));
+    }
 
+    public record Forma(Integer ancho, Integer alto, Boolean conservar) {
+    }
+
+    @PatchMapping("/forma")
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
+    public ResponseEntity<Map<String, Object>> cambiarForma(@RequestBody Forma req) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Long usuarioId = (auth != null && auth.getPrincipal() instanceof JwtUser ju) ? ju.id() : null;
+        return responder(planoService.cambiarForma(req.ancho(), req.alto(), !Boolean.FALSE.equals(req.conservar()), usuarioId));
+    }
+
+    @DeleteMapping
+    @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
+    public ResponseEntity<Map<String, Object>> quitarFondo() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Long usuarioId = (auth != null && auth.getPrincipal() instanceof JwtUser ju) ? ju.id() : null;
+        return responder(planoService.quitarFondo(usuarioId));
+    }
+
+    private ResponseEntity<Map<String, Object>> responder(PlanoService.Resultado r) {
         Map<String, Object> cuerpo = new LinkedHashMap<>();
         cuerpo.put("ok", r.ok());
         cuerpo.put("mensaje", r.mensaje());

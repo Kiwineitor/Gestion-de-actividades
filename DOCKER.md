@@ -12,7 +12,7 @@ clásica en un servidor Ubuntu con systemd.
                  ┌──────────────────────── docker compose ────────────────────────┐
  navegador ───►  │  app  (unifex-app)                    db  (unifex-db)          │
  :7676           │  Spring Boot 3.5 + Java 21   ──JDBC──►  PostgreSQL 16          │
-                 │  sirve la API, el WebSocket,           esquema V0..V49 +       │
+                 │  sirve la API, el WebSocket,           esquema V0..V66 +       │
                  │  la SPA Vue (/app/) y el sitio         datos de prueba         │
                  │  Thymeleaf viejo (/)                                           │
                  │  volúmenes: uploads, logs              volumen: db-data        │
@@ -46,7 +46,8 @@ docker compose up -d --build
 docker compose logs -f app        # esperar "Started UniFexApplication" y salir con Ctrl+C
 ```
 
-Abrir **http://localhost:7676/app/** e iniciar sesión con alguno de los usuarios de la sección 4.
+Abrir **http://localhost:7676/app/admin** (panel de administración) e iniciar sesión con alguno de
+los usuarios de la sección 4. La página pública, la que ven los clientes, es **http://localhost:7676/app/**.
 
 Sin archivo `.env`, se usan valores de prueba pensados para una máquina local. Para cualquier
 otro uso, primero:
@@ -75,7 +76,7 @@ Comandos del día a día:
 | `vendedor1` | `Fexpo2026` | ADMINISTRATIVO | Vende casetas de COMIDA y ARTESANIAS |
 | `vendedor2` | `Fexpo2026` | ADMINISTRATIVO | Vende casetas de COMIDA, MYPES y EMPRESAS |
 | `control1` | `Fexpo2026` | CONTROL | Puerta: escanea credenciales y registra entradas/salidas |
-| `asesoria1` | `Fexpo2026` | ASESORIA | Consulta: tablero, inscripciones, control de ventas, seguimiento de ACYT |
+| `asesoria1` | `Fexpo2026` | ASESORIA | Consulta: inscripciones, rendición de cuentas y reportes |
 
 **`admin1` y `admin2` son los usuarios fundadores.** No están en los datos de prueba: los crea
 la propia aplicación en su primer arranque (`UniFexApplication`), con las contraseñas de
@@ -93,32 +94,51 @@ Los otros cuatro vienen de `docker/db/datos-prueba.sql`, junto con:
   2 bloqueadas (120 y 121) para ver ese estado. El plano real de una feria se sube desde el
   *Editor del plano* y las casetas se colocan encima.
 - Carreras de prueba dentro de las áreas ACEF, ACBN y ACYT.
-- 3 ventas de ejemplo de la edición FEXPO 2026, todas **por rendir** (sin comprobante):
-  POLLOS A LA BRASA DON BETO (caseta 1, vendedor1), DISTRIBUIDORA AMAZONIA SRL (casetas 33 y 34,
-  vendedor2) y ARTESANIAS TACANA (caseta 114, vendedor1).
+- Dos actividades de ejemplo: la feria **«Feria de ejemplo 2026»** (en curso, con el plano y las
+  casetas de arriba) y el evento con mesas **«Noche Neón»** (22 mesas en zonas VIP, General y
+  Barra). Ninguna tiene ventas ni reservas: la base arranca limpia para probar desde cero.
+- Plantillas de credencial: la «Credencial virtual» (ferias) y el «Pase de evento» (eventos con
+  mesas: foto o logo del local en rombo y QR de entrada y salida).
 
 ## 5. Flujo de prueba sugerido
 
 Conviene tener dos navegadores (o una ventana normal y otra privada) para ver el tiempo real.
+El panel está en `/app/admin` y la página pública en `/app/`.
 
-1. **Administración arma la feria — `admin2`.** *Categorías* (precios y opciones), *Editor del
-   plano* (mover o crear casetas), *Vendedores* (qué casetas puede vender cada uno) y
-   *Usuarios* (crear más vendedores).
-2. **El vendedor vende — `vendedor1`.** *Mapa de ventas*: tocar una caseta libre de COMIDA la
-   reserva por 5 minutos y se pinta en el otro navegador al instante. *Registrar venta*:
-   datos de la entidad, responsables y forma de pago. La caseta pasa a ocupada y se genera la
-   nota de venta en PDF.
-3. **Doble venta imposible.** Con `vendedor2` en el otro navegador, intentar la misma caseta de
-   COMIDA (la comparten): el sistema la rechaza mientras esté reservada u ocupada.
-4. **Rendir el cobro — `vendedor1`.** *Mis ventas* → abrir la venta → adjuntar la foto del
-   comprobante. En *Control de ventas* (como `admin2` o `asesoria1`) pasa de *por rendir* a
-   *rendido*.
-5. **Credenciales — `vendedor1` o `admin2`.** *Credenciales*: generar la de cada responsable,
-   con su QR.
-6. **Puerta — `control1`.** *Escanear credencial* / *Control de acceso*: registrar entrada y
-   salida. Se ve en el reporte de acceso.
-7. **Dirección — `asesoria1`.** *Tablero*, *Control de ventas*, *Seguimiento por facultad*.
-8. **Permisos — `admin1`.** *Permisos*: dar o quitar pantallas por rol o a un usuario concreto.
+**Feria con puestos**
+
+1. **Arma la feria — `admin2`.** *Centro de actividades* → «Feria de ejemplo 2026» → *Editor del
+   plano*: mover o crear casetas y, con el botón *Categorías y precios*, fijar precios y personas
+   por puesto. Una feria nueva la pone «en curso» solo `admin1`.
+2. **Diseño de credencial.** *Credenciales* → *Diseño*: duplicar una plantilla y elegir arriba
+   «¿Para qué actividad es este diseño?».
+3. **El cliente pide un espacio.** En `/app/`, entrar a la feria, elegir un espacio libre y enviar
+   la solicitud con su comprobante.
+4. **Aprobar = vender.** *Solicitudes* → *Ferias* → *Aprobar*: se registra la venta y sale la
+   entrega con recibo, credenciales por persona y botón de WhatsApp.
+5. **Venta en oficina — `vendedor1`.** *Mapa de ventas*: tocar una caseta libre, *Agregar* y
+   *Registrar venta*. Con `vendedor2` en el otro navegador, la misma caseta aparece tomada al
+   instante: la doble venta es imposible.
+
+**Evento con mesas (Noche Neón)**
+
+6. **Prepara el evento — `admin2`.** *Centro de actividades* → «Noche Neón» → *Organizar evento*:
+   datos, QR de pago, logo del local («Identidad del local») y plano de mesas.
+7. **El cliente reserva.** En `/app/`, elegir Noche Neón, una mesa y pagar con el QR; puede salir
+   a la app del banco y volver para adjuntar el comprobante.
+8. **Aprobar.** *Solicitudes* → *Mesas* → *Aprobar* con la cantidad de pases. En *Recibo y pases*,
+   «✏️ Datos» carga nombre y foto de cada persona; sin datos, el pase lleva el logo del local.
+9. **Venta en oficina.** *Mapa de ventas* → elegir «Noche Neón» → tocar una mesa libre → *Vender*.
+
+**Para las dos**
+
+10. **Puerta — `control1`.** *Ingreso y accesos* → *Escanear*: cada lectura alterna entrada y
+    salida. *Movimientos* muestra quién entró y quién sigue adentro.
+11. **Seguimiento.** *Inscripciones* → *Todas* (ventas y reservas juntas, con «Recibo y
+    credenciales» para reenviar), *Reportes* (con selector de actividad, Excel y PDF) y *Mis ventas*.
+12. **Permisos — `admin1`.** *Roles y permisos*: dar o quitar pantallas por rol o a un usuario.
+13. **Eliminar una actividad.** *Centro de actividades* → menú ⋮ → *Eliminar* (pide escribir el
+    nombre; no deja si ya tiene ventas o reservas).
 
 ## 6. La base de datos
 
@@ -242,9 +262,6 @@ docker compose up -d --no-build
 - **Reportes Jasper** (algunos XLSX/DOCX): los `.jrxml` no están en el repo. Si se tienen,
   montarlos en `/opt/unifex/reportes` (línea comentada en `docker-compose.yml`). El resto del
   sistema funciona sin ellos.
-- **"Quiénes están dentro" (detalle)** en Control de acceso responde error 500: es un fallo del
-  SQL de `CredencialAccesoDao.quienesEstanDentro` (falta un `GROUP BY`), no de Docker. Ocurre
-  igual fuera de Docker; el resto del control de acceso funciona.
 - **WhatsApp** queda desactivado. Se configura desde la pantalla *Instancias de WhatsApp*.
 - **Pasarela de pago / boletería**: apagada, como en `DEPLOY.md` §4.
 - Sin HTTPS: para exponerlo fuera de la red local, poner delante un proxy (Nginx, Caddy,

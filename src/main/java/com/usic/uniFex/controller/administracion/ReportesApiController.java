@@ -43,23 +43,23 @@ public class ReportesApiController {
     private final ReporteResponsablesExcelService reporteResponsablesExcel;
 
     @GetMapping("/resumen")
-    public ResumenGeneralView resumen() {
-        return inscripcionService.resumenGeneral();
+    public ResumenGeneralView resumen(@RequestParam(required = false) Long edicion) {
+        return inscripcionService.resumenGeneral(edicion);
     }
 
     @GetMapping("/por-categoria")
-    public List<ResumenCategoriaView> porCategoria() {
-        return inscripcionService.resumenPorCategoria();
+    public List<ResumenCategoriaView> porCategoria(@RequestParam(required = false) Long edicion) {
+        return inscripcionService.resumenPorCategoria(edicion);
     }
 
     @GetMapping("/por-entidad")
-    public List<ResumenEntidadView> porEntidad() {
-        return inscripcionService.resumenPorEntidad();
+    public List<ResumenEntidadView> porEntidad(@RequestParam(required = false) Long edicion) {
+        return inscripcionService.resumenPorEntidad(edicion);
     }
 
     @GetMapping("/ventas/filtros")
-    public java.util.Map<String, Object> filtrosVentas() {
-        return reporteVentas.filtros();
+    public java.util.Map<String, Object> filtrosVentas(@RequestParam(required = false) Long edicion) {
+        return reporteVentas.filtros(edicion);
     }
 
     @GetMapping("/ventas")
@@ -68,10 +68,11 @@ public class ReportesApiController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
             @RequestParam(required = false) String responsable,
             @RequestParam(required = false) List<Long> categorias,
-            @RequestParam(required = false) List<Long> promotores) {
+            @RequestParam(required = false) List<Long> promotores,
+            @RequestParam(required = false) Long edicion) {
         return reporteVentas.buscar(new ReporteVentasService.Filtros(desde, hasta, responsable,
                 categorias == null ? List.of() : categorias,
-                promotores == null ? List.of() : promotores));
+                promotores == null ? List.of() : promotores, edicion));
     }
 
     @GetMapping("/ventas/pdf")
@@ -80,10 +81,11 @@ public class ReportesApiController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
             @RequestParam(required = false) String responsable,
             @RequestParam(required = false) List<Long> categorias,
-            @RequestParam(required = false) List<Long> promotores) {
+            @RequestParam(required = false) List<Long> promotores,
+            @RequestParam(required = false) Long edicion) {
         ReporteVentasService.Filtros filtros = new ReporteVentasService.Filtros(desde, hasta, responsable,
                 categorias == null ? List.of() : categorias,
-                promotores == null ? List.of() : promotores);
+                promotores == null ? List.of() : promotores, edicion);
         try (ByteArrayOutputStream salida = new ByteArrayOutputStream()) {
             reporteVentasPdf.generar(reporteVentas.buscar(filtros), filtros, salida);
             return ResponseEntity.ok()
@@ -103,10 +105,11 @@ public class ReportesApiController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
             @RequestParam(required = false) String responsable,
             @RequestParam(required = false) List<Long> categorias,
-            @RequestParam(required = false) List<Long> promotores) {
+            @RequestParam(required = false) List<Long> promotores,
+            @RequestParam(required = false) Long edicion) {
         ReporteVentasService.Filtros filtros = new ReporteVentasService.Filtros(desde, hasta, responsable,
                 categorias == null ? List.of() : categorias,
-                promotores == null ? List.of() : promotores);
+                promotores == null ? List.of() : promotores, edicion);
         try (ByteArrayOutputStream salida = new ByteArrayOutputStream()) {
             reporteVentasExcel.generar(reporteVentas.buscar(filtros), filtros, salida);
             return ResponseEntity.ok()
@@ -121,14 +124,14 @@ public class ReportesApiController {
     }
 
     @GetMapping("/responsables")
-    public List<ResponsableReporteView> responsables() {
-        return responsableService.listarParaReporte();
+    public List<ResponsableReporteView> responsables(@RequestParam(required = false) Long edicion) {
+        return responsableService.listarParaReporte(edicion);
     }
 
     @GetMapping("/responsables/excel")
-    public ResponseEntity<byte[]> responsablesExcel() {
+    public ResponseEntity<byte[]> responsablesExcel(@RequestParam(required = false) Long edicion) {
         try (ByteArrayOutputStream salida = new ByteArrayOutputStream()) {
-            reporteResponsablesExcel.generar(responsableService.listarParaReporte(), salida);
+            reporteResponsablesExcel.generar(responsableService.listarParaReporte(edicion), salida);
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=reporte-responsables.xlsx")

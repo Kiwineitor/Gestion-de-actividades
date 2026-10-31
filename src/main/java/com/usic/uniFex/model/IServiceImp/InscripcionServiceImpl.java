@@ -63,18 +63,18 @@ public class InscripcionServiceImpl implements IInscripcionService{
     }
 
     @Override
-    public List<ResumenCategoriaView> resumenPorCategoria() {
-        return inscripcionDao.resumenPorCategoria();
+    public List<ResumenCategoriaView> resumenPorCategoria(Long edicion) {
+        return inscripcionDao.resumenPorCategoria(edicion);
     }
 
     @Override
-    public List<ResumenEntidadView> resumenPorEntidad() {
-        return inscripcionDao.resumenPorEntidad();
+    public List<ResumenEntidadView> resumenPorEntidad(Long edicion) {
+        return inscripcionDao.resumenPorEntidad(edicion);
     }
 
     @Override
-    public com.usic.uniFex.model.dto.ResumenGeneralView resumenGeneral() {
-        return inscripcionDao.resumenGeneral();
+    public com.usic.uniFex.model.dto.ResumenGeneralView resumenGeneral(Long edicion) {
+        return inscripcionDao.resumenGeneral(edicion);
     }
 
     @Override

@@ -25,6 +25,10 @@ public class Anuncio extends AuditoriaConfig {
     public static final String AVISO   = "aviso";
     public static final String URGENTE = "urgente";
 
+    public static final String INTERNO = "INTERNO";
+    public static final String PUBLICO = "PUBLICO";
+    public static final String AMBOS   = "AMBOS";
+
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
@@ -36,4 +40,11 @@ public class Anuncio extends AuditoriaConfig {
 
     @Column(name = "vigente_hasta")
     private LocalDateTime vigenteHasta;
+
+    @Column(name = "vigente_desde")
+    private LocalDateTime vigenteDesde;
+
+    private String destino;
+
+    private String enlace;
 }

@@ -1,9 +1,10 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import BarrasHorizontales from '../components/BarrasHorizontales.vue';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
 import { descargarArchivo, descargarPdf } from '../ui/descargas';
+import { actividadElegida, conEdicion } from '../ui/actividadElegida';
 
 const resumen = ref({ inscripciones: 0, puestos: 0, totalBs: 0 });
 const porCategoria = ref([]);
@@ -45,10 +46,10 @@ async function cargar() {
   cargando.value = true;
   try {
     const [rr, rc, re, rf] = await Promise.all([
-      apiFetch('/api/app/reportes/resumen'),
-      apiFetch('/api/app/reportes/por-categoria'),
-      apiFetch('/api/app/reportes/por-entidad'),
-      apiFetch('/api/app/reportes/ventas/filtros'),
+      apiFetch(conEdicion('/api/app/reportes/resumen')),
+      apiFetch(conEdicion('/api/app/reportes/por-categoria')),
+      apiFetch(conEdicion('/api/app/reportes/por-entidad')),
+      apiFetch(conEdicion('/api/app/reportes/ventas/filtros')),
     ]);
     resumen.value = await rr.json();
     porCategoria.value = await rc.json();
@@ -76,7 +77,7 @@ function paramsVentas() {
 async function cargarVentas() {
   cargandoVentas.value = true;
   try {
-    const r = await apiFetch(`/api/app/reportes/ventas${paramsVentas()}`);
+    const r = await apiFetch(conEdicion(`/api/app/reportes/ventas${paramsVentas()}`));
     if (!r.ok) throw new Error('No se pudo cargar el reporte de ventas');
     ventas.value = await r.json();
   } catch (e) {
@@ -97,7 +98,7 @@ function normalizarFiltroMultiple(campo) {
 
 async function exportarVentasPdf() {
   try {
-    await descargarPdf(`/api/app/reportes/ventas/pdf${paramsVentas()}`, 'reporte-ventas.pdf');
+    await descargarPdf(conEdicion(`/api/app/reportes/ventas/pdf${paramsVentas()}`), 'reporte-ventas.pdf');
     toast('Reporte de ventas descargado', 'ok');
   } catch (e) {
     toast(e.message, 'error');
@@ -106,7 +107,7 @@ async function exportarVentasPdf() {
 
 async function exportarVentasExcel() {
   try {
-    await descargarArchivo(`/api/app/reportes/ventas/excel${paramsVentas()}`, 'reporte-ventas.xlsx');
+    await descargarArchivo(conEdicion(`/api/app/reportes/ventas/excel${paramsVentas()}`), 'reporte-ventas.xlsx');
     toast('Reporte de ventas descargado en Excel', 'ok');
   } catch (e) {
     toast(e.message, 'error');
@@ -135,7 +136,7 @@ async function bajarAnalisis(id, formato) {
   if (bajando.value) return;
   bajando.value = `${id}-${formato}`;
   try {
-    const ruta = `/api/app/analisis/${id}/${formato}`;
+    const ruta = conEdicion(`/api/app/analisis/${id}/${formato}`);
     const archivo = `${id}.${formato === 'pdf' ? 'pdf' : 'xlsx'}`;
     if (formato === 'pdf') await descargarPdf(ruta, archivo);
     else await descargarArchivo(ruta, archivo);
@@ -148,6 +149,8 @@ async function bajarAnalisis(id, formato) {
 }
 
 onMounted(cargar);
+
+watch(actividadElegida, () => { cargar(); cargarVentas(); });
 </script>
 
 <template>
@@ -168,7 +171,7 @@ onMounted(cargar);
 
   <template v-if="seccion === 'analisis'">
     <p class="muted nota-analisis">
-      Todos miran la <strong>edición activa</strong> y descartan las ventas canceladas.
+      Todos miran la <strong>actividad elegida arriba</strong> y descartan las ventas canceladas.
       El importe es el <strong>congelado</strong> el día de la venta, no el precio de hoy.
     </p>
     <div class="lista-analisis">

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import UiModal from '../UiModal.vue';
+import ModalEntrega from '../ModalEntrega.vue';
 import { apiFetch } from '../../api';
 import { url as urlApi } from '../../config';
 import { toast } from '../../ui/toast';
@@ -16,6 +17,7 @@ const ficha = ref(null);
 const cargando = ref(true);
 const error = ref('');
 const guardando = ref(false);
+const entregando = ref(false);
 
 const v = computed(() => ficha.value?.venta);
 const n = (x) => Number(x || 0);
@@ -227,9 +229,11 @@ async function guardar() {
     </template>
 
     <template #pie>
+      <button v-if="v" class="btn btn-primario" @click="entregando = true">📲 Recibo y credenciales</button>
       <button class="btn" @click="emit('cerrar')">Cerrar</button>
     </template>
   </UiModal>
+  <ModalEntrega v-if="entregando && v" :inscripcion-id="v.inscripcionId" @cerrar="entregando = false; cargar()" />
 </template>
 
 <style scoped>

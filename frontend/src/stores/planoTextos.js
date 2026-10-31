@@ -10,9 +10,17 @@ export const usePlanoTextosStore = defineStore('planoTextos', () => {
 
   let cerrarCanal = null;
   let promesa = null;
+  let locales = null;
 
-  function aplicar(dto) {
-    if (!dto || dto.id == null) return;
+  function protegerLocales(fn) {
+    locales = fn;
+    return () => { if (locales === fn) locales = null; };
+  }
+
+  function aplicar(entrante) {
+    if (!entrante || entrante.id == null) return;
+    const propios = entrante.activo === false ? null : locales?.(entrante.id);
+    const dto = propios ? { ...entrante, ...propios } : entrante;
     const i = textos.value.findIndex((t) => t.id === dto.id);
     if (dto.activo === false) {
       if (i >= 0) textos.value.splice(i, 1);
@@ -54,5 +62,5 @@ export const usePlanoTextosStore = defineStore('planoTextos', () => {
     textos.value = [];
   }
 
-  return { textos, cargando, enVivo, asegurar, cargar, aplicar, desconectar };
+  return { textos, cargando, enVivo, asegurar, cargar, aplicar, protegerLocales, desconectar };
 });

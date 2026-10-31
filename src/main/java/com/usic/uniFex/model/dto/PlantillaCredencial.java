@@ -23,9 +23,30 @@ public record PlantillaCredencial(
         String colorTexto,
         boolean fotoCircular,
         boolean multilinea,
-        String imagenReverso) {
+        String imagenReverso,
+        String fotoForma) {
+
+    public static final String FORMA_CUADRADA = "CUADRADA";
+    public static final String FORMA_CIRCULO = "CIRCULO";
+    public static final String FORMA_ROMBO = "ROMBO";
 
     public record Caja(double x, double y, double ancho, double alto) {
+    }
+
+    public PlantillaCredencial(String id, String etiqueta, String detalle, String imagen,
+                               boolean requiereFoto, boolean centrado, boolean mayusculas,
+                               Caja qr, Caja nombre, Caja empresa, Caja ci, Caja codigo,
+                               Caja zona, Caja foto, Caja tipo, String tipoTexto, String colorTexto,
+                               boolean fotoCircular, boolean multilinea, String imagenReverso) {
+        this(id, etiqueta, detalle, imagen, requiereFoto, centrado, mayusculas, qr, nombre, empresa, ci, codigo,
+                zona, foto, tipo, tipoTexto, colorTexto, fotoCircular, multilinea, imagenReverso, null);
+    }
+
+    public String formaFoto() {
+        if (FORMA_ROMBO.equals(fotoForma) || FORMA_CIRCULO.equals(fotoForma) || FORMA_CUADRADA.equals(fotoForma)) {
+            return fotoForma;
+        }
+        return fotoCircular ? FORMA_CIRCULO : FORMA_CUADRADA;
     }
 
     public PlantillaCredencial(String id, String etiqueta, String detalle, String imagen,

@@ -5,13 +5,15 @@ import UiModal from '../components/UiModal.vue';
 import MenuAcciones from '../components/MenuAcciones.vue';
 import { apiFetch, jsonOError } from '../api';
 import { toast } from '../ui/toast';
-import { alertaConAccion } from '../ui/alerta';
+import { alertaConAccion, pedirTexto } from '../ui/alerta';
+import { cargarActividades } from '../ui/actividadElegida';
 import { useAuthStore } from '../stores/auth';
 import { useActividadStore } from '../stores/actividad';
 import { url as urlApi } from '../config.js';
 import { usePermisosStore } from '../stores/permisos';
 import { aModulo } from '../modulos';
 import { alCambiarPublico } from '../ui/canalPublico';
+import { useBorrador } from '../ui/borradores';
 
 const TIPOS = ['Feria', 'Exposición', 'Evento', 'Congreso', 'Festival', 'Otro'];
 
@@ -50,9 +52,15 @@ const form = reactive({
   copiarDe: '', copiarPlano: true, copiarTextos: true, guardando: false,
   lugar: '', fechasTexto: '', descripcionPublica: '', contacto: '', publica: true, recibeInteresados: true,
   portadaUrl: null, subiendo: false,
+  pagoBanco: '', pagoCuenta: '', pagoTitular: '', pagoInstrucciones: '', pagoOficina: '', pagoQrUrl: null,
 });
 
-const PUBLICO_VACIO = { lugar: '', fechasTexto: '', descripcionPublica: '', contacto: '', publica: true, recibeInteresados: true, portadaUrl: null };
+const borradorFeria = useBorrador('feria', form);
+
+const PUBLICO_VACIO = {
+  lugar: '', fechasTexto: '', descripcionPublica: '', contacto: '', publica: true, recibeInteresados: true, portadaUrl: null,
+  pagoBanco: '', pagoCuenta: '', pagoTitular: '', pagoInstrucciones: '', pagoOficina: '', pagoQrUrl: null,
+};
 
 const activa = computed(() => lista.value.find((a) => a.activa) || null);
 
@@ -103,6 +111,8 @@ function abrirEditar(a) {
     lugar: a.lugar || '', fechasTexto: a.fechasTexto || '', descripcionPublica: a.descripcionPublica || '',
     contacto: a.contacto || '', publica: a.publica !== false, recibeInteresados: a.recibeInteresados !== false,
     portadaUrl: a.portadaUrl || null,
+    pagoBanco: a.pagoBanco || '', pagoCuenta: a.pagoCuenta || '', pagoTitular: a.pagoTitular || '',
+    pagoInstrucciones: a.pagoInstrucciones || '', pagoOficina: a.pagoOficina || '', pagoQrUrl: a.pagoQrUrl || null,
   });
 }
 
@@ -116,6 +126,8 @@ async function guardar() {
       copiarPlano: form.copiarPlano, copiarTextos: form.copiarTextos,
       lugar: form.lugar, fechasTexto: form.fechasTexto, descripcionPublica: form.descripcionPublica,
       contacto: form.contacto, publica: form.publica, recibeInteresados: form.recibeInteresados,
+      pagoBanco: form.pagoBanco, pagoCuenta: form.pagoCuenta, pagoTitular: form.pagoTitular,
+      pagoInstrucciones: form.pagoInstrucciones, pagoOficina: form.pagoOficina,
     };
     const r = form.editando
       ? await apiFetch(`/api/app/ediciones/${form.editando.id}`, { method: 'PATCH', body: JSON.stringify(cuerpo) })
@@ -124,6 +136,7 @@ async function guardar() {
     if (!r.ok || !d.ok) { toast(d.mensaje || 'No se pudo guardar', 'error'); return; }
     toast(d.mensaje, 'ok');
     form.abierto = false;
+    borradorFeria.descartar();
     await cargar();
     await actividad.cargar();
   } finally {
@@ -150,6 +163,28 @@ async function subirPortada(e) {
   }
 }
 
+async function subirQrPago(e) {
+  const archivo = e.target.files?.[0];
+  e.target.value = '';
+  if (!archivo || !form.editando) return;
+  const datos = new FormData();
+  datos.append('archivo', archivo);
+  const r = await apiFetch(`/api/app/ediciones/${form.editando.id}/qr-pago`, { method: 'POST', body: datos });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.ok) { toast(d.mensaje || 'No se pudo subir el QR', 'error'); return; }
+  toast(d.mensaje, 'ok', 1500);
+  await cargar();
+  form.pagoQrUrl = lista.value.find((x) => x.id === form.editando.id)?.pagoQrUrl || null;
+}
+
+async function quitarQrPago() {
+  if (!form.editando) return;
+  const r = await apiFetch(`/api/app/ediciones/${form.editando.id}/qr-pago`, { method: 'DELETE' });
+  if (!r.ok) { toast('No se pudo quitar el QR', 'error'); return; }
+  form.pagoQrUrl = null;
+  await cargar();
+}
+
 async function quitarPortada() {
   if (!form.editando) return;
   const r = await apiFetch(`/api/app/ediciones/${form.editando.id}/portada`, { method: 'DELETE' });
@@ -173,25 +208,63 @@ async function activar(a) {
   await actividad.cargar();
 }
 
+async function eliminar(t) {
+  const esFeria = t.clase === 'feria';
+  const escrito = await pedirTexto(
+    `Se borrará «${t.nombre}» con su plano, ${esFeria ? 'categorías y puestos' : 'mesas'}. No se puede deshacer. `
+    + `Si tiene ${esFeria ? 'ventas' : 'reservas pagadas o en revisión'}, el sistema no lo permitirá para conservar el historial. `
+    + 'Escribe el nombre de la actividad para confirmar.',
+    { titulo: 'Eliminar actividad', aceptar: 'Eliminar', marcador: t.nombre },
+  );
+  if (escrito == null) return;
+  if (escrito.trim().toLowerCase() !== t.nombre.trim().toLowerCase()) { toast('El nombre no coincide: no se eliminó nada', 'advertencia'); return; }
+  const r = await apiFetch(esFeria ? `/api/app/ediciones/${t.id}` : `/api/app/mesas/eventos/${t.id}`, { method: 'DELETE' });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.ok === false) { toast(d.mensaje || 'No se pudo eliminar', 'error'); return; }
+  toast(d.mensaje || 'Actividad eliminada', 'ok');
+  await cargar();
+  await Promise.all([actividad.cargar(), cargarActividades(true)]);
+}
+
 function acciones(a) {
   return [
     { txt: 'Editar datos y página pública', accion: () => abrirEditar(a) },
     { txt: 'Ver página pública', deshabilitado: !a.activa || !a.publica, titulo: !a.activa ? 'Solo la actividad activa se muestra al público' : '', accion: () => abrirPublica({ v: 'actividad' }) },
     {
-      txt: 'Activar', deshabilitado: a.activa || !esSuper.value,
-      titulo: !esSuper.value ? 'Solo el SUPER USUARIO cambia la actividad activa' : '', accion: () => activar(a),
+      txt: 'Poner en curso', deshabilitado: a.activa || !esSuper.value,
+      titulo: !esSuper.value ? 'Solo el Superadministrador cambia la feria en curso' : '', accion: () => activar(a),
+    },
+    {
+      txt: 'Eliminar', peligro: true, deshabilitado: a.activa || !puede('actividades'),
+      titulo: a.activa ? 'Pon otra feria en curso antes de eliminar esta' : '', accion: () => eliminar(a),
     },
   ];
 }
 
 function accionesEvento(e) {
   return [
-    { txt: 'Datos, pago y condiciones', deshabilitado: !puede('mesas-diseno'), accion: () => ir('mesas', { evento: e.id, tab: 'evento' }) },
-    { txt: 'Ver página pública', deshabilitado: !e.publicado, titulo: e.publicado ? '' : 'Publica el evento para verlo', accion: () => abrirPublica({ evento: e.id }) },
+    { txt: 'Ver página pública', deshabilitado: !e.publicado, titulo: e.publicado ? '' : 'Habilita el evento para verlo', accion: () => abrirPublica({ evento: e.id }) },
+    { txt: 'Eliminar', peligro: true, deshabilitado: !puede('mesas-diseno'), accion: () => eliminar(e) },
   ];
 }
 
+async function habilitar(t) {
+  const encender = t.clase === 'feria' ? !t.publica : !t.publicado;
+  const r = t.clase === 'feria'
+    ? await apiFetch(`/api/app/ediciones/${t.id}/habilitar`, { method: 'POST', body: JSON.stringify({ habilitada: encender }) })
+    : await apiFetch(`/api/app/mesas/eventos/${t.id}/publicar`, { method: 'POST', body: JSON.stringify({ publicado: encender }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.ok) { toast(d.mensaje || 'No se pudo cambiar', 'error'); return; }
+  toast(d.mensaje, 'ok');
+  await cargar(true);
+}
+
+const puedeHabilitar = (t) => (t.clase === 'feria' ? puede('actividades') : puede('mesas-diseno'));
+const habilitada = (t) => (t.clase === 'feria' ? t.publica !== false : t.publicado);
+
 onMounted(() => {
+  borradorFeria.restaurar();
+  Object.assign(form, { guardando: false, subiendo: false });
   cargar();
   soltarCanal = alCambiarPublico(() => {
     clearTimeout(pendiente);
@@ -232,8 +305,7 @@ onUnmounted(() => { soltarCanal?.(); clearTimeout(pendiente); });
         <article v-if="t.clase === 'feria'" class="card tarjeta feria" :class="{ activa: t.activa }">
           <header>
             <span class="tipo">🗺️ {{ t.tipo || 'Feria' }} · {{ t.anio }}</span>
-            <span v-if="t.activa" class="badge badge-ok">Activa</span>
-            <span v-else class="badge badge-muted">Inactiva</span>
+            <span v-if="t.activa" class="badge badge-ok" title="Es la feria en curso: la que usan el mapa de ventas y los reportes">En curso</span>
             <MenuAcciones :acciones="acciones(t)" :etiqueta="`Acciones de ${t.nombre}`" />
           </header>
           <h3>{{ t.nombre }}</h3>
@@ -243,22 +315,26 @@ onUnmounted(() => { soltarCanal?.(); clearTimeout(pendiente); });
             <div><dt>Vendidos</dt><dd>{{ t.vendidos }}</dd></div>
             <div><dt>Ventas</dt><dd>{{ t.ventas }}</dd></div>
           </dl>
-          <p class="muted chico">{{ t.conPlano ? 'Con plano propio' : 'Usa el plano de respaldo' }}
-            · {{ t.publica ? 'Visible al público' : 'Oculta al público' }}</p>
+          <label class="interruptor" :class="{ deshabilitado: !puedeHabilitar(t) }">
+            <input type="checkbox" :checked="habilitada(t)" :disabled="!puedeHabilitar(t)" @change="habilitar(t)" />
+            <span class="pista"></span>
+            <span>{{ habilitada(t) ? 'Habilitada: visible y recibiendo solicitudes' : 'Deshabilitada: oculta al público' }}</span>
+          </label>
           <div class="atajos">
             <template v-if="t.activa">
-              <button v-if="puede('editor')" class="btn btn-sm" @click="ir('editor')">✏️ Plano</button>
-              <button v-if="puede('categorias')" class="btn btn-sm" @click="ir('categorias')">🏷️ Precios</button>
-              <button v-if="puede('interesados')" class="btn btn-sm" @click="ir('interesados')">🙋 Solicitudes</button>
+              <button v-if="puede('editor')" class="btn btn-sm" @click="ir('editor')">✏️ Editor del plano</button>
+              <button v-if="puede('categorias') || puede('puestos')" class="btn btn-sm" @click="ir('categorias')">🏷️ Categorías y precios</button>
+              <button v-if="puede('interesados')" class="btn btn-sm" @click="ir('solicitudes', { tab: 'ferias' })">📥 Solicitudes</button>
+              <button v-if="puede('inscripciones') || puede('control-ventas')" class="btn btn-sm" @click="ir('inscripciones', { tab: 'todas' })">🧾 Ventas</button>
+              <button v-if="puede('credenciales')" class="btn btn-sm" @click="ir('credenciales')">🪪 Credenciales</button>
             </template>
-            <span v-else class="muted chico">Actívala para editar su plano y precios.</span>
+            <span v-else class="muted chico">Ponla en curso (menú ⋮) para editar su plano y precios.</span>
           </div>
         </article>
 
         <article v-else class="card tarjeta evento">
           <header>
             <span class="tipo">🍸 Evento con mesas</span>
-            <span class="badge" :class="t.publicado ? 'badge-ok' : 'badge-muted'">{{ t.publicado ? 'Publicado' : 'Borrador' }}</span>
             <MenuAcciones :acciones="accionesEvento(t)" :etiqueta="`Acciones de ${t.nombre}`" />
           </header>
           <h3>{{ t.nombre }}</h3>
@@ -269,12 +345,19 @@ onUnmounted(() => { soltarCanal?.(); clearTimeout(pendiente); });
             <div><dt>Por validar</dt><dd :class="{ urgente: t.porValidar }">{{ t.porValidar }}</dd></div>
             <div><dt>Cobrado</dt><dd class="monto">{{ bs(t.confirmado) }}</dd></div>
           </dl>
+          <label class="interruptor" :class="{ deshabilitado: !puedeHabilitar(t) }">
+            <input type="checkbox" :checked="habilitada(t)" :disabled="!puedeHabilitar(t)" @change="habilitar(t)" />
+            <span class="pista"></span>
+            <span>{{ habilitada(t) ? 'Habilitado: visible y recibiendo reservas' : 'Deshabilitado: oculto al público' }}</span>
+          </label>
           <div class="atajos">
-            <button v-if="puede('mesas')" class="btn btn-sm" :class="{ 'btn-primario': t.porValidar }" @click="ir('mesas', { evento: t.id, tab: 'reservas' })">
-              🧾 Reservas<template v-if="t.porValidar"> ({{ t.porValidar }})</template>
+            <button v-if="puede('mapa')" class="btn btn-sm" @click="ir('mapa', { evento: t.id })">🗺️ Vender en el mapa</button>
+            <button v-if="puede('mesas')" class="btn btn-sm" :class="{ 'btn-primario': t.porValidar }" @click="ir('solicitudes', { tab: 'mesas', evento: t.id })">
+              📥 Solicitudes<template v-if="t.porValidar"> ({{ t.porValidar }})</template>
             </button>
-            <button v-if="puede('mesas-diseno')" class="btn btn-sm" @click="ir('mesas', { evento: t.id, tab: 'plano' })">✏️ Plano y precios</button>
-            <button v-if="puede('mesas')" class="btn btn-sm" @click="ir('mesas', { evento: t.id, tab: 'ingreso' })">🎟️ Ingreso</button>
+            <button v-if="puede('mesas-diseno')" class="btn btn-sm" @click="ir('mesas', { evento: t.id, tab: 'evento' })">⚙️ Organizar</button>
+            <button v-if="puede('mesas-diseno')" class="btn btn-sm" @click="ir('mesas', { evento: t.id, tab: 'plano' })">✏️ Editor del plano</button>
+            <button v-if="puede('mesas') || puede('mesas-ingreso')" class="btn btn-sm" @click="ir('ingreso', { tab: 'escanear' })">🎟️ Ingreso</button>
           </div>
         </article>
       </template>
@@ -327,9 +410,33 @@ onUnmounted(() => { soltarCanal?.(); clearTimeout(pendiente); });
           </div>
         </div>
         <p v-else class="muted chico">La portada se sube después de crear la actividad, al editarla.</p>
+        <h4 class="subtitulo">Cómo pagan los expositores</h4>
+        <p class="muted chico">Se muestra en la página pública cuando alguien solicita un puesto: puede adjuntar su comprobante o pagar en oficinas.</p>
+        <div class="pago-feria">
+          <div class="qr-feria">
+            <img v-if="form.pagoQrUrl" :src="urlApi(form.pagoQrUrl)" alt="QR de pago" />
+            <span v-else class="muted chico">Sin QR</span>
+            <template v-if="form.editando">
+              <label class="btn btn-sm">{{ form.pagoQrUrl ? 'Cambiar QR' : 'Subir QR' }}
+                <input type="file" accept="image/png,image/jpeg,image/webp" hidden @change="subirQrPago" />
+              </label>
+              <button v-if="form.pagoQrUrl" type="button" class="btn btn-sm btn-fantasma" @click="quitarQrPago">Quitar</button>
+            </template>
+            <span v-else class="muted chico">Se sube al editar.</span>
+          </div>
+          <div class="dos">
+            <label class="campo"><span>Banco</span><input v-model="form.pagoBanco" class="control" maxlength="80" /></label>
+            <label class="campo"><span>Número de cuenta</span><input v-model="form.pagoCuenta" class="control" maxlength="60" /></label>
+            <label class="campo"><span>Titular</span><input v-model="form.pagoTitular" class="control" maxlength="120" /></label>
+            <label class="campo"><span>Instrucciones</span><input v-model="form.pagoInstrucciones" class="control" maxlength="500" placeholder="Ej. transfiere el monto exacto" /></label>
+          </div>
+        </div>
+        <label class="campo"><span>Oficinas para pagar en persona</span>
+          <textarea v-model="form.pagoOficina" class="control" rows="2" maxlength="300" placeholder="Dirección y horario, ej. Av. Principal 123, lunes a viernes de 8:30 a 16:30"></textarea>
+        </label>
       </div>
       <template #pie>
-        <button class="btn btn-fantasma" :disabled="form.guardando" @click="form.abierto = false">Cancelar</button>
+        <button class="btn btn-fantasma" :disabled="form.guardando" @click="form.abierto = false; borradorFeria.descartar()">Cancelar</button>
         <button class="btn btn-primario" :disabled="form.guardando" @click="guardar">{{ form.guardando ? 'Guardando…' : 'Guardar' }}</button>
       </template>
     </UiModal>
@@ -361,6 +468,14 @@ onUnmounted(() => { soltarCanal?.(); clearTimeout(pendiente); });
 .tipo { flex: 1; font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .tarjeta h3 { margin: 0; font-size: 1.1rem; }
 .urgente { color: var(--acento); }
+.interruptor { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.82rem; font-weight: 600; }
+.interruptor.deshabilitado { cursor: not-allowed; opacity: 0.6; }
+.interruptor input { position: absolute; opacity: 0; width: 0; height: 0; }
+.interruptor .pista { flex: none; width: 36px; height: 20px; border-radius: 999px; background: var(--border); position: relative; transition: background 0.15s; }
+.interruptor .pista::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform 0.15s; }
+.interruptor input:checked + .pista { background: var(--ok); }
+.interruptor input:checked + .pista::after { transform: translateX(16px); }
+.interruptor input:focus-visible + .pista { outline: 2px solid var(--acento); outline-offset: 2px; }
 .monto { font-size: 0.95rem !important; }
 .atajos { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: auto; padding-top: 0.3rem; border-top: 1px dashed var(--border); }
 .vacio { text-align: center; color: var(--muted); padding: 2rem; }
@@ -376,5 +491,9 @@ onUnmounted(() => { soltarCanal?.(); clearTimeout(pendiente); });
 .portada { display: flex; flex-direction: column; gap: 0.5rem; }
 .portada img { width: 100%; max-height: 180px; object-fit: cover; border-radius: var(--radio, 10px); border: 1px solid var(--border); }
 .portada-acciones { display: flex; gap: 0.5rem; }
+.pago-feria { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 0.8rem; align-items: start; }
+.qr-feria { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; border: 1px dashed var(--border); border-radius: var(--radio-sm); padding: 0.5rem; text-align: center; }
+.qr-feria img { width: 110px; height: 110px; object-fit: contain; background: #fff; border-radius: 6px; }
+@media (max-width: 560px) { .pago-feria { grid-template-columns: 1fr; } }
 .deshabilitado { opacity: 0.5; pointer-events: none; }
 </style>

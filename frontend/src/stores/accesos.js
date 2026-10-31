@@ -99,18 +99,21 @@ export const useAccesosStore = defineStore('accesos', () => {
     promesaCarga = (async () => {
       try {
         const params = new URLSearchParams();
-        if (filtros.categoriaId) params.set('categoriaId', filtros.categoriaId);
+        if (filtros.edicion) params.set('edicion', filtros.edicion);
         if (filtros.desde) params.set('desde', filtros.desde);
         if (filtros.hasta) params.set('hasta', filtros.hasta);
         if (filtros.sentido) params.set('sentido', filtros.sentido);
         params.set('limite', String(filtros.limite || 50));
         params.set('offset', String(filtros.offset || 0));
 
+        const rango = new URLSearchParams({ desde: filtros.desde || '', hasta: filtros.hasta || '' });
+        if (filtros.edicion) rango.set('edicion', filtros.edicion);
+        const deEdicion = filtros.edicion ? `?edicion=${filtros.edicion}` : '';
         const [movs, resCat, resUsr, dentro] = await Promise.all([
           apiFetch(`/api/app/accesos/movimientos?${params.toString()}`),
-          apiFetch(`/api/app/accesos/resumen/categoria?${new URLSearchParams({ desde: filtros.desde || '', hasta: filtros.hasta || '' }).toString()}`),
-          apiFetch(`/api/app/accesos/resumen/usuario?${new URLSearchParams({ desde: filtros.desde || '', hasta: filtros.hasta || '' }).toString()}`),
-          apiFetch('/api/app/accesos/dentro/detalle'),
+          apiFetch(`/api/app/accesos/resumen/categoria?${rango.toString()}`),
+          apiFetch(`/api/app/accesos/resumen/usuario?${rango.toString()}`),
+          apiFetch(`/api/app/accesos/dentro/detalle${deEdicion}`),
         ]);
 
         if (movs.ok) {

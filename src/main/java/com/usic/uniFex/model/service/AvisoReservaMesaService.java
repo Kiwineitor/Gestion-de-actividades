@@ -49,7 +49,7 @@ public class AvisoReservaMesaService {
         try {
             if (!whatsApp.habilitado()) return;
             List<Map<String, Object>> filas = jdbc.queryForList("""
-                    SELECT r.codigo, r.nombre, r.celular, r.monto, r.motivo, r.bloqueo_expira,
+                    SELECT r.codigo, r.nombre, r.celular, r.monto, r.motivo, r.bloqueo_expira, r.personas, r.tipo_pase,
                            m.codigo AS mesa, e.nombre AS evento, e.local_nombre,
                            to_char(e.fecha_inicio, 'DD/MM/YYYY HH24:MI') AS fecha,
                            to_char(e.hora_limite, 'HH24:MI') AS limite
@@ -83,8 +83,10 @@ public class AvisoReservaMesaService {
             case CONFIRMADA -> String.join("\n",
                     saludo,
                     "Tu pago fue validado. ¡Reserva confirmada! " + mesa + ".",
-                    r.get("limite") == null ? "Presenta tu QR y tu carnet en el ingreso."
-                            : "Presenta tu QR y tu carnet en el ingreso antes de las " + r.get("limite") + ".",
+                    "Tienes " + r.get("personas") + " pase(s) " + (r.get("tipo_pase") == null ? "" : r.get("tipo_pase") + " ")
+                            + "en el enlace: cada persona muestra su propio QR.",
+                    r.get("limite") == null ? "Presenta los pases y tu carnet en el ingreso."
+                            : "Presenta los pases y tu carnet en el ingreso antes de las " + r.get("limite") + ".",
                     "Código: " + r.get("codigo"),
                     enlace);
             case RECHAZADA -> String.join("\n",

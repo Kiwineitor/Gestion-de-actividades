@@ -31,9 +31,14 @@ public class CredencialService {
 
     @Transactional(readOnly = true)
     public List<CredencialDTO> listar(Long soloDeUsuario) {
+        return listar(soloDeUsuario, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CredencialDTO> listar(Long soloDeUsuario, Long edicion) {
         var filas = soloDeUsuario == null
-                ? dao.listarDeEdicionActiva()
-                : dao.listarDeEdicionActivaDe(soloDeUsuario);
+                ? dao.listarDeEdicion(edicion)
+                : dao.listarDeEdicionDe(soloDeUsuario, edicion);
         return filas.stream().map(this::de).toList();
     }
 

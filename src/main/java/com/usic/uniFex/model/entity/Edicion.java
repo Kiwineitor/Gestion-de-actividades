@@ -48,4 +48,7 @@ public class Edicion {
 
     @Column(name = "plano_subido_en")
     private java.time.LocalDateTime planoSubidoEn;
+
+    @Column(name = "plano_sin_fondo", nullable = false)
+    private Boolean planoSinFondo = false;
 }

@@ -4,6 +4,7 @@ import { alertaVisible, alertaConfig, cerrar } from '../ui/alerta';
 
 const segundos = ref(0);
 const botonPrincipal = ref(null);
+const campoEntrada = ref(null);
 let temporizador = null;
 let intervalo = null;
 
@@ -46,7 +47,10 @@ watch(() => (alertaVisible.value ? alertaConfig.serie : 0), (activa) => {
   if (activa) {
     iniciarTemporizador();
     document.body.style.overflow = 'hidden';
-    nextTick(() => botonPrincipal.value?.focus({ preventScroll: true }));
+    nextTick(() => {
+      if (alertaConfig.conEntrada) { campoEntrada.value?.focus({ preventScroll: true }); campoEntrada.value?.select(); }
+      else botonPrincipal.value?.focus({ preventScroll: true });
+    });
   } else {
     limpiar();
     document.body.style.overflow = '';
@@ -94,14 +98,16 @@ onUnmounted(() => {
 
         <h2 id="alerta-titulo">{{ alertaConfig.titulo }}</h2>
         <p id="alerta-mensaje" class="mensaje">{{ alertaConfig.mensaje }}</p>
+        <input v-if="alertaConfig.conEntrada" ref="campoEntrada" v-model="alertaConfig.entrada" class="control entrada"
+               :placeholder="alertaConfig.marcador" maxlength="200" @click.stop />
         <p v-if="alertaConfig.mostrarConfirmar && alertaConfig.ms > 0" class="temporizador">
           Se cerrará en {{ segundos }} s…
         </p>
 
         <footer class="pie">
           <template v-if="alertaConfig.mostrarConfirmar">
-            <button type="button" class="btn btn-fantasma" @click.stop="cancelar">Cancelar</button>
-            <button ref="botonPrincipal" type="button" class="boton-tipo" @click.stop="confirmar">Confirmar</button>
+            <button type="button" class="btn btn-fantasma" @click.stop="cancelar">{{ alertaConfig.textoCancelar }}</button>
+            <button ref="botonPrincipal" type="button" class="boton-tipo" @click.stop="confirmar">{{ alertaConfig.textoConfirmar }}</button>
           </template>
           <button v-else ref="botonPrincipal" type="button" class="boton-tipo" @click.stop="confirmar">Ok</button>
         </footer>
@@ -121,7 +127,7 @@ onUnmounted(() => {
 }
 .dialogo {
   position: relative;
-  width: 100%; max-width: 360px; max-height: 90vh; overflow: auto;
+  width: 100%; max-width: 400px; max-height: 90vh; overflow: auto;
   padding: 1.8rem 1.5rem 1.5rem;
   text-align: center;
   background: var(--panel);
@@ -143,6 +149,7 @@ onUnmounted(() => {
 
 h2 { margin: 0 0 0.5rem; font-size: 1.3rem; font-weight: 700; color: var(--color-tipo); }
 .mensaje { margin: 0; font-size: 0.92rem; line-height: 1.5; opacity: 0.85; white-space: pre-line; }
+.entrada { margin-top: 0.9rem; width: 100%; text-align: left; }
 .temporizador { margin: 0.6rem 0 0; font-size: 0.8rem; color: var(--muted); }
 
 .pie { display: flex; justify-content: center; gap: 0.6rem; margin-top: 1.3rem; }

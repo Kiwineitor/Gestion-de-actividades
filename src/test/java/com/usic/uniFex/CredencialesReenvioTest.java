@@ -34,6 +34,7 @@ class CredencialesReenvioTest {
     @Mock ReciboPdfService reciboPdfService;
     @Mock WhatsAppService whatsApp;
     @Mock IInscripcionService inscripcionService;
+    @Mock PlantillaCredencialService plantillas;
     @InjectMocks CredencialesApiController controlador;
     MockMvc mvc;
     CredencialDTO credencial;
@@ -48,11 +49,14 @@ class CredencialesReenvioTest {
         inscripcion.setEntidad(entidad);
         when(inscripcionService.findById(1L)).thenReturn(inscripcion);
         when(whatsApp.habilitado()).thenReturn(true);
+        lenient().when(plantillas.paraInscripcion(1L)).thenReturn(PlantillaCredencial.CREDENCIAL_VIRTUAL);
         credencial = mock(CredencialDTO.class);
         when(credencial.responsableId()).thenReturn(2L);
         when(credencial.apto(PlantillaCredencial.CREDENCIAL_VIRTUAL.id())).thenReturn(true);
         when(credencialService.porInscripcion(1L)).thenReturn(List.of(credencial));
-        when(imagenService.generar(eq(credencial), eq(PlantillaCredencial.CREDENCIAL_VIRTUAL), anyString()))
+        when(imagenService.generar(eq(credencial),
+                argThat((PlantillaCredencial p) -> p != null && PlantillaCredencial.CREDENCIAL_VIRTUAL.id().equals(p.id())),
+                anyString()))
                 .thenReturn(new byte[]{10});
     }
 

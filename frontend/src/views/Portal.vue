@@ -6,6 +6,8 @@ import { marca, iniciales, cargarMarca } from '../ui/marca';
 import { alCambiarPublico } from '../ui/canalPublico';
 import { enlaceWhatsApp } from '../ui/tokenPublico';
 import AvisosPublicos from '../components/AvisosPublicos.vue';
+import ReservaPendiente from '../components/ReservaPendiente.vue';
+import ComunicadosPublicos from '../components/ComunicadosPublicos.vue';
 import '../publico.css';
 
 const SECCIONES = {
@@ -137,6 +139,7 @@ watch(seccion, (s) => { if (!s) cargar(!!actividades.value.length); });
           <h1>{{ marca.lema || 'Reserva tu lugar en nuestras actividades' }}</h1>
           <p class="sub">Elige una actividad, aparta tu lugar y sigue tu reserva desde el celular.</p>
 
+          <ReservaPendiente />
           <form class="consulta" @submit.prevent="consultar">
             <label for="codigo-reserva">¿Ya reservaste? Consulta tu reserva</label>
             <div class="fila">
@@ -194,6 +197,7 @@ watch(seccion, (s) => { if (!s) cargar(!!actividades.value.length); });
     </div>
 
     <AvisosPublicos />
+    <ComunicadosPublicos />
   </div>
 </template>
 

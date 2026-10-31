@@ -22,5 +22,9 @@ public record InteresadoStandRequest(
         String rubro,
 
         @NotNull(message = "Debes elegir una categoría")
-        Long categoriaId) {
+        Long categoriaId,
+
+        Long puestoId,
+
+        String modoPago) {
 }

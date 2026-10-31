@@ -119,7 +119,7 @@ public class ResponsableServiceImpl implements IResponsableService{
     }
 
     @Override
-    public List<ResponsableReporteView> listarParaReporte() {
-        return responsableDao.listarParaReporte();
+    public List<ResponsableReporteView> listarParaReporte(Long edicion) {
+        return responsableDao.listarParaReporte(edicion);
     }
 }

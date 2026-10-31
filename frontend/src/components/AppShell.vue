@@ -11,9 +11,13 @@ import { iniciarPresencia, marcarPantalla, detenerPresencia } from '../ui/presen
 import AvisoAnuncios from './AvisoAnuncios.vue';
 import { useAnunciosStore } from '../stores/anuncios';
 import { marca, iniciales, cargarMarca } from '../ui/marca';
-import { claveModulo, moduloActual, aModulo, puedeAbrir, MODULOS } from '../modulos';
+import { claveModulo, moduloActual, aModulo, puedeAbrir, esCompleto, MODULOS } from '../modulos';
 import { useActividadStore } from '../stores/actividad';
 import { etiquetaRol } from '../ui/roles';
+import BarraPestanas from './BarraPestanas.vue';
+import { usePestanasStore } from '../stores/pestanas';
+import { useSolicitudesStore } from '../stores/solicitudes';
+import CampanaNotificaciones from './CampanaNotificaciones.vue';
 
 const auth = useAuthStore();
 const permisos = usePermisosStore();
@@ -83,47 +87,29 @@ watch(clave, () => {
 }, { immediate: true });
 
 const GRUPOS = [
-  'Mi trabajo', 'Actividades', 'Ventas', 'Planos y precios', 'Credenciales y acceso',
-  'Reportes', 'Personas y permisos', 'Comunicación', 'Sistema',
+  'Mi trabajo', 'Actividades', 'Ventas', 'Reportes', 'Usuarios y permisos', 'Comunicación', 'Sistema',
 ];
 
 const TODOS = [
   { m: 'inicio', g: 'Mi trabajo', icono: '🏠', txt: 'Inicio' },
-  { m: 'notificaciones', g: 'Mi trabajo', icono: '🔔', txt: 'Notificaciones' },
 
   { m: 'actividades', g: 'Actividades', icono: '🗓️', txt: 'Centro de actividades' },
-  { m: 'mesas', g: 'Actividades', icono: '🍸', txt: 'Eventos con mesas' },
-  { m: 'interesados', g: 'Actividades', icono: '🙋', txt: 'Solicitudes de participación' },
-  { m: 'tablero', g: 'Actividades', icono: '📌', txt: 'Tablero' },
-  { m: 'catalogo', g: 'Actividades', icono: '📚', txt: 'Catálogo' },
+  { m: 'solicitudes', g: 'Actividades', icono: '📥', txt: 'Solicitudes' },
+  { m: 'inscripciones', g: 'Actividades', icono: '📋', txt: 'Inscripciones' },
+  { m: 'credenciales', g: 'Actividades', icono: '🪪', txt: 'Credenciales' },
+  { m: 'ingreso', g: 'Actividades', icono: '🎟️', txt: 'Ingreso y accesos' },
+  { m: 'editor', siNo: 'actividades', g: 'Actividades', icono: '✏️', txt: 'Editor del plano' },
+  { m: 'categorias', siNo: 'actividades', g: 'Actividades', icono: '🏷️', txt: 'Categorías y precios' },
 
   { m: 'mapa', g: 'Ventas', icono: '🗺️', txt: 'Mapa de ventas' },
-  { m: 'venta', g: 'Ventas', icono: '🛒', txt: 'Registrar venta' },
   { m: 'mis-ventas', g: 'Ventas', icono: '🧾', txt: 'Mis ventas' },
-  { m: 'inscripciones', g: 'Ventas', icono: '📋', txt: 'Inscripciones' },
-  { m: 'control-ventas', g: 'Ventas', icono: '💰', txt: 'Control de ventas' },
-  { m: 'vendedores', g: 'Ventas', icono: '👥', txt: 'Vendedores' },
+  { m: 'catalogo', g: 'Ventas', icono: '📚', txt: 'Catálogo de precios' },
 
-  { m: 'editor', g: 'Planos y precios', icono: '✏️', txt: 'Editor del plano' },
-  { m: 'categorias', g: 'Planos y precios', icono: '🏷️', txt: 'Categorías y precios' },
-  { m: 'puestos', g: 'Planos y precios', icono: '🔢', txt: 'Puestos' },
+  { m: 'reportes', g: 'Reportes', icono: '📊', txt: 'Reportes' },
 
-  { m: 'credenciales', g: 'Credenciales y acceso', icono: '🪪', txt: 'Credenciales' },
-  { m: 'credenciales-diseno', g: 'Credenciales y acceso', icono: '🎨', txt: 'Diseño de credenciales' },
-  { m: 'credenciales-apoyo', g: 'Credenciales y acceso', icono: '🎫', txt: 'Credenciales de apoyo' },
-  { m: 'impresion-masiva', g: 'Credenciales y acceso', icono: '🖨️', txt: 'Impresión masiva' },
-  { m: 'responsables-extra', g: 'Credenciales y acceso', icono: '➕', txt: 'Responsables extra' },
-  { m: 'escaner', g: 'Credenciales y acceso', icono: '📷', txt: 'Escanear credencial' },
-  { m: 'control-acceso', g: 'Credenciales y acceso', icono: '🚪', txt: 'Control de acceso' },
-
-  { m: 'dashboard', g: 'Reportes', icono: '📊', txt: 'Dashboard' },
-  { m: 'reporte-responsables', g: 'Reportes', icono: '📑', txt: 'Reporte de responsables' },
-
-  { m: 'usuarios', g: 'Personas y permisos', icono: '👤', txt: 'Usuarios' },
-  { m: 'roles', g: 'Personas y permisos', icono: '🛡️', txt: 'Roles y permisos' },
-  { m: 'permisos', siNo: 'roles', g: 'Personas y permisos', icono: '🔐', txt: 'Roles y permisos' },
-  { m: 'personas', g: 'Personas y permisos', icono: '🧑', txt: 'Personas' },
-  { m: 'personal-apoyo', g: 'Personas y permisos', icono: '🤝', txt: 'Personal de apoyo' },
+  { m: 'usuarios', g: 'Usuarios y permisos', icono: '👤', txt: 'Usuarios' },
+  { m: 'roles', g: 'Usuarios y permisos', icono: '🛡️', txt: 'Roles y permisos' },
+  { m: 'permisos', siNo: 'roles', g: 'Usuarios y permisos', icono: '🔐', txt: 'Roles y permisos' },
 
   { m: 'anuncios', g: 'Comunicación', icono: '📣', txt: 'Comunicados' },
   { m: 'whatsapp', g: 'Comunicación', icono: '💬', txt: 'WhatsApp' },
@@ -133,8 +119,8 @@ const TODOS = [
   { m: 'errores', g: 'Sistema', icono: '⚠️', txt: 'Registro de errores' },
 ];
 
-const PREFERIDOS = ['inicio', 'mapa', 'venta', 'mis-ventas', 'actividades', 'mesas', 'escaner', 'credenciales', 'notificaciones'];
-const CLAVE_GRUPOS = 'menu.grupos.v2';
+const PREFERIDOS = ['inicio', 'actividades', 'solicitudes', 'mapa', 'mis-ventas', 'ingreso', 'credenciales'];
+const CLAVE_GRUPOS = 'menu.grupos.v3';
 
 const busqueda = ref('');
 const buscador = ref(null);
@@ -143,8 +129,8 @@ const abiertos = ref(new Set(leerGrupos()));
 function leerGrupos() {
   try {
     const g = JSON.parse(localStorage.getItem(CLAVE_GRUPOS) || 'null');
-    return Array.isArray(g) ? g : ['Mi trabajo'];
-  } catch { return ['Mi trabajo']; }
+    return Array.isArray(g) ? g : ['Mi trabajo', 'Actividades'];
+  } catch { return ['Mi trabajo', 'Actividades']; }
 }
 
 function alternarGrupo(g) {
@@ -165,6 +151,30 @@ function puedeVerEnlace(e) {
 }
 
 const enlaces = computed(() => TODOS.filter(puedeVerEnlace));
+
+const pestanas = usePestanasStore();
+const solicitudes = useSolicitudesStore();
+const iconos = { ...Object.fromEntries(TODOS.map((e) => [e.m, e.icono])), mesas: '🍸', interesados: '🙋' };
+const veSolicitudesMesas = computed(() => auth.puedeEditarPlano || permisos.puedeVer('mesas'));
+const veSolicitudesFeria = computed(() => auth.puedeEditarPlano || permisos.puedeVer('interesados'));
+const contadores = computed(() => ({ solicitudes: solicitudes.porValidar.length + solicitudes.nuevosFeria }));
+watch(() => [veSolicitudesMesas.value, veSolicitudesFeria.value], ([mesas, ferias]) => {
+  if (mesas || ferias) solicitudes.iniciar({ mesas, ferias }); else solicitudes.detener();
+}, { immediate: true });
+
+const pendientesCampana = computed(() => [
+  { clave: 'mesas', icono: '🍸', texto: 'Pagos de mesas por validar', cantidad: solicitudes.porValidar.length, modulo: 'solicitudes', query: { tab: 'mesas' } },
+  { clave: 'ferias', icono: '🙋', texto: 'Solicitudes de participación por revisar', cantidad: solicitudes.nuevosFeria, modulo: 'solicitudes', query: { tab: 'ferias' } },
+]);
+
+const cabecera = ref(null);
+const altoCabecera = ref(58);
+let observadorCabecera = null;
+onMounted(() => {
+  observadorCabecera = new ResizeObserver(([e]) => { altoCabecera.value = Math.ceil(e.target.getBoundingClientRect().height); });
+  if (cabecera.value) observadorCabecera.observe(cabecera.value);
+});
+onUnmounted(() => observadorCabecera?.disconnect());
 
 const grupos = computed(() => {
   const q = sinAcentos(busqueda.value.trim());
@@ -261,6 +271,8 @@ onUnmounted(() => {
 });
 
 function salir() {
+  pestanas.olvidarSesion();
+  solicitudes.detener();
   detenerPresencia();
   anuncios.desconectar();
   actividad.desconectar();
@@ -294,6 +306,7 @@ function salir() {
           <div class="grupo-enlaces">
             <router-link v-for="e in g.enlaces" :key="e.m" :to="aModulo(e.m)" class="enlace" :class="{ activo: e.m === clave }" :title="e.txt" @click="abierto = false; busqueda = ''">
               <span class="ico">{{ e.icono }}</span><span class="txt-menu">{{ e.txt }}</span>
+              <span v-if="contadores[e.m]" class="contador-menu">{{ contadores[e.m] }}</span>
             </router-link>
           </div>
         </div>
@@ -312,16 +325,20 @@ function salir() {
 
     <div v-if="abierto" class="velo" @click="abierto = false"></div>
 
-    <div class="area">
+    <div class="area" :style="{ '--alto-cabecera': `${altoCabecera}px` }">
+      <div ref="cabecera" class="cabecera-fija">
       <header class="topbar">
         <button class="btn btn-fantasma btn-icono menu" :aria-expanded="!plegado" @click="alternarMenu"
                 :title="plegado ? 'Mostrar menú' : 'Ocultar menú'" aria-label="Menú">☰</button>
         <h1>{{ titulo }}</h1>
         <span v-if="actividad.actual" class="chip-actividad" :title="`Actividad activa: ${actividad.actual.nombre}`">{{ actividad.actual.nombre }}</span>
         <div class="crecer"></div>
+        <CampanaNotificaciones :pendientes="pendientesCampana" />
         <button class="btn btn-fantasma btn-icono" :title="`Tema: ${tema}`" @click="alternarTema">{{ iconoTema }}</button>
       </header>
-      <main class="contenido" :class="{ inmersivo, completo: modulo.completo }">
+      <BarraPestanas :iconos="iconos" :contadores="contadores" />
+      </div>
+      <main class="contenido" :class="{ inmersivo, completo: esCompleto(modulo, route.query) }">
         <slot />
       </main>
     </div>
@@ -394,10 +411,13 @@ nav { display: flex; flex-direction: column; gap: 2px; padding: 0.4rem 0.6rem; f
 .datos .r { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
 
 .area { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cabecera-fija { position: sticky; top: 0; z-index: 10; }
+.contador-menu { margin-left: auto; background: var(--danger, #dc2626); color: #fff; border-radius: 999px; font-size: 0.7rem; font-weight: 800; padding: 0 0.45rem; }
+.sidebar.plegado:not(.asomado) .contador-menu { position: absolute; margin: -18px 0 0 18px; }
 .topbar {
   display: flex; align-items: center; gap: 0.6rem;
   padding: calc(0.7rem + var(--safe-top)) calc(1.2rem + var(--safe-right)) 0.7rem calc(1.2rem + var(--safe-left));
-  border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 10;
+  border-bottom: 1px solid var(--border); background: var(--panel); position: relative;
 }
 .topbar::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0;
@@ -434,7 +454,7 @@ nav { display: flex; flex-direction: column; gap: 2px; padding: 0.4rem 0.6rem; f
            calc(1.4rem + var(--tabbar-h) + var(--kb)) calc(1.4rem + var(--safe-left));
 }
 .contenido.completo {
-  max-width: none; height: calc(100dvh - 58px - var(--safe-top)); box-sizing: border-box;
+  max-width: none; height: calc(100dvh - var(--alto-cabecera, 58px)); box-sizing: border-box;
   display: flex; flex-direction: column; min-height: 0; overflow: hidden; padding-bottom: 1rem;
 }
 .contenido.completo > * { flex: 1; min-height: 0; }

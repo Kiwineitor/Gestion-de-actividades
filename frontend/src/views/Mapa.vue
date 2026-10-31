@@ -1,7 +1,7 @@
 <script setup>
 import { usePermisosStore } from '../stores/permisos';
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed, onMounted, onUnmounted, nextTick, defineAsyncComponent, watch } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import PanZoom from '../components/PanZoom.vue';
 import CasetaDetalle from '../components/CasetaDetalle.vue';
 import { apiFetch } from '../api';
@@ -16,6 +16,34 @@ import { asegurarCategorias, opcionesDe, tieneVariosPrecios } from '../ui/catalo
 import RotuloPlano from '../components/RotuloPlano.vue';
 import { usePlanoTextosStore } from '../stores/planoTextos.js';
 import { aModulo } from '../modulos';
+import MapaMesas from '../components/MapaMesas.vue';
+import ModalEntrega from '../components/ModalEntrega.vue';
+import { actividades, ediciones, eventos, cargarActividades } from '../ui/actividadElegida';
+import { marcarPantalla } from '../ui/presencia';
+
+const Venta = defineAsyncComponent(() => import('./Venta.vue'));
+const route = useRoute();
+
+function leerMapa() {
+  const q = route.query.evento;
+  if (typeof q === 'string' && /^\d+$/.test(q)) return `e-${q}`;
+  try { return sessionStorage.getItem('mapa.actividad') || ''; } catch { return ''; }
+}
+
+const mapaClave = ref(leerMapa());
+watch(mapaClave, (v) => { try { if (v) sessionStorage.setItem('mapa.actividad', v); else sessionStorage.removeItem('mapa.actividad'); } catch { } });
+watch(actividades, (l) => { if (mapaClave.value && l.length && !l.some((a) => a.clave === mapaClave.value)) mapaClave.value = ''; });
+watch(() => route.query.evento, (q) => { if (typeof q === 'string' && /^\d+$/.test(q)) mapaClave.value = `e-${q}`; });
+const eventoMapa = computed(() => (/^e-\d+$/.test(mapaClave.value) ? Number(mapaClave.value.slice(2)) : null));
+const feriaEnCurso = computed(() => ediciones.value.find((e) => e.activa) || null);
+const ventaAbierta = ref(false);
+const entregaId = ref(null);
+watch(ventaAbierta, (v) => marcarPantalla(v ? 'venta' : 'mapa', v ? 'Registrar venta' : 'Mapa de ventas'));
+
+function ventaRegistrada(id) {
+  ventaAbierta.value = false;
+  entregaId.value = id;
+}
 
 const tienda = usePuestosStore();
 const planoTienda = usePlanoStore();
@@ -63,17 +91,13 @@ const asignacionDe = (p) => tienda.asignaciones.get(p.id) || [];
 
 const ocupanteDe = (p) => tienda.ocupacion.get(p.id) || null;
 
+const tengoAsignaciones = computed(() => [...tienda.asignaciones.values()]
+  .some((lista) => lista.some((a) => a.vendedorId === auth.id)));
+
 const puedoVender = (p) => {
-  if (!auth.esVendedor) return true;
+  if (!auth.esVendedor || !tengoAsignaciones.value) return true;
   return asignacionDe(p).some((a) => a.vendedorId === auth.id);
 };
-
-const sinHabilitadas = computed(() =>
-  auth.esVendedor
-  && !tienda.cargando
-  && tienda.puestos.length > 0
-  && ![...tienda.asignaciones.values()]
-        .some((lista) => lista.some((a) => a.vendedorId === auth.id)));
 
 const esMia = (p) => p.estado === 'T' && p.reservadoPor != null && auth.id != null
   && Number(p.reservadoPor) === Number(auth.id);
@@ -181,6 +205,7 @@ async function vaciarCarrito() {
 let dejarDeOirAsignaciones = null;
 
 onMounted(() => {
+  cargarActividades();
   dejarDeOirAsignaciones = tienda.registrarNotificaciones((n) => {
     if (n?.tipo === 'ASIGNACION_CAMBIADA' && n.cuerpo) alerta(n.cuerpo, 'info', 8000);
   });
@@ -200,6 +225,19 @@ onUnmounted(() => {
 
 <template>
   <div class="barra">
+      <label v-if="actividades.length > 1" class="elegir-mapa" title="Ver el mapa de otra actividad">
+        <span aria-hidden="true">🗺️</span>
+        <select v-model="mapaClave" aria-label="Mapa de la actividad">
+          <option value="">{{ feriaEnCurso ? feriaEnCurso.nombre : 'Feria en curso' }}{{ feriaEnCurso ? ' (en curso)' : '' }}</option>
+          <optgroup v-if="ediciones.some((e) => !e.activa)" label="Otras ferias (solo se vende la que está en curso)">
+            <option v-for="e in ediciones.filter((x) => !x.activa)" :key="e.clave" :value="e.clave" disabled>{{ e.nombre }}</option>
+          </optgroup>
+          <optgroup v-if="eventos.length" label="Eventos con mesas">
+            <option v-for="e in eventos" :key="e.clave" :value="e.clave">{{ e.nombre }}</option>
+          </optgroup>
+        </select>
+      </label>
+      <template v-if="!eventoMapa">
       <div class="legend">
         <span v-for="l in LEYENDA" :key="l.clase" class="chip" :class="l.clase">{{ l.txt }}</span>
         <span v-if="auth.esVendedor" class="chip chip-ajena">De otro vendedor</span>
@@ -223,7 +261,10 @@ onUnmounted(() => {
         {{ ubicados.length }} ubicadas
         <span v-if="sinUbicar > 0" class="muted">· {{ sinUbicar }} sin ubicar (Editor)</span>
       </div>
+      </template>
     </div>
+    <MapaMesas v-if="eventoMapa" :evento-id="eventoMapa" />
+    <template v-else>
     <Transition name="subir">
       <div v-if="carrito.length" class="carrito" role="status">
         <div class="resumen">
@@ -238,9 +279,9 @@ onUnmounted(() => {
           <button class="btn btn-fantasma" :disabled="vaciando" @click="vaciarCarrito">
             {{ vaciando ? 'Liberando…' : 'Vaciar' }}
           </button>
-          <router-link :to="aModulo('venta')" class="btn btn-primario">
+          <button type="button" class="btn btn-primario" @click="ventaAbierta = true">
             Registrar venta
-          </router-link>
+          </button>
         </div>
       </div>
     </Transition>
@@ -266,16 +307,12 @@ onUnmounted(() => {
       </p>
     </div>
 
-    <div v-else-if="sinHabilitadas" class="aviso-habilitadas" role="status">
-      <strong>Todavía no tienes casetas habilitadas.</strong>
-      Administración aún no te asignó ninguna; aparecerán solas en cuanto lo haga.
-      Mientras tanto puedes tocar cualquier caseta para ver quién la vende.
-    </div>
 
-    <PanZoom v-if="!tienda.sinAsignaciones" :key="planoTienda.src" :focus="focoInicial" :contenido="esMovil ? zonaEncuadre : null"
+    <PanZoom v-if="!tienda.sinAsignaciones" :key="`${planoTienda.src}-${planoTienda.plano.version}`" :focus="focoInicial" :contenido="esMovil ? zonaEncuadre : null"
              :aspect="planoTienda.aspecto" :umbral-detalle="umbralNumeros" :max-ancho="topeZoom" llenar>
       <div class="plano" :class="{ 'con-numeros': numerosVisibles }" :style="{ aspectRatio: planoTienda.aspecto ? 1 / planoTienda.aspecto : 'auto' }">
         <img
+          v-if="planoTienda.src"
           :src="planoTienda.src"
           :key="planoTienda.src"
           alt="Plano de la feria"
@@ -300,9 +337,39 @@ onUnmounted(() => {
         <RotuloPlano v-for="t in textosTienda.textos" :key="t.id" :texto="t" />
       </div>
     </PanZoom>
+    </template>
+
+    <div v-if="ventaAbierta" class="hoja-venta" role="dialog" aria-modal="true" aria-label="Registrar venta">
+      <header class="hoja-cab">
+        <strong>🛒 Registrar venta</strong>
+        <button type="button" class="btn btn-fantasma btn-icono" aria-label="Cerrar" @click="ventaAbierta = false">✕</button>
+      </header>
+      <div class="hoja-cuerpo">
+        <Venta en-modal @cerrar="ventaAbierta = false" @registrada="ventaRegistrada" />
+      </div>
+    </div>
+    <ModalEntrega v-if="entregaId" :inscripcion-id="entregaId" @cerrar="entregaId = null" />
 </template>
 
 <style scoped>
+.elegir-mapa {
+  display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.1rem 0.2rem 0.1rem 0.6rem;
+  border: 1px solid var(--acento); border-radius: 999px; background: var(--acento-suave); color: var(--acento);
+  font-weight: 700; font-size: 0.85rem; max-width: 100%;
+}
+.elegir-mapa select {
+  border: 0; background: transparent; color: inherit; font: inherit; font-weight: 700; padding: 0.3rem 0.35rem;
+  max-width: min(62vw, 300px); cursor: pointer; outline: none;
+}
+.hoja-venta {
+  position: fixed; inset: 0; z-index: 900; display: flex; flex-direction: column;
+  background: var(--bg, var(--panel));
+}
+.hoja-cab {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  padding: 0.6rem 1rem; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.hoja-cuerpo { flex: 1; overflow: auto; padding: 1rem; }
 
 .sin-asignaciones {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -320,13 +387,6 @@ onUnmounted(() => {
 .chip { padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
 .chip-ajena { background: var(--bloqueado); color: #fff; }
 
-.aviso-habilitadas {
-  margin: 0 0 0.6rem; padding: 0.7rem 0.9rem; border-radius: var(--radio-sm);
-  border: 1px solid color-mix(in srgb, var(--tramite) 45%, transparent);
-  background: color-mix(in srgb, var(--tramite) 12%, var(--panel));
-  color: var(--text); font-size: 0.9rem; line-height: 1.45;
-}
-.aviso-habilitadas strong { color: var(--tramite); }
 .info { font-size: 0.9rem; }
 .numeros.on { border-color: var(--acento); color: var(--acento); font-weight: 700; }
 
@@ -338,7 +398,7 @@ onUnmounted(() => {
   font: inherit; font-size: 0.8rem; font-weight: 700; cursor: pointer;
 }
 .muted { color: var(--muted); }
-.plano { position: relative; width: 100%; }
+.plano { position: relative; width: 100%; background: #f4f5fb; }
 
 .plano img {
   width: 100%; height: auto; display: block;
@@ -348,7 +408,7 @@ onUnmounted(() => {
 }
 
 .pin {
-  position: absolute; width: 100px; height: var(--alto, 100px);
+  position: absolute; width: 100px; height: var(--alto, 100px); z-index: 1;
   transform-origin: 0 0;
   transform: scale(calc(var(--pin, 20) / 100)) rotate(var(--giro, 0deg)) translate(-50%, -50%);
   border: none;

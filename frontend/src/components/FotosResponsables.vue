@@ -1,4 +1,5 @@
 <script setup>
+import { confirmar } from '../ui/alerta';
 import { ref, computed, watch } from 'vue';
 import { apiFetch } from '../api';
 import { url as urlServidor } from '../config';
@@ -73,7 +74,7 @@ async function confirmarSubidaFoto(archivo) {
 }
 
 async function quitar(responsable) {
-  if (!confirm(`¿Quitar la foto de ${responsable.nombre}?`)) return;
+  if (!(await confirmar(`¿Quitar la foto de ${responsable.nombre}?`, { titulo: 'Quitar', aceptar: 'Sí, quitar' }))) return;
   ocupado.value = responsable.id;
   try {
     const r = await apiFetch(

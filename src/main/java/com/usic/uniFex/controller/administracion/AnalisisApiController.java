@@ -14,6 +14,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.usic.uniFex.model.dto.AnalisisDTO;
@@ -37,54 +38,55 @@ public class AnalisisApiController {
     private static final DateTimeFormatter DIA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     @GetMapping
-    public Map<String, Object> todo() {
+    public Map<String, Object> todo(@RequestParam(required = false) Long edicion) {
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("ocupacion", analisis.ocupacion());
-        m.put("vendedores", analisis.vendedores());
-        m.put("cobros", analisis.cobros());
-        m.put("avance", analisis.avance());
+        m.put("ocupacion", analisis.ocupacion(edicion));
+        m.put("vendedores", analisis.vendedores(edicion));
+        m.put("cobros", analisis.cobros(edicion));
+        m.put("avance", analisis.avance(edicion));
         return m;
     }
 
     @GetMapping("/ocupacion")
-    public List<AnalisisDTO.Ocupacion> ocupacion() {
-        return analisis.ocupacion();
+    public List<AnalisisDTO.Ocupacion> ocupacion(@RequestParam(required = false) Long edicion) {
+        return analisis.ocupacion(edicion);
     }
 
     @GetMapping("/vendedores")
-    public List<AnalisisDTO.Vendedor> vendedores() {
-        return analisis.vendedores();
+    public List<AnalisisDTO.Vendedor> vendedores(@RequestParam(required = false) Long edicion) {
+        return analisis.vendedores(edicion);
     }
 
     @GetMapping("/cobros")
-    public AnalisisDTO.Cobros cobros() {
-        return analisis.cobros();
+    public AnalisisDTO.Cobros cobros(@RequestParam(required = false) Long edicion) {
+        return analisis.cobros(edicion);
     }
 
     @GetMapping("/avance")
-    public List<AnalisisDTO.Dia> avance() {
-        return analisis.avance();
+    public List<AnalisisDTO.Dia> avance(@RequestParam(required = false) Long edicion) {
+        return analisis.avance(edicion);
     }
 
     @GetMapping("/facultad")
-    public List<AnalisisDTO.Facultad> facultad() {
-        return analisis.porFacultad();
+    public List<AnalisisDTO.Facultad> facultad(@RequestParam(required = false) Long edicion) {
+        return analisis.porFacultad(edicion);
     }
 
     @GetMapping("/vendido-categoria")
-    public List<AnalisisDTO.VendidoCategoria> vendidoCategoria() {
-        return analisis.vendidoPorCategoria();
+    public List<AnalisisDTO.VendidoCategoria> vendidoCategoria(@RequestParam(required = false) Long edicion) {
+        return analisis.vendidoPorCategoria(edicion);
     }
 
     @GetMapping("/{nombre}/{formato}")
-    public ResponseEntity<byte[]> descargar(@PathVariable String nombre, @PathVariable String formato) {
+    public ResponseEntity<byte[]> descargar(@PathVariable String nombre, @PathVariable String formato,
+                                            @RequestParam(required = false) Long edicion) {
         Tabla tabla = switch (nombre) {
-            case "ocupacion" -> tablaOcupacion();
-            case "vendedores" -> tablaVendedores();
-            case "cobros" -> tablaCobros();
-            case "avance" -> tablaAvance();
-            case "facultad" -> tablaFacultad();
-            case "vendido-categoria" -> tablaVendidoCategoria();
+            case "ocupacion" -> tablaOcupacion(edicion);
+            case "vendedores" -> tablaVendedores(edicion);
+            case "cobros" -> tablaCobros(edicion);
+            case "avance" -> tablaAvance(edicion);
+            case "facultad" -> tablaFacultad(edicion);
+            case "vendido-categoria" -> tablaVendidoCategoria(edicion);
             default -> null;
         };
         if (tabla == null) {
@@ -108,11 +110,11 @@ public class AnalisisApiController {
                 .body(datos);
     }
 
-    private Tabla tablaOcupacion() {
+    private Tabla tablaOcupacion(Long edicion) {
         List<List<String>> filas = new ArrayList<>();
         int vendidas = 0, tramite = 0, libres = 0, bloqueadas = 0, total = 0;
         BigDecimal bsVendido = BigDecimal.ZERO, bsPorVender = BigDecimal.ZERO;
-        for (AnalisisDTO.Ocupacion o : analisis.ocupacion()) {
+        for (AnalisisDTO.Ocupacion o : analisis.ocupacion(edicion)) {
             filas.add(List.of(o.categoria() == null ? "(sin categoría)" : o.categoria(),
                     String.valueOf(o.vendidas()), String.valueOf(o.enTramite()),
                     String.valueOf(o.libres()), String.valueOf(o.bloqueadas()),
@@ -146,9 +148,9 @@ public class AnalisisApiController {
                 filas);
     }
 
-    private Tabla tablaVendedores() {
+    private Tabla tablaVendedores(Long edicion) {
         List<List<String>> filas = new ArrayList<>();
-        for (AnalisisDTO.Vendedor v : analisis.vendedores()) {
+        for (AnalisisDTO.Vendedor v : analisis.vendedores(edicion)) {
             filas.add(List.of(v.vendedor() == null ? "(sin nombre)" : v.vendedor(),
                     v.area() == null ? "—" : v.area(),
                     v.carrera() == null ? "—" : v.carrera(),
@@ -166,8 +168,8 @@ public class AnalisisApiController {
                 filas);
     }
 
-    private Tabla tablaCobros() {
-        AnalisisDTO.Cobros c = analisis.cobros();
+    private Tabla tablaCobros(Long edicion) {
+        AnalisisDTO.Cobros c = analisis.cobros(edicion);
         List<List<String>> filas = new ArrayList<>();
         for (AnalisisDTO.Cobro corte : c.cortes()) {
             filas.add(List.of(corte.concepto(), "", "", String.valueOf(corte.ventas()),
@@ -196,9 +198,9 @@ public class AnalisisApiController {
                 filas);
     }
 
-    private Tabla tablaAvance() {
+    private Tabla tablaAvance(Long edicion) {
         List<List<String>> filas = new ArrayList<>();
-        for (AnalisisDTO.Dia d : analisis.avance()) {
+        for (AnalisisDTO.Dia d : analisis.avance(edicion)) {
             filas.add(List.of(d.fecha() == null ? "—" : d.fecha().format(DIA),
                     String.valueOf(d.ventas()), String.valueOf(d.casetas()), bs(d.totalBs()),
                     String.valueOf(d.acumuladoCasetas()), bs(d.acumuladoBs())));
@@ -212,8 +214,8 @@ public class AnalisisApiController {
                 filas);
     }
 
-    private Tabla tablaFacultad() {
-        List<AnalisisDTO.Facultad> filas = analisis.porFacultad();
+    private Tabla tablaFacultad(Long edicion) {
+        List<AnalisisDTO.Facultad> filas = analisis.porFacultad(edicion);
         List<List<String>> cuerpo = new ArrayList<>();
         int vendedores = 0, ventas = 0, casetas = 0;
         BigDecimal total = BigDecimal.ZERO;
@@ -251,8 +253,8 @@ public class AnalisisApiController {
                 cuerpo);
     }
 
-    private Tabla tablaVendidoCategoria() {
-        List<AnalisisDTO.VendidoCategoria> filas = analisis.vendidoPorCategoria();
+    private Tabla tablaVendidoCategoria(Long edicion) {
+        List<AnalisisDTO.VendidoCategoria> filas = analisis.vendidoPorCategoria(edicion);
         List<List<String>> cuerpo = new ArrayList<>();
         int vendidas = 0, total = 0;
         BigDecimal bsTotal = BigDecimal.ZERO;

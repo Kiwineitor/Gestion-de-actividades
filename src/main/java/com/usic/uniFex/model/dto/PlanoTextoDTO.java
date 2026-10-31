@@ -12,6 +12,9 @@ public record PlanoTextoDTO(
         String colorBorde,
         Double grosorBorde,
         Double rotacion,
+        String fondo,
+        Double ancho,
+        Double alto,
         boolean activo) {
 
     public static PlanoTextoDTO de(PlanoTexto t) {
@@ -25,10 +28,13 @@ public record PlanoTextoDTO(
                 t.getColorBorde(),
                 t.getGrosorBorde(),
                 t.getRotacion(),
+                t.getFondo(),
+                t.getAncho(),
+                t.getAlto(),
                 !PlanoTexto.REGISTRO_ANULADO.equals(t.getEstado()));
     }
 
     public static PlanoTextoDTO baja(Long id) {
-        return new PlanoTextoDTO(id, null, null, null, null, null, null, null, null, false);
+        return new PlanoTextoDTO(id, null, null, null, null, null, null, null, null, null, null, null, false);
     }
 }

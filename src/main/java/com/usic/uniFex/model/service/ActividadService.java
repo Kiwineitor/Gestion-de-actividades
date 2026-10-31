@@ -38,7 +38,9 @@ public class ActividadService {
     public record Datos(String nombre, Integer anio, String tipo, Long copiarDe,
                         Boolean copiarPlano, Boolean copiarTextos,
                         String lugar, String fechasTexto, String descripcionPublica, String contacto,
-                        Boolean publica, Boolean recibeInteresados) {
+                        Boolean publica, Boolean recibeInteresados,
+                        String pagoBanco, String pagoCuenta, String pagoTitular, String pagoInstrucciones,
+                        String pagoOficina) {
     }
 
     public record Resultado(boolean ok, String mensaje, Long id) {
@@ -50,7 +52,8 @@ public class ActividadService {
         return jdbc.query("""
                 SELECT e.id, e.nombre, e.anio, e.tipo, e.activa, e.plano_archivo IS NOT NULL AS con_plano,
                        e.lugar, e.fechas_texto, e.descripcion_publica, e.contacto, e.portada_archivo,
-                       e.publica, e.recibe_interesados,
+                       e.publica, e.recibe_interesados, e.pago_qr_archivo, e.pago_banco, e.pago_cuenta,
+                       e.pago_titular, e.pago_instrucciones, e.pago_oficina,
                        (SELECT count(*) FROM categoria c
                          WHERE c.id_edicion = e.id AND (c."_estado" IS NULL OR c."_estado" <> 'X')) AS categorias,
                        (SELECT count(*) FROM puesto p JOIN categoria c ON c.id = p.id_categoria
@@ -82,6 +85,13 @@ public class ActividadService {
             m.put("portadaUrl", portada == null ? null : "/files/" + portada);
             m.put("publica", rs.getBoolean("publica"));
             m.put("recibeInteresados", rs.getBoolean("recibe_interesados"));
+            String qr = rs.getString("pago_qr_archivo");
+            m.put("pagoQrUrl", qr == null ? null : "/files/" + qr);
+            m.put("pagoBanco", rs.getString("pago_banco"));
+            m.put("pagoCuenta", rs.getString("pago_cuenta"));
+            m.put("pagoTitular", rs.getString("pago_titular"));
+            m.put("pagoInstrucciones", rs.getString("pago_instrucciones"));
+            m.put("pagoOficina", rs.getString("pago_oficina"));
             return m;
         });
     }
@@ -177,6 +187,36 @@ public class ActividadService {
     }
 
     @Transactional
+    public Resultado subirQrPago(Long id, MultipartFile archivo) throws IOException {
+        if (!existe(id)) return Resultado.error("La actividad no existe");
+        if (archivo == null || archivo.isEmpty() || !TIPOS_IMAGEN.contains(String.valueOf(archivo.getContentType()))) {
+            return Resultado.error("Sube una imagen PNG, JPG o WEBP");
+        }
+        if (archivo.getSize() > 5L * 1024 * 1024) return Resultado.error("El QR no puede pasar de 5 MB");
+        String ruta = archivos.save(archivo, FileStorageService.Bucket.ACTIVIDADES, "qr-pago");
+        jdbc.update("UPDATE edicion SET pago_qr_archivo = ? WHERE id = ?", ruta, id);
+        avisoPublico.cambio("actividad", id);
+        return new Resultado(true, "QR de pago actualizado", id);
+    }
+
+    @Transactional
+    public Resultado quitarQrPago(Long id) {
+        if (!existe(id)) return Resultado.error("La actividad no existe");
+        jdbc.update("UPDATE edicion SET pago_qr_archivo = NULL WHERE id = ?", id);
+        avisoPublico.cambio("actividad", id);
+        return new Resultado(true, "QR de pago quitado", id);
+    }
+
+    @Transactional
+    public Resultado habilitar(Long id, boolean habilitada) {
+        if (!existe(id)) return Resultado.error("La actividad no existe");
+        jdbc.update("UPDATE edicion SET publica = ?, recibe_interesados = ? WHERE id = ?", habilitada, habilitada, id);
+        avisoPublico.cambio("actividad", id);
+        return new Resultado(true, habilitada ? "Actividad habilitada: visible y recibiendo solicitudes"
+                : "Actividad deshabilitada: oculta al público", id);
+    }
+
+    @Transactional
     public Resultado quitarPortada(Long id) {
         if (!existe(id)) return Resultado.error("La actividad no existe");
         jdbc.update("UPDATE edicion SET portada_archivo = NULL WHERE id = ?", id);
@@ -184,14 +224,62 @@ public class ActividadService {
         return new Resultado(true, "Portada quitada", id);
     }
 
+    @Transactional
+    public Resultado eliminar(Long id, Long usuarioId) {
+        List<Map<String, Object>> filas = jdbc.queryForList("SELECT nombre, activa FROM edicion WHERE id = ? FOR UPDATE", id);
+        if (filas.isEmpty()) return Resultado.error("La actividad no existe");
+        String nombre = (String) filas.get(0).get("nombre");
+        if (Boolean.TRUE.equals(filas.get(0).get("activa"))) {
+            return Resultado.error("«" + nombre + "» es la feria en curso. Pon otra en curso antes de eliminarla.");
+        }
+        Integer ventas = jdbc.queryForObject("""
+                SELECT (SELECT count(*) FROM inscripcion WHERE id_edicion = ?)
+                     + (SELECT count(*) FROM venta_boleto WHERE id_edicion = ?)
+                     + (SELECT count(*) FROM noticia WHERE id_edicion = ?)
+                     + (SELECT count(*) FROM noche_fexpo WHERE id_edicion = ?)
+                """, Integer.class, id, id, id, id);
+        if (ventas != null && ventas > 0) {
+            return Resultado.error("«" + nombre + "» tiene " + ventas + " venta(s) o registro(s) asociados. "
+                    + "Para conservar el historial no se puede eliminar.");
+        }
+        String puestos = "SELECT p.id FROM puesto p JOIN categoria c ON c.id = p.id_categoria WHERE c.id_edicion = ?";
+        String categorias = "SELECT id FROM categoria WHERE id_edicion = ?";
+        jdbc.update("DELETE FROM notificacion WHERE id_puesto IN (" + puestos + ")", id);
+        jdbc.update("DELETE FROM interesado_stand WHERE id_puesto IN (" + puestos + ") OR id_categoria IN (" + categorias + ")", id, id);
+        jdbc.update("DELETE FROM vendedor_puesto WHERE id_puesto IN (" + puestos + ")", id);
+        jdbc.update("DELETE FROM puesto_foto WHERE id_puesto IN (" + puestos + ")", id);
+        jdbc.update("DELETE FROM puesto WHERE id_categoria IN (" + categorias + ")", id);
+        jdbc.update("DELETE FROM categoria_opcion WHERE id_categoria IN (" + categorias + ")", id);
+        jdbc.update("DELETE FROM categoria WHERE id_edicion = ?", id);
+        jdbc.update("DELETE FROM plano_texto WHERE id_edicion = ?", id);
+        jdbc.update("UPDATE plantilla_credencial SET id_edicion = NULL WHERE id_edicion = ?", id);
+        jdbc.update("DELETE FROM edicion WHERE id = ?", id);
+        log.warn("Actividad {} ({}) eliminada por el usuario {}", id, nombre, usuarioId);
+        avisoPublico.cambio("actividad", id);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    plantillas.recargar();
+                } catch (RuntimeException e) {
+                    log.warn("No se pudieron recargar las plantillas de credencial: {}", e.getMessage());
+                }
+            }
+        });
+        return new Resultado(true, "Actividad «" + nombre + "» eliminada", id);
+    }
+
     private void guardarPublico(Long id, Datos d) {
         jdbc.update("""
                 UPDATE edicion
                    SET lugar = ?, fechas_texto = ?, descripcion_publica = ?, contacto = ?,
-                       publica = COALESCE(?, publica), recibe_interesados = COALESCE(?, recibe_interesados)
+                       publica = COALESCE(?, publica), recibe_interesados = COALESCE(?, recibe_interesados),
+                       pago_banco = ?, pago_cuenta = ?, pago_titular = ?, pago_instrucciones = ?, pago_oficina = ?
                  WHERE id = ?
                 """, limpio(d.lugar(), 200), limpio(d.fechasTexto(), 120), texto(d.descripcionPublica(), 3000),
-                limpio(d.contacto(), 120), d.publica(), d.recibeInteresados(), id);
+                limpio(d.contacto(), 120), d.publica(), d.recibeInteresados(),
+                limpio(d.pagoBanco(), 80), limpio(d.pagoCuenta(), 60), limpio(d.pagoTitular(), 120),
+                texto(d.pagoInstrucciones(), 500), texto(d.pagoOficina(), 300), id);
         avisoPublico.cambio("actividad", id);
     }
 
@@ -240,7 +328,8 @@ public class ActividadService {
         jdbc.update("""
                 UPDATE edicion d
                    SET plano_archivo = o.plano_archivo, plano_ancho = o.plano_ancho,
-                       plano_alto = o.plano_alto, plano_version = o.plano_version, plano_subido_en = o.plano_subido_en
+                       plano_alto = o.plano_alto, plano_version = o.plano_version, plano_subido_en = o.plano_subido_en,
+                       plano_sin_fondo = o.plano_sin_fondo
                   FROM edicion o
                  WHERE d.id = ? AND o.id = ?
                 """, destino, origen);
@@ -249,8 +338,9 @@ public class ActividadService {
     private void copiarTextos(Long origen, Long destino, Long usuarioId) {
         jdbc.update("""
                 INSERT INTO plano_texto (id_edicion, contenido, mapa_x, mapa_y, tamano, color, color_borde,
-                                         grosor_borde, rotacion, "_fecha_registro", "_registro_id_usuario", "_estado")
-                SELECT ?, contenido, mapa_x, mapa_y, tamano, color, color_borde, grosor_borde, rotacion,
+                                         grosor_borde, rotacion, fondo, ancho, alto,
+                                         "_fecha_registro", "_registro_id_usuario", "_estado")
+                SELECT ?, contenido, mapa_x, mapa_y, tamano, color, color_borde, grosor_borde, rotacion, fondo, ancho, alto,
                        now(), ?, "_estado"
                   FROM plano_texto
                  WHERE id_edicion = ? AND ("_estado" IS NULL OR "_estado" <> 'X')

@@ -1,4 +1,5 @@
 <script setup>
+import { confirmar } from '../ui/alerta';
 import { etiquetaRol } from '../ui/roles';
 import { ref, reactive, computed, onMounted } from 'vue';
 import UiModal from '../components/UiModal.vue';
@@ -30,6 +31,35 @@ const personasSugeridas = ref([]);
 const buscandoPersonas = ref(false);
 
 const modalPass = reactive({ abierto: false, id: null, username: '', nueva: '', confirmar: '', ver: false });
+const modalDatos = reactive({ abierto: false, personaId: null, username: '', nombre: '', paterno: '', materno: '', ci: '', correo: '', celular: '', carreraId: null, guardando: false });
+
+async function abrirDatos(u) {
+  if (!u.personaId) { toast('Este usuario no tiene una persona asociada.', 'error'); return; }
+  Object.assign(modalDatos, { abierto: true, personaId: u.personaId, username: u.username, nombre: '', paterno: '', materno: '', ci: '', correo: '', celular: '', carreraId: null });
+  const r = await apiFetch('/api/app/personas');
+  const lista = r.ok ? await r.json() : [];
+  const p = Array.isArray(lista) ? lista.find((x) => x.id === u.personaId) : null;
+  if (p) Object.assign(modalDatos, { nombre: p.nombre || '', paterno: p.paterno || '', materno: p.materno || '', ci: p.ci || '', correo: p.correo || '', celular: p.celular || '', carreraId: p.carreraId ?? null });
+}
+
+async function guardarDatos() {
+  if (!modalDatos.nombre.trim() || !modalDatos.ci.trim()) { toast('Nombre y C.I. son obligatorios.', 'error'); return; }
+  modalDatos.guardando = true;
+  try {
+    const { nombre, paterno, materno, ci, correo, celular, carreraId } = modalDatos;
+    const r = await apiFetch(`/api/app/personas/${modalDatos.personaId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ nombre: nombre.trim(), paterno: paterno.trim(), materno: materno.trim(), ci: ci.trim(), correo: correo.trim() || null, celular: celular.trim() || null, carreraId }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.ok === false) { toast(d.mensaje || 'No se pudieron guardar los datos', 'error'); return; }
+    toast('Datos personales guardados', 'ok');
+    modalDatos.abierto = false;
+    cargar();
+  } finally {
+    modalDatos.guardando = false;
+  }
+}
 
 const academico = useAcademicoStore();
 
@@ -46,6 +76,7 @@ const router = useRouter();
 function accionesDe(u) {
   return [
     { txt: 'Editar usuario', accion: () => abrirEditar(u) },
+    { txt: 'Datos personales', accion: () => abrirDatos(u) },
     { txt: 'Cambiar contraseña', accion: () => abrirPassword(u) },
     { txt: 'Ver permisos', accion: () => router.push(aModulo('permisos', { usuario: u.id })) },
     { txt: u.estado === 'ACTIVO' ? 'Desactivar' : 'Activar', accion: () => alternarEstado(u) },
@@ -251,7 +282,7 @@ async function alternarEstado(u) {
 }
 async function eliminar(u) {
   if (ocupado.value) return;
-  if (!confirm(`¿Eliminar al usuario "${u.username}"?`)) return;
+  if (!(await confirmar(`¿Eliminar al usuario "${u.username}"?`, { titulo: 'Eliminar', aceptar: 'Sí, eliminar' }))) return;
   ocupado.value = true;
   try {
     const r = await apiFetch(`/api/app/usuarios/${u.id}`, { method: 'DELETE' });
@@ -295,12 +326,13 @@ onMounted(() => {
       <p class="resumen">{{ usuariosFiltrados.length }} de {{ usuarios.length }} usuarios</p>
       <table class="tabla">
         <thead>
-          <tr><th>Usuario</th><th>Persona</th><th>Rol</th><th>Estado</th><th></th></tr>
+          <tr><th>Usuario</th><th>Persona</th><th>C.I. · Celular</th><th>Rol</th><th>Estado</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="u in usuariosFiltrados" :key="u.id">
             <td><strong>{{ u.username }}</strong></td>
-            <td>{{ u.persona }}</td>
+            <td>{{ u.persona }}<small v-if="u.correo" class="correo">{{ u.correo }}</small></td>
+            <td class="contacto">{{ u.ci || '—' }}<small v-if="u.celular">{{ u.celular }}</small></td>
             <td><span class="badge badge-muted" :title="u.rol">{{ etiquetaRol(u.rol) }}</span></td>
             <td>
               <span class="badge" :class="u.estado === 'ACTIVO' ? 'badge-ok' : 'badge-danger'">
@@ -410,6 +442,21 @@ onMounted(() => {
     </template>
   </UiModal>
 
+  <UiModal v-if="modalDatos.abierto" :titulo="`Datos personales de ${modalDatos.username}`" ancho="560px" @cerrar="modalDatos.abierto = false">
+    <div class="datos-persona">
+      <label>Nombre <input v-model="modalDatos.nombre" class="control" maxlength="80" /></label>
+      <label>Apellido paterno <input v-model="modalDatos.paterno" class="control" maxlength="80" /></label>
+      <label>Apellido materno <input v-model="modalDatos.materno" class="control" maxlength="80" /></label>
+      <label>C.I. <input v-model="modalDatos.ci" class="control" maxlength="20" /></label>
+      <label>Celular <input v-model="modalDatos.celular" class="control" maxlength="20" inputmode="tel" /></label>
+      <label>Correo <input v-model="modalDatos.correo" class="control" maxlength="120" type="email" /></label>
+    </div>
+    <template #pie>
+      <button class="btn btn-fantasma" @click="modalDatos.abierto = false">Cancelar</button>
+      <button class="btn btn-primario" :disabled="modalDatos.guardando" @click="guardarDatos">{{ modalDatos.guardando ? 'Guardando…' : 'Guardar' }}</button>
+    </template>
+  </UiModal>
+
   <UiModal v-if="modalPass.abierto" :titulo="`Contraseña de ${modalPass.username}`"
            @cerrar="modalPass.abierto = false" ancho="420px">
     <div class="campo">
@@ -443,6 +490,10 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.contacto small, td small.correo { display: block; color: var(--muted); font-size: 0.78rem; }
+.datos-persona { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem 0.75rem; }
+.datos-persona label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; font-weight: 600; }
+@media (max-width: 560px) { .datos-persona { grid-template-columns: minmax(0, 1fr); } }
 .encabezado { margin-bottom: 1rem; gap: 0.8rem; }
 .filtros { display: flex; flex-wrap: wrap; gap: 0.6rem; flex: 1; }
 .filtros .control { min-width: 150px; width: auto; }

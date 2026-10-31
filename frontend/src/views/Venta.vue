@@ -14,9 +14,19 @@ import { alerta, aviso, alertaConAccion } from '../ui/alerta';
 import { marcarAvance, limpiarAvance } from '../ui/presencia';
 import { aModulo } from '../modulos';
 
+const props = defineProps({
+  enModal: { type: Boolean, default: false },
+});
+const emit = defineEmits(['registrada', 'cerrar']);
+
 const auth = useAuthStore();
 const tienda = usePuestosStore();
 const router = useRouter();
+
+function volverAlMapa() {
+  if (props.enModal) emit('cerrar');
+  else router.push(aModulo('mapa'));
+}
 
 const PASOS = ['Entidad', 'Responsables', 'Confirmar'];
 const paso = ref(0);
@@ -28,6 +38,7 @@ const carrito = computed(() => tienda.carritoDe(auth.id));
 
 const opcionesDe = ref(new Map());
 const opcionElegida = ref(new Map());
+const personasDe = ref(new Map());
 
 async function cargarOpciones() {
   try {
@@ -35,8 +46,13 @@ async function cargarOpciones() {
     if (!r.ok) return;
     const lista = await r.json();
     const m = new Map();
-    for (const c of lista) m.set(c.id, c.opciones || []);
+    const p = new Map();
+    for (const c of lista) {
+      m.set(c.id, c.opciones || []);
+      p.set(c.id, Number(c.personasPorPuesto) || 2);
+    }
     opcionesDe.value = m;
+    personasDe.value = p;
   } catch {
   }
 }
@@ -157,7 +173,7 @@ const fotos = ref([null, null]);
 
 const hayResponsable2 = computed(() => form.responsables.length > 1);
 
-const maxResponsables = computed(() => Math.max(1, carrito.value.length) * 2);
+const maxResponsables = computed(() => Math.max(1, carrito.value.reduce((s, p) => s + (personasDe.value.get(p.categoriaId) || 2), 0)));
 const puedeAgregarResponsable = computed(() => form.responsables.length < maxResponsables.value);
 
 watch(() => form.formaPago, (v) => {
@@ -485,6 +501,12 @@ async function registrar() {
         + 'estén el comprobante y la foto del responsable.';
     }
 
+    if (props.enModal) {
+      if (pendiente) toast(`Venta registrada. No se pudo subir ${pendiente}: complétalo en la entrega.`, 'advertencia', 6000);
+      else toast(`Venta registrada · casetas ${casetas} · ${bs(d.total)} Bs`, 'ok');
+      emit('registrada', d.inscripcionId);
+      return;
+    }
     await aviso(
       `Caseta${carrito.value.length === 1 ? '' : 's'} ${casetas} · ${bs(d.total)} Bs`
       + sobreCredenciales
@@ -551,12 +573,12 @@ onUnmounted(() => {
           <strong class="total">{{ bs(total) }} Bs</strong>
         </div>
       </div>
-      <router-link :to="aModulo('mapa')" class="btn btn-fantasma btn-sm volver">← Volver al mapa</router-link>
+      <button type="button" class="btn btn-fantasma btn-sm volver" @click="volverAlMapa">← Volver al mapa</button>
     </header>
 
     <p v-if="!carrito.length" class="vacio card">
       No tienes casetas seleccionadas.
-      <router-link :to="aModulo('mapa')">Ve al mapa</router-link> y toca las que vas a vender.
+      <a href="#" @click.prevent="volverAlMapa">Ve al mapa</a> y toca las que vas a vender.
     </p>
 
     <template v-else>
@@ -789,7 +811,7 @@ onUnmounted(() => {
         </div>
         <p class="nota">
           ¿Hay que cambiar alguna caseta?
-          <router-link :to="aModulo('mapa')">Vuelve al mapa</router-link> para quitarla o agregar otra.
+          <a href="#" @click.prevent="volverAlMapa">Vuelve al mapa</a> para quitarla o agregar otra.
         </p>
 
         <div class="separador"></div>

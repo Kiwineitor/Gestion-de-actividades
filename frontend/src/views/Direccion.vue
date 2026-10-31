@@ -7,6 +7,7 @@ import { usePuestosStore } from '../stores/puestos';
 import BarraProgreso from '../components/BarraProgreso.vue';
 import BarrasHorizontales from '../components/BarrasHorizontales.vue';
 import LineaTiempo from '../components/LineaTiempo.vue';
+import { actividadElegida, conEdicion } from '../ui/actividadElegida';
 
 const tienda = usePuestosStore();
 
@@ -25,7 +26,7 @@ const ent = (n) => Number(n || 0).toLocaleString('es-BO');
 async function cargar(silencioso = false) {
   if (!silencioso) cargando.value = true;
   try {
-    const r = await apiFetch('/api/app/analisis');
+    const r = await apiFetch(conEdicion('/api/app/analisis'));
     if (!r.ok) throw new Error('No se pudo cargar el tablero');
     datos.value = await r.json();
     error.value = '';
@@ -95,7 +96,7 @@ async function bajar(nombre, formato) {
   if (bajando.value) return;
   bajando.value = `${nombre}-${formato}`;
   try {
-    const ruta = `/api/app/analisis/${nombre}/${formato}`;
+    const ruta = conEdicion(`/api/app/analisis/${nombre}/${formato}`);
     const archivo = `${nombre}.${formato === 'pdf' ? 'pdf' : 'xlsx'}`;
     if (formato === 'pdf') await descargarPdf(ruta, archivo);
     else await descargarArchivo(ruta, archivo);
@@ -142,6 +143,8 @@ const hace = computed(() => {
   const s = Math.round((Date.now() - actualizado.value) / 1000);
   return s < 60 ? 'hace un momento' : `hace ${Math.round(s / 60)} min`;
 });
+
+watch(actividadElegida, () => cargar());
 </script>
 
 <template>

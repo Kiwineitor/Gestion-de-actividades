@@ -216,14 +216,14 @@ async function confirmarResolver() {
 .notif-item {
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: #fff;
+  background: var(--panel);
   overflow: hidden;
   transition: box-shadow 0.15s, border-color 0.15s;
 }
 .notif-item:hover { box-shadow: var(--sombra-sm); }
 .notif-item:not(.leida) {
   border-left: 3px solid var(--acento);
-  background: color-mix(in srgb, var(--acento) 3%, #fff);
+  background: color-mix(in srgb, var(--acento) 5%, var(--panel));
 }
 .notif-item.leida { opacity: 0.85; }
 

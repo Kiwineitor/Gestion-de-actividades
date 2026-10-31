@@ -29,19 +29,6 @@ String SELECT = """
                    i.id                                   AS inscripcionId,
                    i.pago_contado                         AS pagoContado,
                    i.img_comprobante                      AS comprobante,
-                   /*
-                    * Lo que cuesta ESTA venta, sumando sus casetas vivas.
-                    *
-                    * Hace falta para saber si hay algo que pagar: una venta de 0 Bs no tiene
-                    * comprobante que adjuntar, y exigirselo dejaba esas credenciales
-                    * bloqueadas para siempre. Se suma aqui y no en otra consulta porque
-                    * `inscripcion_puesto` YA esta en el join; pedirlo aparte serian 800
-                    * viajes mas, uno por credencial.
-                    *
-                    * No hay multiplicacion de filas: por cada (responsable, inscripcion) hay
-                    * una fila por caseta y los demas joins son 1:1, asi que el SUM es el total
-                    * real y no un multiplo.
-                    */
                    COALESCE(SUM(ip.costo), 0)             AS totalVenta,
                    string_agg(DISTINCT c.nombre, ', ')    AS categorias,
                    string_agg(DISTINCT pu.codigo, ', ')   AS casetas,
@@ -67,17 +54,17 @@ String SELECT = """
              """;
 
     @Query(value = SELECT
-            + " AND i.id_edicion = (SELECT ed.id FROM edicion ed WHERE ed.activa LIMIT 1) "
+            + " AND i.id_edicion = coalesce(cast(:edicion as bigint), (SELECT ed.id FROM edicion ed WHERE ed.activa LIMIT 1)) "
             + GROUP + " ORDER BY e.nombre, r.es_titular DESC, p.nombre",
             nativeQuery = true)
-    List<CredencialFilaView> listarDeEdicionActiva();
+    List<CredencialFilaView> listarDeEdicion(@Param("edicion") Long edicion);
 
     @Query(value = SELECT
-            + " AND i.id_edicion = (SELECT ed.id FROM edicion ed WHERE ed.activa LIMIT 1) "
+            + " AND i.id_edicion = coalesce(cast(:edicion as bigint), (SELECT ed.id FROM edicion ed WHERE ed.activa LIMIT 1)) "
             + " AND i.\"_registro_id_usuario\" = :usuarioId "
             + GROUP + " ORDER BY e.nombre, r.es_titular DESC, p.nombre",
             nativeQuery = true)
-    List<CredencialFilaView> listarDeEdicionActivaDe(@Param("usuarioId") Long usuarioId);
+    List<CredencialFilaView> listarDeEdicionDe(@Param("usuarioId") Long usuarioId, @Param("edicion") Long edicion);
 
     @Query(value = SELECT + " AND r.id = :responsableId " + GROUP, nativeQuery = true)
     Optional<CredencialFilaView> buscarPorResponsable(@Param("responsableId") Long responsableId);

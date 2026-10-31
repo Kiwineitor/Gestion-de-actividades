@@ -58,6 +58,7 @@ public class CredencialesApiController {
     private final IInscripcionService inscripcionService;
     private final com.usic.uniFex.model.dao.CredencialImpresionDao impresiones;
     private final com.usic.uniFex.model.service.CredencialDatosService datosService;
+    private final com.usic.uniFex.model.service.PlantillaCredencialService plantillas;
 
     @Value("${unifex.publico.base-url:}")
     private String baseUrlPublica;
@@ -129,14 +130,14 @@ public class CredencialesApiController {
 
     @GetMapping
     @PreAuthorize(Roles.USA_CREDENCIALES_O_PANTALLA)
-    public List<Map<String, Object>> listar() {
+    public List<Map<String, Object>> listar(@RequestParam(required = false) Long edicion) {
         Long soloMias = alcanceDelUsuario();
         Map<Long, Object[]> impresas = new LinkedHashMap<>();
         for (Object[] f : impresiones.resumen()) {
             impresas.put(((Number) f[0]).longValue(), f);
         }
 
-        return credencialService.listar(soloMias).stream().map(c -> {
+        return credencialService.listar(soloMias, edicion).stream().map(c -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("responsableId", c.responsableId());
             m.put("codigo", c.codigo());
@@ -311,7 +312,7 @@ public class CredencialesApiController {
         CredencialDTO c = credencialService.porResponsable(responsableId).orElse(null);
         if (c == null) return ResponseEntity.notFound().build();
 
-        PlantillaCredencial p = PlantillaCredencial.actual(PlantillaCredencial.CREDENCIAL_VIRTUAL);
+        PlantillaCredencial p = plantillas.paraInscripcion(c.inscripcionId());
         if (!forzar && !c.apto(p.id())) {
             return ResponseEntity.status(409)
                     .contentType(MediaType.TEXT_PLAIN)
@@ -360,7 +361,7 @@ public class CredencialesApiController {
             return ResponseEntity.badRequest().body(Map.of("ok", false, "mensaje", "La venta no tiene celular del cliente"));
         }
 
-        PlantillaCredencial plantilla = PlantillaCredencial.actual(PlantillaCredencial.CREDENCIAL_VIRTUAL);
+        PlantillaCredencial plantilla = plantillas.paraInscripcion(req.inscripcionId());
         List<Long> seleccion = req.responsables() == null ? List.of() : req.responsables();
         var todas = credencialService.porInscripcion(req.inscripcionId());
         log.info("[WHATSAPP-REENVIO] Credenciales de inscripcion={} total={} seleccion={}",

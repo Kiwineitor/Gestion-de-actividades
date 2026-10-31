@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.usic.uniFex.model.service.MesaPaseService;
 import com.usic.uniFex.model.service.MesaService;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -28,6 +29,7 @@ import lombok.RequiredArgsConstructor;
 public class MesaPublicaController {
 
     private final MesaService mesas;
+    private final MesaPaseService pases;
 
     public record PeticionReserva(Long mesaId, MesaService.Cliente cliente, String token) {
     }
@@ -76,6 +78,20 @@ public class MesaPublicaController {
     public ResponseEntity<Map<String, Object>> comprobante(@PathVariable String codigo,
                                                            @RequestParam("archivo") MultipartFile archivo) throws IOException {
         return responder(mesas.adjuntarComprobante(codigo, archivo));
+    }
+
+    @GetMapping(value = "/reservas/{codigo}/pases.pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> pasesPdf(@PathVariable String codigo) {
+        return pdfDePases(pases, codigo);
+    }
+
+    static ResponseEntity<byte[]> pdfDePases(MesaPaseService pases, String codigo) {
+        byte[] pdf = pases.pdf(codigo == null ? "" : codigo.trim().toUpperCase());
+        if (pdf == null) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header("Content-Disposition", "inline; filename=\"pases-" + codigo + ".pdf\"")
+                .body(pdf);
     }
 
     @PostMapping("/reservas/{codigo}/cancelar")

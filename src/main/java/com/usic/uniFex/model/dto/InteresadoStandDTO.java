@@ -15,7 +15,14 @@ public record InteresadoStandDTO(
         String categoriaNombre,
         String categoriaColor,
         String estado,
-        LocalDateTime fechaRegistro) {
+        LocalDateTime fechaRegistro,
+        Long puestoId,
+        String puestoCodigo,
+        String modoPago,
+        String comprobanteUrl,
+        String ci,
+        Long inscripcionId,
+        Integer personasPorPuesto) {
 
     public static InteresadoStandDTO de(InteresadoStand i) {
         Categoria c = i.getCategoria();
@@ -24,6 +31,12 @@ public record InteresadoStandDTO(
                 c != null ? c.getId() : null,
                 c != null ? c.getNombre() : null,
                 c != null ? c.getColor() : null,
-                i.getEstado(), i.getFechaRegistro());
+                i.getEstado(), i.getFechaRegistro(),
+                i.getPuesto() != null ? i.getPuesto().getId() : null,
+                i.getPuesto() != null ? i.getPuesto().getCodigo() : null,
+                i.getModoPago(),
+                i.getComprobanteArchivo() != null ? "/files/" + i.getComprobanteArchivo() : null,
+                i.getCi(), i.getInscripcionId(),
+                c != null ? c.personasIncluidas() : 2);
     }
 }

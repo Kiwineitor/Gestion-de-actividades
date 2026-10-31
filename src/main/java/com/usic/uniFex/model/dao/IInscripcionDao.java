@@ -40,11 +40,11 @@ public interface IInscripcionDao extends JpaRepository <Inscripcion, Long> {
             left join usuario u       on u.id = i._registro_id_usuario
             left join persona per     on per.id = u.persona_id
             where i."_estado" <> 'X'
-              and i.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
+              and i.id_edicion = coalesce(cast(:edicion as bigint), (select ed.id from edicion ed where ed.activa limit 1))
             group by u.id, per.nombre, per.paterno, per.materno, c.id, c.nombre
             order by nombreCompleto asc nulls last, c.nombre asc
             """, nativeQuery = true)
-    List<ResumenCategoriaView> resumenPorCategoria();
+    List<ResumenCategoriaView> resumenPorCategoria(@Param("edicion") Long edicion);
 
     @Query(value = """
             select
@@ -61,11 +61,11 @@ public interface IInscripcionDao extends JpaRepository <Inscripcion, Long> {
             left join persona per    on per.id = u.persona_id
             left join inscripcion_puesto ip on ip.id_inscripcion = i.id and ip.id_puesto is not null
             where i."_estado" <> 'X'
-              and i.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
+              and i.id_edicion = coalesce(cast(:edicion as bigint), (select ed.id from edicion ed where ed.activa limit 1))
             group by u.id, per.nombre, per.paterno, per.materno, e.id, e.nombre
             order by nombreCompleto asc nulls last, e.nombre asc
             """, nativeQuery = true)
-    List<ResumenEntidadView> resumenPorEntidad();
+    List<ResumenEntidadView> resumenPorEntidad(@Param("edicion") Long edicion);
 
     @EntityGraph(attributePaths = {
         "entidad",
@@ -119,9 +119,9 @@ public interface IInscripcionDao extends JpaRepository <Inscripcion, Long> {
             join inscripcion_puesto ip on ip.id_inscripcion = i.id
             join puesto p              on p.id = ip.id_puesto
             where i."_estado" <> 'X'
-              and i.id_edicion = (select ed.id from edicion ed where ed.activa limit 1)
+              and i.id_edicion = coalesce(cast(:edicion as bigint), (select ed.id from edicion ed where ed.activa limit 1))
             """, nativeQuery = true)
-    ResumenGeneralView resumenGeneral();
+    ResumenGeneralView resumenGeneral(@Param("edicion") Long edicion);
 
     @Query("""
            select i from Inscripcion i

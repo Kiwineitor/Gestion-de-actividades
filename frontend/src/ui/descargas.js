@@ -36,6 +36,12 @@ export async function descargarArchivo(ruta, nombreArchivo, opciones = {}) {
   return { destino: 'navegador' };
 }
 
+export async function guardarBlob(blob, nombreArchivo, carpeta = null) {
+  if (esNativo()) return guardarEnElTelefono(blob, nombreArchivo, carpeta);
+  guardarEnElNavegador(blob, nombreArchivo);
+  return { destino: 'navegador' };
+}
+
 function esNativo() {
   return typeof window !== 'undefined'
       && window.Capacitor

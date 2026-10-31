@@ -30,7 +30,7 @@ const aFraccion = (v) => (Number(v) || 0) / 1000;
 const modal = reactive({
   abierto: false, editando: null,
   nombre: '', color: '#3b82f6', forma: 'cuadrado', tamanoMilesimas: 12, cantidad: 10,
-  proporcion: 1, tamano: '3x3', cantidadOriginal: 0, tamanoOriginal: '',
+  proporcion: 1, tamano: '3x3', cantidadOriginal: 0, tamanoOriginal: '', personas: 2, costoExtra: 15,
 });
 
 watch(() => modal.forma, (f, previa) => {
@@ -83,7 +83,7 @@ function abrirCrear() {
   Object.assign(modal, {
     abierto: true, editando: null,
     nombre: '', color: '#3b82f6', forma: 'cuadrado', tamanoMilesimas: 12, cantidad: 10,
-    proporcion: 1, tamano: '3x3', cantidadOriginal: 0, tamanoOriginal: '',
+    proporcion: 1, tamano: '3x3', cantidadOriginal: 0, tamanoOriginal: '', personas: 2, costoExtra: 15,
   });
 }
 
@@ -99,6 +99,8 @@ function abrirEditar(c) {
     cantidadOriginal: c.cantidad ?? 0,
     tamano: c.tamano || '',
     tamanoOriginal: c.tamano || '',
+    personas: c.personasPorPuesto ?? 2,
+    costoExtra: c.costoPersonaExtra ?? 15,
   });
 }
 
@@ -126,6 +128,8 @@ async function guardarCategoria() {
       forma: modal.forma,
       tamanoMapa: aFraccion(modal.tamanoMilesimas),
       mapaProporcion: modal.proporcion,
+      personasPorPuesto: Math.max(1, Math.min(50, Number(modal.personas) || 1)),
+      costoPersonaExtra: Math.max(0, Number(modal.costoExtra) || 0),
     };
     const tamano = modal.tamano.trim();
     if (!modal.editando) cuerpo.tamano = tamano || '3x3';
@@ -265,6 +269,7 @@ async function eliminarOpcion(c, o) {
         <div class="titulo">
           <strong>{{ c.nombre }}</strong>
           <span class="muted chico">{{ medidaLegible(c.tamano) }} · {{ c.cantidad ?? 0 }} puestos · {{ etiquetaForma(c.forma) }}</span>
+          <span class="muted chico">👥 {{ c.personasPorPuesto ?? 2 }} credencial(es) por puesto · extra Bs {{ Number(c.costoPersonaExtra ?? 15).toLocaleString('es-BO') }}</span>
         </div>
         <span class="crecer"></span>
         <button class="btn btn-sm btn-fantasma" @click="abrirEditar(c)">Editar</button>
@@ -350,6 +355,17 @@ async function eliminarOpcion(c, o) {
         <span v-if="modal.editando" class="muted chico">Subir crea puestos nuevos; bajar quita los libres de número más alto.</span>
       </label>
 
+      <div class="fila-personas">
+        <label>Personas por puesto
+          <input v-model.number="modal.personas" type="number" min="1" max="50" class="control" />
+          <span class="muted chico">Credenciales que incluye cada puesto vendido.</span>
+        </label>
+        <label>Costo por persona extra (Bs)
+          <input v-model.number="modal.costoExtra" type="number" min="0" step="1" class="control" />
+          <span class="muted chico">Si el expositor quiere más ayudantes, paga esto por cada credencial adicional.</span>
+        </label>
+      </div>
+
       <p v-if="!modal.editando" class="muted chico">
         La categoría nace con una opción de precio en 0 Bs, con su mismo nombre.
         Ponle precio en cuanto la crees o se venderá en cero.
@@ -395,6 +411,7 @@ async function eliminarOpcion(c, o) {
 
 <style scoped>
 .encabezado { gap: 0.75rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.fila-personas { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 0.75rem; }
 .busca { flex: 1; min-width: 220px; }
 .nota { margin: 0 0 1rem; line-height: 1.5; }
 .crecer { flex: 1; }

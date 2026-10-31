@@ -28,5 +28,5 @@ public interface IResponsableService extends IServiceGenerico<Responsable, Long>
 
     ResponsableDetalleDTO findDetallePorCi(String ci);
 
-    List<ResponsableReporteView> listarParaReporte();
+    List<ResponsableReporteView> listarParaReporte(Long edicion);
 }

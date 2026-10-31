@@ -20,6 +20,10 @@ import lombok.Setter;
 public class InteresadoStand {
 
     public static final String ESTADO_NUEVO = "NUEVO";
+    public static final String ESTADO_ATENDIDO = "ATENDIDO";
+    public static final String ESTADO_DESCARTADO = "DESCARTADO";
+    public static final String PAGO_COMPROBANTE = "COMPROBANTE";
+    public static final String PAGO_OFICINA = "OFICINA";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -43,6 +47,22 @@ public class InteresadoStand {
 
     @Column(name = "estado", nullable = false, length = 20)
     private String estado = ESTADO_NUEVO;
+
+    @ManyToOne
+    @JoinColumn(name = "id_puesto")
+    private Puesto puesto;
+
+    @Column(name = "modo_pago", length = 20)
+    private String modoPago;
+
+    @Column(name = "comprobante_archivo", length = 300)
+    private String comprobanteArchivo;
+
+    @Column(name = "ci", length = 20)
+    private String ci;
+
+    @Column(name = "id_inscripcion")
+    private Long inscripcionId;
 
     @Column(name = "fecha_registro", nullable = false)
     private LocalDateTime fechaRegistro = LocalDateTime.now();

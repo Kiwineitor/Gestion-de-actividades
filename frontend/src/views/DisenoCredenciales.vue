@@ -4,26 +4,31 @@ import UiModal from '../components/UiModal.vue';
 import MenuAcciones from '../components/MenuAcciones.vue';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
-import { alertaConAccion } from '../ui/alerta';
+import { alertaConAccion, confirmar } from '../ui/alerta';
 import { primeraPaginaEnCanvas } from '../ui/pdf';
 
 const CAMPOS = [
   { id: 'qr', txt: 'Código QR', muestra: 'QR', obligatorio: true },
-  { id: 'foto', txt: 'Fotografía', muestra: 'FOTO' },
-  { id: 'nombre', txt: 'Nombre completo', muestra: 'NOMBRE APELLIDO EJEMPLO' },
-  { id: 'empresa', txt: 'Empresa / actividad', muestra: 'EMPRESA DE EJEMPLO' },
+  { id: 'foto', txt: 'Foto (o logo del local)', muestra: 'FOTO' },
+  { id: 'nombre', txt: 'Nombre de la persona', muestra: 'NOMBRE APELLIDO EJEMPLO' },
+  { id: 'empresa', txt: 'Empresa o evento', muestra: 'EMPRESA O EVENTO' },
   { id: 'ci', txt: 'C.I.', muestra: '1234567' },
-  { id: 'tipo', txt: 'Cargo o tipo', muestra: 'EXPOSITOR' },
-  { id: 'codigo', txt: 'Número de puesto', muestra: '12' },
-  { id: 'zona', txt: 'Zona / categoría', muestra: 'CATEGORÍA' },
+  { id: 'tipo', txt: 'Cargo o tipo de pase', muestra: 'EXPOSITOR' },
+  { id: 'codigo', txt: 'Puesto o mesa', muestra: 'MESA 12' },
+  { id: 'zona', txt: 'Zona o categoría', muestra: 'ZONA VIP' },
 ];
 const OPCIONES = [
   { id: 'requiereFoto', txt: 'Exigir foto para emitir' },
   { id: 'mayusculas', txt: 'Texto en mayúsculas' },
   { id: 'centrado', txt: 'Texto centrado' },
   { id: 'multilinea', txt: 'Permitir dos líneas' },
-  { id: 'fotoCircular', txt: 'Foto redonda' },
 ];
+const FORMAS = [
+  { id: 'CUADRADA', txt: 'Cuadrada' },
+  { id: 'CIRCULO', txt: 'Círculo' },
+  { id: 'ROMBO', txt: 'Rombo' },
+];
+const formaDe = (b) => b?.fotoForma || (b?.fotoCircular ? 'CIRCULO' : 'CUADRADA');
 
 const ANCHO_CM = 10;
 const ALTO_MASIVA_CM = 13;
@@ -33,19 +38,38 @@ const TARJETA_CM = { ancho: 8.56, alto: 5.398 };
 const CLAVE_CALIBRACION = 'credenciales.pxPorCm';
 
 const plantillas = ref([]);
-const ediciones = ref([]);
+const actividades = ref([]);
+const ediciones = computed(() => actividades.value.filter((a) => a.tipo === 'FERIA'));
+const eventos = computed(() => actividades.value.filter((a) => a.tipo === 'MESAS'));
 const dependencias = ref([]);
 const cargando = ref(true);
 const grupos = computed(() => [
-  { uso: 'EXPOSITOR', titulo: 'Expositores', items: plantillas.value.filter((p) => p.uso !== 'APOYO') },
+  { uso: 'EXPOSITOR', titulo: 'Clientes y expositores', items: plantillas.value.filter((p) => p.uso !== 'APOYO') },
   { uso: 'APOYO', titulo: 'Personal de apoyo', items: plantillas.value.filter((p) => p.uso === 'APOYO') },
 ]);
-const nombreEdicion = (id) => ediciones.value.find((e) => e.id === id)?.nombre;
+const nombreActividad = (p) => (p.idEvento
+  ? eventos.value.find((e) => e.id === p.idEvento)?.nombre
+  : ediciones.value.find((e) => e.id === p.idEdicion)?.nombre);
+
+const vinculo = computed({
+  get: () => {
+    const b = borrador.value;
+    if (!b) return '';
+    if (b.idEvento) return `e-${b.idEvento}`;
+    return b.idEdicion ? `f-${b.idEdicion}` : '';
+  },
+  set: (v) => {
+    const b = borrador.value;
+    if (!b) return;
+    b.idEdicion = v.startsWith('f-') ? Number(v.slice(2)) : null;
+    b.idEvento = v.startsWith('e-') ? Number(v.slice(2)) : null;
+  },
+});
 
 async function cargarCatalogos() {
   try {
-    const [e, d] = await Promise.all([apiFetch('/api/app/ediciones'), apiFetch('/api/app/personal-apoyo/dependencias')]);
-    if (e.ok) ediciones.value = await e.json();
+    const [e, d] = await Promise.all([apiFetch('/api/app/actividades'), apiFetch('/api/app/personal-apoyo/dependencias')]);
+    if (e.ok) actividades.value = await e.json();
     if (d.ok) dependencias.value = await d.json();
   } catch { }
 }
@@ -108,8 +132,8 @@ async function cargar(conservar = selId.value) {
   }
 }
 
-function elegir(id, forzar = false) {
-  if (!forzar && modificado.value && !confirm('Hay cambios sin guardar en esta plantilla. ¿Descartarlos?')) return;
+async function elegir(id, forzar = false) {
+  if (!forzar && modificado.value && !(await confirmar('Hay cambios sin guardar en esta plantilla. ¿Descartarlos?', { titulo: 'Cambios sin guardar', aceptar: 'Descartar cambios' }))) return;
   selId.value = id;
   const p = plantillas.value.find((x) => x.id === id);
   borrador.value = p ? copia(p) : null;
@@ -221,10 +245,11 @@ function datosDe(b) {
   return {
     codigo: b.codigo, etiqueta: b.etiqueta, detalle: b.detalle, imagen: b.imagen,
     requiereFoto: b.requiereFoto, centrado: b.centrado, mayusculas: b.mayusculas,
-    fotoCircular: b.fotoCircular, multilinea: b.multilinea,
+    fotoCircular: formaDe(b) === 'CIRCULO', fotoForma: formaDe(b), multilinea: b.multilinea,
     colorTexto: b.colorTexto || null, tipoTexto: b.tipoTexto || null,
     cajas: b.cajas, orden: b.orden, predeterminada: b.predeterminada,
-    uso: b.uso || 'EXPOSITOR', idEdicion: b.idEdicion ?? null,
+    uso: b.uso || 'EXPOSITOR', idEdicion: b.uso === 'APOYO' || b.idEvento ? null : b.idEdicion ?? null,
+    idEvento: b.uso === 'APOYO' ? null : b.idEvento ?? null,
     idDependencia: b.uso === 'APOYO' ? b.idDependencia ?? null : null,
     imagenReverso: b.imagenReverso || null,
   };
@@ -262,7 +287,7 @@ function descartar() {
 
 async function duplicar(p = seleccionada.value) {
   if (!p) return;
-  if (p.id === selId.value && modificado.value && !confirm('Se duplicará la versión guardada; los cambios sin guardar no se copian. ¿Continuar?')) return;
+  if (p.id === selId.value && modificado.value && !(await confirmar('Se duplicará la versión guardada; los cambios sin guardar no se copian. ¿Continuar?', { titulo: 'Cambios sin guardar', aceptar: 'Descartar cambios' }))) return;
   const r = await apiFetch(`/api/app/plantillas-credencial/${p.id}/duplicar`, { method: 'POST' });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) { toast(d.mensaje || 'No se pudo duplicar', 'error'); return; }
@@ -273,7 +298,7 @@ async function duplicar(p = seleccionada.value) {
 
 async function hacerPredeterminada(p) {
   try {
-    const d = await enviarPlantilla(p.id, { ...datosDe(p), predeterminada: true, idEdicion: null });
+    const d = await enviarPlantilla(p.id, { ...datosDe(p), predeterminada: true, idEdicion: null, idEvento: null });
     if (d.id === selId.value) elegir(d.id, true);
     toast(`«${d.etiqueta}» es ahora la plantilla por defecto`, 'ok');
   } catch (e) {
@@ -314,7 +339,7 @@ async function confirmarReemplazo() {
   if (!nueva || !reemplazo.plantilla) return;
   reemplazo.trabajando = true;
   try {
-    await enviarPlantilla(nueva.id, { ...datosDe(nueva), predeterminada: true, idEdicion: null });
+    await enviarPlantilla(nueva.id, { ...datosDe(nueva), predeterminada: true, idEdicion: null, idEvento: null });
     if (await borrar(reemplazo.plantilla)) reemplazo.abierto = false;
   } catch (e) {
     toast(e.message, 'error');
@@ -374,7 +399,7 @@ async function cambiarReverso(evento) {
   borrador.value.imagenReverso = imagen;
 }
 
-const nueva = reactive({ abierta: false, etiqueta: '', archivo: null, creando: false, uso: 'EXPOSITOR' });
+const nueva = reactive({ abierta: false, etiqueta: '', archivo: null, creando: false, uso: 'EXPOSITOR', vinculo: '' });
 
 async function crear() {
   if (!nueva.etiqueta.trim() || !nueva.archivo) { toast('Pon un nombre y elige la imagen de fondo', 'advertencia'); return; }
@@ -389,6 +414,8 @@ async function crear() {
       method: 'POST',
       body: JSON.stringify({
         codigo, etiqueta: nueva.etiqueta.trim(), imagen, requiereFoto: false, mayusculas: true, uso: nueva.uso,
+        idEdicion: nueva.uso !== 'APOYO' && nueva.vinculo.startsWith('f-') ? Number(nueva.vinculo.slice(2)) : null,
+        idEvento: nueva.uso !== 'APOYO' && nueva.vinculo.startsWith('e-') ? Number(nueva.vinculo.slice(2)) : null,
         cajas: { qr: { x: 0.35, y: 0.05, ancho: 0.3, alto: Math.round((0.3 / prop) * 10000) / 10000 } },
       }),
     });
@@ -396,7 +423,7 @@ async function crear() {
     if (!r.ok) { toast(d.mensaje || 'No se pudo crear', 'error'); return; }
     fondos[imagen] = URL.createObjectURL(nueva.archivo);
     plantillas.value.push(d);
-    Object.assign(nueva, { abierta: false, etiqueta: '', archivo: null, uso: 'EXPOSITOR' });
+    Object.assign(nueva, { abierta: false, etiqueta: '', archivo: null, uso: 'EXPOSITOR', vinculo: '' });
     elegir(d.id, true);
   } finally {
     nueva.creando = false;
@@ -538,7 +565,7 @@ onUnmounted(() => {
               <button class="elegir" @click="elegir(p.id)">
                 <span class="nom">{{ p.etiqueta }}</span>
                 <span v-if="p.predeterminada" class="badge badge-ok">★ por defecto</span>
-                <span v-else-if="p.idEdicion" class="badge badge-muted">{{ nombreEdicion(p.idEdicion) || 'actividad' }}</span>
+                <span v-else-if="p.idEdicion || p.idEvento" class="badge badge-muted" :title="`Se usa en ${nombreActividad(p) || 'su actividad'}`">{{ p.idEvento ? '🍸' : '🗓️' }} {{ nombreActividad(p) || 'actividad' }}</span>
               </button>
               <MenuAcciones :acciones="accionesDe(p)" :etiqueta="`Acciones de ${p.etiqueta}`" />
             </li>
@@ -580,7 +607,7 @@ onUnmounted(() => {
           <div ref="lienzo" class="lienzo" :style="estiloLienzo">
             <img v-if="fondos[borrador.imagen]" :src="fondos[borrador.imagen]" alt="" draggable="false" />
             <div v-for="(c, id) in borrador.cajas" :key="id" class="caja"
-                 :class="[`c-${id}`, { sel: campoSel === id, circular: id === 'foto' && borrador.fotoCircular }]"
+                 :class="[`c-${id}`, { sel: campoSel === id, circular: id === 'foto' && formaDe(borrador) === 'CIRCULO', rombo: id === 'foto' && formaDe(borrador) === 'ROMBO' }]"
                  :style="estiloCaja(c)"
                  @pointerdown="onCajaDown($event, id, 'mover')" @pointermove="onCajaMove"
                  @pointerup="onCajaUp" @pointercancel="onCajaUp">
@@ -604,6 +631,28 @@ onUnmounted(() => {
 
     <aside v-if="borrador" class="props card">
       <div class="props-cuerpo">
+        <div v-if="borrador.uso !== 'APOYO'" class="bloque-actividad">
+          <label class="campo"><span>¿Para qué actividad es este diseño?</span>
+            <select v-model="vinculo" class="control" :disabled="borrador.predeterminada">
+              <option value="">Ninguna en especial (global)</option>
+              <optgroup v-if="ediciones.length" label="Ferias (puestos)">
+                <option v-for="e in ediciones" :key="e.clave" :value="e.clave">{{ e.nombre }}{{ e.activa ? ' (en curso)' : '' }}</option>
+              </optgroup>
+              <optgroup v-if="eventos.length" label="Eventos con mesas">
+                <option v-for="e in eventos" :key="e.clave" :value="e.clave">{{ e.nombre }}</option>
+              </optgroup>
+            </select>
+          </label>
+          <p v-if="borrador.predeterminada" class="chico">
+            Esta es la plantilla por defecto y sirve para todas las actividades, por eso no se vincula.
+            <button type="button" class="btn btn-sm" @click="duplicar()">Duplicar para vincularla a una actividad</button>
+          </p>
+          <p v-else class="chico">
+            {{ vinculo
+              ? 'Se usa al aprobar ventas o reservas de esta actividad: las credenciales y los pases que recibe el cliente salen con este diseño.'
+              : 'Sin vincular: las ferias sin diseño propio usan la «Credencial virtual» y los eventos con mesas, el «Pase de evento».' }}
+          </p>
+        </div>
         <h4>Plantilla</h4>
         <label class="campo"><span>Nombre</span><input v-model="borrador.etiqueta" class="control" maxlength="80" /></label>
         <label class="campo"><span>Descripción</span><input v-model="borrador.detalle" class="control" maxlength="200" /></label>
@@ -615,14 +664,13 @@ onUnmounted(() => {
         <div class="dos">
           <label class="campo"><span>Uso</span>
             <select v-model="borrador.uso" class="control" :disabled="seleccionada?.predeterminada">
-              <option value="EXPOSITOR">Expositores</option>
+              <option value="EXPOSITOR">Clientes / expositores</option>
               <option value="APOYO">Personal de apoyo</option>
             </select>
           </label>
-          <label class="campo"><span>Actividad</span>
-            <select v-model="borrador.idEdicion" class="control" :disabled="borrador.predeterminada">
-              <option :value="null">Todas</option>
-              <option v-for="e in ediciones" :key="e.id" :value="e.id">{{ e.nombre }}{{ e.activa ? ' (actual)' : '' }}</option>
+          <label class="campo"><span>Forma de la foto</span>
+            <select :value="formaDe(borrador)" class="control" @change="borrador.fotoForma = $event.target.value; borrador.fotoCircular = $event.target.value === 'CIRCULO'">
+              <option v-for="fo in FORMAS" :key="fo.id" :value="fo.id">{{ fo.txt }}</option>
             </select>
           </label>
         </div>
@@ -647,6 +695,10 @@ onUnmounted(() => {
         </div>
 
         <h4>Campos</h4>
+        <p class="muted chico">
+          En eventos con mesas cada pase lleva: nombre de la persona (o el del local si no se cargó), nombre del evento,
+          mesa, zona y tipo de pase. Si la persona no tiene foto, en su lugar va el logo del local.
+        </p>
         <div class="campos">
           <label v-for="c in CAMPOS" :key="c.id" class="chip-campo" :class="{ sel: campoSel === c.id, activo: !!borrador.cajas[c.id] }">
             <input type="checkbox" :checked="!!borrador.cajas[c.id]" :disabled="c.obligatorio" @change="alternarCampo(c.id)" />
@@ -672,8 +724,19 @@ onUnmounted(() => {
         <label class="campo"><span>Nombre</span><input v-model="nueva.etiqueta" class="control" maxlength="80" placeholder="Credencial staff" /></label>
         <label class="campo"><span>Uso</span>
           <select v-model="nueva.uso" class="control">
-            <option value="EXPOSITOR">Expositores</option>
+            <option value="EXPOSITOR">Clientes / expositores</option>
             <option value="APOYO">Personal de apoyo</option>
+          </select>
+        </label>
+        <label v-if="nueva.uso !== 'APOYO'" class="campo"><span>¿Para qué actividad?</span>
+          <select v-model="nueva.vinculo" class="control">
+            <option value="">Ninguna en especial (global)</option>
+            <optgroup v-if="ediciones.length" label="Ferias (puestos)">
+              <option v-for="e in ediciones" :key="e.clave" :value="e.clave">{{ e.nombre }}</option>
+            </optgroup>
+            <optgroup v-if="eventos.length" label="Eventos con mesas">
+              <option v-for="e in eventos" :key="e.clave" :value="e.clave">{{ e.nombre }}</option>
+            </optgroup>
           </select>
         </label>
         <label class="campo"><span>Imagen de fondo (PNG o JPG)</span>
@@ -808,6 +871,12 @@ onUnmounted(() => {
 .caja.c-qr { background: repeating-linear-gradient(45deg, rgba(17, 24, 39, 0.25) 0 6px, rgba(255, 255, 255, 0.5) 6px 12px); }
 .caja.c-foto { background: rgba(148, 163, 184, 0.45); }
 .caja.circular { border-radius: 50%; }
+.caja.rombo { clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.bloque-actividad {
+  display: grid; gap: 0.35rem; padding: 0.6rem 0.7rem; margin-bottom: 0.6rem; border-radius: var(--radio-sm);
+  border: 1px solid var(--acento); background: var(--acento-suave);
+}
+.bloque-actividad .chico { margin: 0; font-size: 0.8rem; color: var(--text); display: grid; gap: 0.35rem; justify-items: start; }
 .rotulo {
   position: absolute; top: 0; left: 0; font-size: 10px; line-height: 1; padding: 2px 4px;
   background: var(--acento); color: #fff; border-bottom-right-radius: 4px; pointer-events: none; white-space: nowrap;

@@ -36,7 +36,7 @@ public class ControlVentasExportService {
 
     @Transactional(readOnly = true)
     public byte[] excel(Filtros filtros) {
-        Calculo c = control.calcular();
+        Calculo c = control.calcular(filtros == null ? null : filtros.edicionId());
         List<Venta> ventas = control.filtrar(c, filtros);
         List<String> notas = notas(filtros);
         notas.add(ventas.size() + " venta(s) en este reporte.");
@@ -55,7 +55,7 @@ public class ControlVentasExportService {
 
     @Transactional(readOnly = true)
     public byte[] pdf(Filtros filtros) {
-        Calculo c = control.calcular();
+        Calculo c = control.calcular(filtros == null ? null : filtros.edicionId());
         List<Venta> ventas = control.filtrar(c, filtros);
         List<String> notas = notas(filtros);
         List<Vendedor> vendedores = control.vendedores(ventas);

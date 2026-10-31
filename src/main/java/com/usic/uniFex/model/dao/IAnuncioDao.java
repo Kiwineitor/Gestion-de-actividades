@@ -13,8 +13,17 @@ public interface IAnuncioDao extends JpaRepository<Anuncio, Long> {
 
     @Query("SELECT a FROM Anuncio a WHERE a.estado = 'A' "
          + "AND (a.vigenteHasta IS NULL OR a.vigenteHasta > :ahora) "
+         + "AND (a.vigenteDesde IS NULL OR a.vigenteDesde <= :ahora) "
+         + "AND (a.destino IS NULL OR a.destino <> 'PUBLICO') "
          + "ORDER BY a.registro DESC")
     List<Anuncio> vigentes(@Param("ahora") LocalDateTime ahora);
+
+    @Query("SELECT a FROM Anuncio a WHERE a.estado = 'A' "
+         + "AND (a.vigenteHasta IS NULL OR a.vigenteHasta > :ahora) "
+         + "AND (a.vigenteDesde IS NULL OR a.vigenteDesde <= :ahora) "
+         + "AND a.destino IN ('PUBLICO', 'AMBOS') "
+         + "ORDER BY a.registro DESC")
+    List<Anuncio> publicos(@Param("ahora") LocalDateTime ahora);
 
     @Query("SELECT a FROM Anuncio a ORDER BY a.registro DESC")
     List<Anuncio> historial();

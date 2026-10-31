@@ -20,7 +20,7 @@ public interface IInscripcionService extends IServiceGenerico<Inscripcion, Long>
 
     List<InscripcionListadoDTO> listarParaTabla(boolean canceladas, Long soloDeUsuario);
     InscripcionDetalleDTO detalleParaTabla(Long id);
-    List<ResumenCategoriaView> resumenPorCategoria();
-    List<ResumenEntidadView> resumenPorEntidad();
-    ResumenGeneralView resumenGeneral();
+    List<ResumenCategoriaView> resumenPorCategoria(Long edicion);
+    List<ResumenEntidadView> resumenPorEntidad(Long edicion);
+    ResumenGeneralView resumenGeneral(Long edicion);
 }

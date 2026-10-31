@@ -5,7 +5,10 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.awt.Rectangle;
+import java.awt.Shape;
 import java.awt.geom.Ellipse2D;
+import java.awt.geom.Path2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -39,44 +42,68 @@ public class CredencialImagenService {
     private String uploadRoot;
 
     private static final Color TINTA = new Color(0x1F, 0x24, 0x2B);
+    private static final String FORMA_ROMBO = PlantillaCredencial.FORMA_ROMBO;
 
     public byte[] generar(CredencialDTO c, PlantillaCredencial plantilla, String urlBase) {
         try {
             log.info("[CREDENCIAL-WA] Generando credencial responsable={} inscripcion={} nombre='{}' fotoUrl='{}' plantilla={} urlBase={}",
                     c.responsableId(), c.inscripcionId(), c.nombre(), c.fotoUrl(), plantilla.id(), urlBase);
-            BufferedImage fondo = leerPlantilla(plantilla.imagen());
-            BufferedImage lienzo = new BufferedImage(
-                    fondo.getWidth(), fondo.getHeight(), BufferedImage.TYPE_INT_RGB);
-            Graphics2D g = lienzo.createGraphics();
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                    RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
-                    RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-            g.drawImage(fondo, 0, 0, null);
-
-            int w = lienzo.getWidth();
-            int h = lienzo.getHeight();
-
-            dibujarQr(g, plantilla.qr(), w, h, codigos.urlPublica(urlBase, c.codigo()));
-            dibujarFoto(g, plantilla.foto(), w, h, c, plantilla.fotoCircular());
-
-            texto(g, plantilla.nombre(), w, h, c.nombre(), plantilla, 2);
-            texto(g, plantilla.empresa(), w, h, empresa(c), plantilla, 2);
-            texto(g, plantilla.ci(), w, h, c.ci(), plantilla, 1);
-            texto(g, plantilla.codigo(), w, h, c.casetas(), plantilla, 1);
-            texto(g, plantilla.zona(), w, h, c.categoria(), plantilla, 1);
-            texto(g, plantilla.tipo(), w, h, CredencialPdfService.tipoDe(c, plantilla), plantilla, 1);
-
-            g.dispose();
-            ByteArrayOutputStream salida = new ByteArrayOutputStream();
-            ImageIO.write(lienzo, "png", salida);
+            byte[] png = dibujar(plantilla, codigos.urlPublica(urlBase, c.codigo()), c.fotoUrl(), false,
+                    c.nombre(), empresa(c), c.ci(), c.casetas(), c.categoria(), CredencialPdfService.tipoDe(c, plantilla));
             log.info("[CREDENCIAL-WA] Credencial generada responsable={} inscripcion={} bytes={}",
-                    c.responsableId(), c.inscripcionId(), salida.size());
-            return salida.toByteArray();
+                    c.responsableId(), c.inscripcionId(), png.length);
+            return png;
         } catch (IOException e) {
             throw new IllegalStateException("No se pudo generar la credencial virtual", e);
         }
+    }
+
+    public byte[] generarPase(PlantillaCredencial plantilla, String contenidoQr, String nombre, String empresa,
+                              String ci, String codigoMesa, String zona, String tipo) {
+        return generarPase(plantilla, contenidoQr, nombre, empresa, ci, codigoMesa, zona, tipo, null, false);
+    }
+
+    public byte[] generarPase(PlantillaCredencial plantilla, String contenidoQr, String nombre, String empresa,
+                              String ci, String codigoMesa, String zona, String tipo, String fotoRuta, boolean fotoEsLogo) {
+        try {
+            return dibujar(plantilla, contenidoQr, fotoRuta, fotoEsLogo, nombre, empresa, ci, codigoMesa, zona,
+                    tipo == null || tipo.isBlank() ? plantilla.tipoTexto() : tipo);
+        } catch (IOException e) {
+            throw new IllegalStateException("No se pudo generar el pase", e);
+        }
+    }
+
+    private byte[] dibujar(PlantillaCredencial plantilla, String contenidoQr, String fotoRuta, boolean fotoEsLogo,
+                           String nombre, String empresa, String ci, String codigo, String zona, String tipo)
+            throws IOException {
+        BufferedImage fondo = leerPlantilla(plantilla.imagen());
+        BufferedImage lienzo = new BufferedImage(
+                fondo.getWidth(), fondo.getHeight(), BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = lienzo.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        g.drawImage(fondo, 0, 0, null);
+
+        int w = lienzo.getWidth();
+        int h = lienzo.getHeight();
+
+        dibujarQr(g, plantilla.qr(), w, h, contenidoQr);
+        dibujarFoto(g, plantilla.foto(), w, h, fotoRuta, fotoEsLogo, plantilla.formaFoto());
+
+        texto(g, plantilla.nombre(), w, h, nombre, plantilla, 2);
+        texto(g, plantilla.empresa(), w, h, empresa, plantilla, 2);
+        texto(g, plantilla.ci(), w, h, ci, plantilla, 1);
+        texto(g, plantilla.codigo(), w, h, codigo, plantilla, 1);
+        texto(g, plantilla.zona(), w, h, zona, plantilla, 1);
+        texto(g, plantilla.tipo(), w, h, tipo, plantilla, 1);
+
+        g.dispose();
+        ByteArrayOutputStream salida = new ByteArrayOutputStream();
+        ImageIO.write(lienzo, "png", salida);
+        return salida.toByteArray();
     }
 
     private static String empresa(CredencialDTO c) {
@@ -105,68 +132,69 @@ public class CredencialImagenService {
         g.drawImage(img, x, y, lado, lado, null);
     }
 
-    private void dibujarFoto(Graphics2D g, Caja caja, int w, int h, CredencialDTO c, boolean circular) {
-        if (caja == null) {
-            log.info("[CREDENCIAL-WA] Plantilla sin caja de foto responsable={} inscripcion={}",
-                    c.responsableId(), c.inscripcionId());
-            return;
-        }
-        int ladoHueco = (int) Math.round(caja.ancho() * w);
-        int xh = (int) Math.round(caja.x() * w);
-        int yh = (int) Math.round(caja.y() * h);
+    private void dibujarFoto(Graphics2D g, Caja caja, int w, int h, String ruta, boolean esLogo, String forma) {
+        if (caja == null) return;
+        int lado = (int) Math.round(caja.ancho() * w);
+        int x = (int) Math.round(caja.x() * w);
+        int y = (int) Math.round(caja.y() * h);
+        if (lado < 2) return;
 
-        BufferedImage foto = leerFoto(c.fotoUrl());
-        if (foto == null) {
-            log.warn("[CREDENCIAL-WA] No se pudo usar foto real; se dibuja silueta responsable={} inscripcion={} fotoUrl='{}' uploadRoot='{}'",
-                    c.responsableId(), c.inscripcionId(), c.fotoUrl(), uploadRoot);
-            siluetaSinFoto(g, xh, yh, ladoHueco);
-            return;
-        }
-
-        log.info("[CREDENCIAL-WA] Foto real leida responsable={} inscripcion={} foto={}x{} hueco={}x{}",
-                c.responsableId(), c.inscripcionId(), foto.getWidth(), foto.getHeight(), ladoHueco, ladoHueco);
-
-        int lado = ladoHueco;
-        int x = xh;
-        int y = yh;
-
-        BufferedImage redonda = new BufferedImage(lado, lado, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D gf = redonda.createGraphics();
+        BufferedImage foto = leerFoto(ruta);
+        BufferedImage capa = new BufferedImage(lado, lado, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D gf = capa.createGraphics();
         gf.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        gf.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        if (circular) gf.fill(new Ellipse2D.Float(0, 0, lado, lado));
-        else gf.fillRect(0, 0, lado, lado);
+        gf.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        Shape figura = figura(forma, lado);
+        gf.fill(figura);
         gf.setComposite(AlphaComposite.SrcIn);
-
-        int corte = Math.min(foto.getWidth(), foto.getHeight());
-        int cx = (foto.getWidth() - corte) / 2;
-        int cy = (foto.getHeight() - corte) / 2;
-        gf.drawImage(foto, 0, 0, lado, lado, cx, cy, cx + corte, cy + corte, null);
+        if (foto == null) {
+            siluetaSinFoto(gf, lado);
+        } else if (esLogo) {
+            gf.setColor(Color.WHITE);
+            gf.fillRect(0, 0, lado, lado);
+            gf.setComposite(AlphaComposite.SrcAtop);
+            double margen = FORMA_ROMBO.equals(forma) ? 0.27 : 0.14;
+            int util = (int) Math.round(lado * (1 - 2 * margen));
+            double escala = Math.min((double) util / foto.getWidth(), (double) util / foto.getHeight());
+            int fw = (int) Math.round(foto.getWidth() * escala);
+            int fh = (int) Math.round(foto.getHeight() * escala);
+            gf.drawImage(foto, (lado - fw) / 2, (lado - fh) / 2, fw, fh, null);
+        } else {
+            int corte = Math.min(foto.getWidth(), foto.getHeight());
+            int cx = (foto.getWidth() - corte) / 2;
+            int cy = (foto.getHeight() - corte) / 2;
+            gf.drawImage(foto, 0, 0, lado, lado, cx, cy, cx + corte, cy + corte, null);
+        }
         gf.dispose();
-
-        g.drawImage(redonda, x, y, null);
+        g.drawImage(capa, x, y, null);
     }
 
-    private void siluetaSinFoto(Graphics2D g, int x, int y, int lado) {
-        g.setColor(new Color(0xE3, 0xE7, 0xEC));
-        g.fill(new Ellipse2D.Float(x, y, lado, lado));
+    private static Shape figura(String forma, int lado) {
+        if (PlantillaCredencial.FORMA_CIRCULO.equals(forma)) return new Ellipse2D.Float(0, 0, lado, lado);
+        if (FORMA_ROMBO.equals(forma)) {
+            Path2D.Float rombo = new Path2D.Float();
+            rombo.moveTo(lado / 2f, 0);
+            rombo.lineTo(lado, lado / 2f);
+            rombo.lineTo(lado / 2f, lado);
+            rombo.lineTo(0, lado / 2f);
+            rombo.closePath();
+            return rombo;
+        }
+        return new Rectangle(0, 0, lado, lado);
+    }
 
+    private void siluetaSinFoto(Graphics2D g, int lado) {
+        g.setColor(new Color(0xE3, 0xE7, 0xEC));
+        g.fillRect(0, 0, lado, lado);
         g.setColor(new Color(0xA8, 0xB2, 0xBF));
-        float dCabeza = lado * 0.34f;
-        g.fill(new Ellipse2D.Float(x + (lado - dCabeza) / 2f, y + lado * 0.17f, dCabeza, dCabeza));
-        java.awt.Shape antes = g.getClip();
-        g.setClip(new Ellipse2D.Float(x, y, lado, lado));
-        float anchoH = lado * 0.62f;
-        g.fill(new Ellipse2D.Float(x + (lado - anchoH) / 2f, y + lado * 0.58f, anchoH, lado * 0.55f));
-        g.setClip(antes);
+        float dCabeza = lado * 0.30f;
+        g.fill(new Ellipse2D.Float((lado - dCabeza) / 2f, lado * 0.22f, dCabeza, dCabeza));
+        float anchoH = lado * 0.56f;
+        g.fill(new Ellipse2D.Float((lado - anchoH) / 2f, lado * 0.56f, anchoH, lado * 0.55f));
     }
 
     private BufferedImage leerFoto(String fotoUrl) {
-        if (fotoUrl == null || fotoUrl.isBlank()) {
-            log.warn("[CREDENCIAL-WA] fotoUrl vacio; no hay archivo que leer");
-            return null;
-        }
+        if (fotoUrl == null || fotoUrl.isBlank()) return null;
         String relativa = fotoUrl.startsWith("/files/") ? fotoUrl.substring("/files/".length()) : fotoUrl;
         try {
             Path base = Paths.get(uploadRoot).toAbsolutePath().normalize();
@@ -205,6 +233,7 @@ public class CredencialImagenService {
         int alto = (int) Math.round(caja.alto() * h);
 
         int tam = (int) Math.round(h * TAM_BASE);
+        if (alto > tam * 2.2) tam = (int) Math.round(alto * (maxLineas > 1 ? 0.85 / maxLineas : 0.7));
         Font fuente = new Font(Font.SANS_SERIF, Font.BOLD, tam);
         java.util.List<String> lineas = partir(g, v, fuente, ancho, maxLineas);
 

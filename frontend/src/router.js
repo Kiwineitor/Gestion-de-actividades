@@ -3,7 +3,7 @@ import { useAuthStore } from './stores/auth';
 import { usePermisosStore } from './stores/permisos';
 import { EN_APK } from './config';
 import { marca } from './ui/marca';
-import { MODULOS, claveModulo, moduloActual, puedeAbrir, destinoAntiguo } from './modulos';
+import { MODULOS, claveModulo, moduloActual, puedeAbrir, destinoAntiguo, aliasDe } from './modulos';
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -17,6 +17,8 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   if (to.path === '/' && EN_APK && !Object.keys(to.query).length) return '/admin';
   if (to.path !== '/admin') return;
+  const alias = aliasDe(to.query);
+  if (alias) return alias;
   const auth = useAuthStore();
   if (!auth.autenticado) return;
   if (to.query.m && !MODULOS[to.query.m]) return '/admin';

@@ -29,14 +29,14 @@ public class InscripcionResumenController {
 
     @RequestMapping(value = "/tabla-categorias", method = {RequestMethod.GET, RequestMethod.POST})
     public String tablaCategorias(Model model) {
-        List<ResumenCategoriaView> data = resumenService.resumenPorCategoria();
+        List<ResumenCategoriaView> data = resumenService.resumenPorCategoria(null);
         model.addAttribute("data", data);
         return "resumen/tabla_registro";
     }
 
     @RequestMapping(value = "/tabla-entidades", method = {RequestMethod.GET, RequestMethod.POST})
     public String tablaEntidades(Model model) {
-        List<ResumenEntidadView> data = resumenService.resumenPorEntidad();
+        List<ResumenEntidadView> data = resumenService.resumenPorEntidad(null);
         model.addAttribute("data", data);
         return "resumen/tabla_registro1";
     }

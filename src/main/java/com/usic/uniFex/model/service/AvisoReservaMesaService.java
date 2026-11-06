@@ -50,11 +50,12 @@ public class AvisoReservaMesaService {
             if (!whatsApp.habilitado()) return;
             List<Map<String, Object>> filas = jdbc.queryForList("""
                     SELECT r.codigo, r.nombre, r.celular, r.monto, r.motivo, r.bloqueo_expira, r.personas, r.tipo_pase,
-                           m.codigo AS mesa, e.nombre AS evento, e.local_nombre,
+                           r.retiro_fisico, concat_ws(', ', m.codigo, a.codigo) AS mesa, e.nombre AS evento, e.local_nombre,
                            to_char(e.fecha_inicio, 'DD/MM/YYYY HH24:MI') AS fecha,
                            to_char(e.hora_limite, 'HH24:MI') AS limite
                       FROM mesa_reserva r
                       JOIN mesa m ON m.id = r.id_mesa
+                      LEFT JOIN mesa a ON a.id = r.id_mesa_adicional
                       JOIN mesa_evento e ON e.id = r.id_evento
                      WHERE r.id = ?
                     """, reservaId);
@@ -83,9 +84,12 @@ public class AvisoReservaMesaService {
             case CONFIRMADA -> String.join("\n",
                     saludo,
                     "Tu pago fue validado. ¡Reserva confirmada! " + mesa + ".",
-                    "Tienes " + r.get("personas") + " pase(s) " + (r.get("tipo_pase") == null ? "" : r.get("tipo_pase") + " ")
+                    Boolean.TRUE.equals(r.get("retiro_fisico"))
+                            ? "Presenta el QR de verificación del enlace y tu carnet para retirar el vale de consumo y " + r.get("personas") + " manillas."
+                            : "Tienes " + r.get("personas") + " pase(s) " + (r.get("tipo_pase") == null ? "" : r.get("tipo_pase") + " ")
                             + "en el enlace: cada persona muestra su propio QR.",
-                    r.get("limite") == null ? "Presenta los pases y tu carnet en el ingreso."
+                    Boolean.TRUE.equals(r.get("retiro_fisico")) ? (r.get("limite") == null ? "" : "Retira hasta las " + r.get("limite") + ".")
+                            : r.get("limite") == null ? "Presenta los pases y tu carnet en el ingreso."
                             : "Presenta los pases y tu carnet en el ingreso antes de las " + r.get("limite") + ".",
                     "Código: " + r.get("codigo"),
                     enlace);

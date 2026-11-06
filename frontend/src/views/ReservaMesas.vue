@@ -6,18 +6,17 @@ import ModalPublico from '../components/ModalPublico.vue';
 import { url as urlApi } from '../config.js';
 import { escucharPublico, alCambiarPublico } from '../ui/canalPublico';
 import { avisoPublico } from '../ui/avisosPublicos';
-import { tokenPublico, enlaceWhatsApp } from '../ui/tokenPublico';
+import { enlaceWhatsApp } from '../ui/tokenPublico';
 import { marca } from '../ui/marca';
 import ReservaPendiente from '../components/ReservaPendiente.vue';
 
 const route = useRoute();
 const router = useRouter();
-const token = tokenPublico();
 
 const evento = ref(null);
 const error = ref('');
-const elegidaId = ref(null);
-const tomando = ref(null);
+const seleccion = ref([]);
+const ficha = ref(false);
 const enviando = ref(false);
 const mensaje = ref('');
 const confirmoDatos = ref(false);
@@ -25,27 +24,23 @@ const condiciones = ref(false);
 const info = ref(false);
 const ampliado = ref(false);
 const resaltadas = ref(new Set());
-const cliente = reactive({ nombre: '', apellidos: '', ci: '', celular: '', correo: '', personas: 1 });
+const cliente = reactive({ nombre: '', ci: '', celular: '', correo: '' });
 const soltar = [];
-let latido = null;
-let propia = null;
-
-const mesas = computed(() => (evento.value?.mesas ?? []).map((m) => (
-  m.estado === 'L' && m.enProceso && m.id !== elegidaId.value ? { ...m, estado: 'P' } : m
-)));
-const elegida = computed(() => mesas.value.find((m) => m.id === elegidaId.value) || null);
+const mesas = computed(() => evento.value?.mesas ?? []);
+const elegidas = computed(() => seleccion.value.map((id) => mesas.value.find((m) => m.id === id)).filter(Boolean));
+const total = computed(() => elegidas.value.reduce((monto, m) => monto + Number(m.precio), 0));
+const manillas = computed(() => elegidas.value.reduce((cantidad, m) => cantidad + m.capacidad, 0));
 const aspecto = computed(() => {
   const e = evento.value;
   return e?.planoAncho && e?.planoAlto ? e.planoAlto / e.planoAncho : 0.62;
 });
 const libres = computed(() => mesas.value.filter((m) => m.estado === 'L').length);
-const enProceso = computed(() => mesas.value.filter((m) => m.estado === 'P').length);
 const zonas = computed(() => [...new Map((evento.value?.mesas ?? []).filter((m) => m.zona).map((m) => [m.zona, m.color])).entries()]);
 const politicas = computed(() => (evento.value?.politicas || '').split('\n').filter(Boolean));
 const contacto = computed(() => evento.value?.celularContacto || marca.contacto || '');
 const whatsapp = computed(() => enlaceWhatsApp(contacto.value, evento.value ? `Hola, tengo una consulta sobre ${evento.value.nombre}` : ''));
 const bs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { minimumFractionDigits: 0 })}`;
-const datosCompletos = computed(() => cliente.nombre.trim() && cliente.apellidos.trim() && cliente.ci.trim()
+const datosCompletos = computed(() => cliente.nombre.trim() && cliente.ci.trim()
   && cliente.celular.replace(/\D/g, '').length >= 7 && confirmoDatos.value);
 
 async function cargar() {
@@ -73,85 +68,52 @@ function aplicar(cambios) {
   if (!evento.value || !Array.isArray(cambios)) return;
   for (const c of cambios) {
     const i = evento.value.mesas.findIndex((m) => m.id === c.id);
-    if (c.activa === false) { if (i >= 0) evento.value.mesas.splice(i, 1); continue; }
     const antes = i >= 0 ? evento.value.mesas[i] : null;
-    if (i >= 0) evento.value.mesas[i] = { ...antes, ...c };
-    else evento.value.mesas.push(c);
-    const ocupadaAntes = antes && (antes.estado !== 'L' || antes.enProceso);
-    if (ocupadaAntes && c.estado === 'L' && !c.enProceso && c.id !== elegidaId.value && c.id !== propia) {
+    if (c.activa === false) {
+      if (i >= 0) evento.value.mesas.splice(i, 1);
+    } else if (i >= 0) {
+      evento.value.mesas[i] = { ...antes, ...c };
+    } else {
+      evento.value.mesas.push(c);
+    }
+    if (antes && antes.estado !== 'L' && c.estado === 'L' && c.activa !== false) {
       avisoPublico(`La mesa ${c.codigo} quedó libre`, 'libre');
       resaltar(c.id);
     }
-    if (c.id === elegidaId.value && c.estado !== 'L' && !enviando.value) {
-      cerrarFicha(false);
-      mensaje.value = `La mesa ${c.codigo} acaba de ser reservada por otra persona. Elige otra.`;
+    if (!enviando.value && seleccion.value.includes(c.id) && (c.estado !== 'L' || c.activa === false)) {
+      seleccion.value = seleccion.value.filter((id) => id !== c.id);
+      ficha.value = false;
+      mensaje.value = `La mesa ${c.codigo} ya no está disponible. Revisa tu selección.`;
     }
   }
 }
 
-async function apartar(id) {
-  const r = await fetch(urlApi(`/api/publico/mesas/eventos/${evento.value.id}/mesas/${id}/atencion`), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
-  });
-  return r.json().catch(() => ({ ok: false }));
-}
-
-function liberar(id) {
-  if (!id || !evento.value) return;
-  const destino = urlApi(`/api/publico/mesas/eventos/${evento.value.id}/mesas/${id}/soltar`);
-  try {
-    if (navigator.sendBeacon?.(destino, new Blob([token], { type: 'text/plain' }))) return;
-  } catch (_) {
+function elegir(m) {
+  mensaje.value = '';
+  if (seleccion.value.includes(m.id)) {
+    seleccion.value = seleccion.value.filter((id) => id !== m.id);
     return;
   }
-  fetch(destino, { method: 'POST', body: token, headers: { 'Content-Type': 'text/plain' }, keepalive: true }).catch(() => {});
-}
-
-async function elegir(m) {
-  mensaje.value = '';
-  if (m.estado === 'P') { avisoPublico(`Alguien está comprando la mesa ${m.codigo}. Elige otra o espera un momento.`); return; }
   if (m.estado !== 'L') { avisoPublico(`La mesa ${m.codigo} no está disponible.`); return; }
-  if (tomando.value) return;
-  tomando.value = m.id;
-  try {
-    const d = await apartar(m.id);
-    if (!d.ok) { avisoPublico(d.mensaje || 'No se pudo apartar la mesa.', 'error'); return; }
-    elegidaId.value = m.id;
-    cliente.personas = m.capacidad;
-    confirmoDatos.value = false;
-    clearInterval(latido);
-    latido = setInterval(async () => {
-      if (!elegidaId.value) return;
-      const res = await apartar(elegidaId.value).catch(() => null);
-      if (res && !res.ok) { cerrarFicha(false); mensaje.value = res.mensaje; }
-    }, 45000);
-  } catch {
-    avisoPublico('Sin conexión. Intenta de nuevo.', 'error');
-  } finally {
-    tomando.value = null;
-  }
-}
-
-function cerrarFicha(soltarMesa = true) {
-  clearInterval(latido);
-  propia = elegidaId.value;
-  if (soltarMesa) liberar(elegidaId.value);
-  elegidaId.value = null;
+  if (seleccion.value.length === 2) { avisoPublico('Puedes seleccionar hasta dos mesas.'); return; }
+  seleccion.value = [...seleccion.value, m.id];
 }
 
 async function reservar() {
-  if (!datosCompletos.value || !elegida.value) return;
+  if (!datosCompletos.value || !elegidas.value.length) return;
   enviando.value = true;
   mensaje.value = '';
   try {
+    const imagen = new Image();
+    imagen.src = urlApi(evento.value.pagoQrUrl);
+    await imagen.decode();
     const r = await fetch(urlApi(`/api/publico/mesas/eventos/${evento.value.id}/reservas`), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mesaId: elegida.value.id, cliente, token }),
+      body: JSON.stringify({ mesaIds: seleccion.value, cliente }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.ok) { mensaje.value = d.mensaje || 'No se pudo reservar. Intenta de nuevo.'; return; }
-    clearInterval(latido);
-    elegidaId.value = null;
+    ficha.value = false;
     router.push({ path: '/', query: { reserva: d.codigo } });
   } catch {
     mensaje.value = 'Sin conexión. Intenta de nuevo.';
@@ -160,22 +122,14 @@ async function reservar() {
   }
 }
 
-function alSalir() {
-  if (elegidaId.value) liberar(elegidaId.value);
-}
-
 onMounted(async () => {
   await cargar();
   if (!evento.value) return;
   soltar.push(escucharPublico(`/topic/publico/mesas/${evento.value.id}`, aplicar, { reconectado: cargar }));
   soltar.push(alCambiarPublico((m) => { if (m?.tipo === 'evento' && m.id === evento.value?.id) cargar(); }));
-  window.addEventListener('pagehide', alSalir);
 });
 onUnmounted(() => {
-  alSalir();
-  clearInterval(latido);
   soltar.forEach((f) => f());
-  window.removeEventListener('pagehide', alSalir);
 });
 </script>
 
@@ -200,18 +154,23 @@ onUnmounted(() => {
     <main v-else class="contenido">
       <section class="plano">
         <div class="estado-plano">
-          <span class="pub-vivo"><b>{{ libres }}</b>&nbsp;libre{{ libres === 1 ? '' : 's' }}<template v-if="enProceso"> · {{ enProceso }} en proceso</template></span>
+          <span class="pub-vivo"><b>{{ libres }}</b>&nbsp;libre{{ libres === 1 ? '' : 's' }}</span>
           <button type="button" class="ampliar" @click="ampliado = !ampliado">{{ ampliado ? 'Ajustar plano' : 'Ampliar plano' }}</button>
-          <span class="leyenda"><i class="l"></i>Libre <i class="p"></i>En proceso <i class="r"></i>Reservada <i class="o"></i>Vendida</span>
+          <span class="leyenda"><i class="l"></i>Libre <i class="r"></i>Apartada <i class="o"></i>Vendida</span>
         </div>
         <div class="lienzo" :class="{ ampliado }" :style="{ '--aspecto': aspecto }">
           <div class="ajuste">
-            <PlanoMesas :mesas="mesas" :elementos="evento.elementos || []" :plano-url="evento.planoUrl" :aspecto="aspecto" :seleccionada="elegidaId"
-                        :resaltadas="resaltadas" :ocupada="tomando" @elegir="elegir" />
+            <PlanoMesas :mesas="mesas" :elementos="evento.elementos || []" :plano-url="evento.planoUrl" :aspecto="aspecto" :seleccionada="seleccion"
+                        :resaltadas="resaltadas" @elegir="elegir" />
           </div>
         </div>
         <p v-if="mensaje" class="aviso-error" role="alert">{{ mensaje }}</p>
-        <p v-else class="pista">Toca una mesa libre para ver su precio y reservarla.</p>
+        <p v-else class="pista">Selecciona hasta dos mesas libres. Toca una mesa seleccionada para quitarla.</p>
+        <p v-if="!evento.pagoQrUrl" class="pista">La reserva en línea estará disponible cuando el local configure el QR de pago.</p>
+        <div v-if="elegidas.length" class="resumen">
+          <div v-for="m in elegidas" :key="m.id"><span>Mesa {{ m.codigo }}</span><strong>{{ bs(m.precio) }}</strong></div>
+          <button type="button" class="pub-boton" :disabled="!evento.pagoQrUrl" @click="mensaje = ''; ficha = true">Continuar · {{ bs(total) }}</button>
+        </div>
       </section>
 
       <aside class="lateral">
@@ -229,46 +188,35 @@ onUnmounted(() => {
       </aside>
     </main>
 
-    <ModalPublico v-if="elegida" ancho="620px" :cerrable="!enviando" @cerrar="cerrarFicha()">
-      <template #cabecera>
-        <div class="ficha-cab">
-          <span class="pub-chip" :style="{ color: elegida.color || undefined }">{{ elegida.zona || 'Mesa' }}</span>
-          <h2>Mesa {{ elegida.codigo }}</h2>
-        </div>
-      </template>
-
+    <ModalPublico v-if="ficha && elegidas.length" titulo="Datos de reserva" ancho="620px" :cerrable="!enviando" @cerrar="ficha = false">
       <div class="resumen">
-        <div><span>Precio</span><strong class="precio">{{ bs(elegida.precio) }}</strong></div>
-        <div><span>Capacidad</span><strong>Hasta {{ elegida.capacidad }} personas</strong></div>
-        <div v-if="elegida.beneficios" class="ancho"><span>Incluye</span><strong>{{ elegida.beneficios }}</strong></div>
+        <div v-for="m in elegidas" :key="m.id">
+          <span>Mesa {{ m.codigo }}<template v-if="m.zona"> · {{ m.zona }}</template></span>
+          <strong>{{ bs(m.precio) }} · {{ m.capacidad }} manillas</strong>
+          <small v-if="m.beneficios">{{ m.beneficios }}</small>
+        </div>
+        <div><span>Total</span><strong class="precio">{{ bs(total) }} · {{ manillas }} manillas</strong></div>
       </div>
-      <p class="apartada">Esta mesa está apartada para ti mientras completas tus datos.</p>
 
       <form id="form-reserva" class="formulario" @submit.prevent="reservar">
         <div class="campos">
-          <label class="pub-campo"><span>Nombre</span><input id="r-nombre" v-model="cliente.nombre" autocomplete="given-name" maxlength="80" required /></label>
-          <label class="pub-campo"><span>Apellidos</span><input id="r-apellidos" v-model="cliente.apellidos" autocomplete="family-name" maxlength="80" required /></label>
+          <label class="pub-campo"><span>Nombre completo</span><input id="r-nombre" v-model="cliente.nombre" autocomplete="name" maxlength="80" required /></label>
           <label class="pub-campo"><span>Número de carnet</span><input id="r-ci" v-model="cliente.ci" maxlength="20" required /></label>
           <label class="pub-campo"><span>Celular (WhatsApp)</span><input id="r-celular" v-model="cliente.celular" inputmode="tel" autocomplete="tel" maxlength="20" required /></label>
-          <label class="pub-campo"><span>¿Cuántas personas irán?</span>
-            <select id="r-personas" v-model.number="cliente.personas">
-              <option v-for="n in elegida.capacidad" :key="n" :value="n">{{ n }} persona{{ n === 1 ? '' : 's' }}</option>
-            </select>
-          </label>
           <label class="pub-campo"><span>Correo (opcional)</span><input id="r-correo" v-model="cliente.correo" type="email" autocomplete="email" maxlength="120" /></label>
         </div>
         <label class="check">
           <input id="r-confirmo" v-model="confirmoDatos" type="checkbox" />
-          <span>Revisé mis datos: no podrán cambiarse y el titular presentará este carnet en el ingreso.</span>
+          <span>Revisé mis datos: no podrán cambiarse y el titular presentará este carnet para retirar el vale y las manillas.</span>
         </label>
-        <p class="nota">Al continuar, la mesa queda bloqueada <b>{{ evento.minutosBloqueo }} min</b> para que pagues y adjuntes tu comprobante. Te avisaremos por WhatsApp.</p>
+        <p class="nota">Al abrir el QR de pago tendrás <b>{{ evento.minutosBloqueo }} min</b> para pagar y adjuntar el comprobante. Te avisaremos por WhatsApp.</p>
         <p v-if="mensaje" class="aviso-error" role="alert">{{ mensaje }}</p>
       </form>
 
       <template #pie>
-        <button type="button" class="pub-boton secundario" :disabled="enviando" @click="cerrarFicha()">Elegir otra</button>
+        <button type="button" class="pub-boton secundario" :disabled="enviando" @click="ficha = false">Cambiar selección</button>
         <button type="submit" form="form-reserva" class="pub-boton" :disabled="!datosCompletos || enviando">
-          {{ enviando ? 'Bloqueando…' : `Reservar y pagar ${bs(elegida.precio)}` }}
+          {{ enviando ? 'Bloqueando…' : `Ver QR de pago · ${bs(total)}` }}
         </button>
       </template>
     </ModalPublico>

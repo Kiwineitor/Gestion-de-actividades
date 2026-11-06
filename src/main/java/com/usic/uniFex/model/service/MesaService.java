@@ -472,56 +472,74 @@ public class MesaService {
 
     @Transactional
     public Resultado reservar(Long eventoId, Long mesaId, Cliente c, String ip) {
-        return reservar(eventoId, mesaId, c, ip, null);
+        return reservar(eventoId, List.of(mesaId), c, ip);
     }
 
     @Transactional
     public Resultado reservar(Long eventoId, Long mesaId, Cliente c, String ip, String token) {
-        String error = validarCliente(c);
-        if (error != null) return Resultado.error(error);
-        if (!permitirIntento(ip)) return Resultado.error("Demasiados intentos seguidos. Espera unos minutos y vuelve a intentar.");
-        Atencion atencion = atenciones.get(mesaId);
-        if (atencion != null && atencion.vigente(System.currentTimeMillis()) && !atencion.token().equals(token)) {
-            return Resultado.error("Otra persona está comprando esta mesa en este momento. Elige otra.");
-        }
-        Map<String, Object> evento = eventoPublico(eventoId);
-        if (evento == null) return Resultado.error("El evento no está disponible");
-        Integer activas = jdbc.queryForObject("""
-                SELECT count(*) FROM mesa_reserva
-                 WHERE id_evento = ? AND (ci = ? OR celular = ?)
-                   AND estado = 'BLOQUEADA' AND bloqueo_expira > now()
-                """, Integer.class, eventoId, c.ci().trim(), soloDigitos(c.celular()));
-        if (activas != null && activas > 0) {
-            return Resultado.error("Tienes otra mesa apartada esperando tu pago. Adjunta su comprobante o cancélala y luego podrás reservar otra.");
-        }
-        List<Object[]> mesa = jdbc.query("SELECT precio, codigo, capacidad FROM mesa WHERE id = ? AND id_evento = ? AND \"_estado\" = 'A'",
-                (rs, i) -> new Object[] { rs.getBigDecimal(1), rs.getString(2), rs.getInt(3) }, mesaId, eventoId);
-        if (mesa.isEmpty()) return Resultado.error("La mesa no existe");
-        int capacidad = (Integer) mesa.get(0)[2];
-        int personas = c.personas() == null ? capacidad : c.personas();
-        if (personas < 1 || personas > capacidad) return Resultado.error("Esta mesa admite de 1 a " + capacidad + " personas");
-        int minutos = ((Number) evento.get("minutosBloqueo")).intValue();
-        String codigo = nuevoCodigo();
-        Long reservaId = jdbc.queryForObject("""
-                INSERT INTO mesa_reserva (id_evento, id_mesa, codigo, nombre, apellidos, ci, celular, correo, monto,
-                                          estado, bloqueo_expira, ip, personas)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BLOQUEADA', now() + (? * interval '1 minute'), ?, ?) RETURNING id
-                """, Long.class, eventoId, mesaId, codigo, limpio(c.nombre(), 80), limpio(c.apellidos(), 80),
-                c.ci().trim(), soloDigitos(c.celular()), limpio(c.correo(), 120), mesa.get(0)[0], minutos, ip, personas);
-        int n = jdbc.update("""
-                UPDATE mesa SET estado = 'T', id_reserva = ?, bloqueo_expira = now() + (? * interval '1 minute'),
-                       version = version + 1
-                 WHERE id = ? AND id_evento = ? AND estado = 'L' AND "_estado" = 'A'
-                """, reservaId, minutos, mesaId, eventoId);
-        if (n == 0) throw new Rechazo("La mesa " + mesa.get(0)[1] + " ya no está disponible. Elige otra.");
-        atenciones.remove(mesaId);
-        publicarDespues(eventoId, List.of(mesaId));
-        log.info("Mesa {} bloqueada por la reserva {} ({} min)", mesaId, reservaId, minutos);
-        avisos.avisar(reservaId, AvisoReservaMesaService.Tipo.BLOQUEADA);
-        return Resultado.ok("Mesa bloqueada", Map.of("codigo", codigo));
+        return reservar(eventoId, mesaId, c, ip);
     }
 
     @Transactional
+    public Resultado reservar(Long eventoId, List<Long> ids, Cliente c, String ip) {
+        if (ids == null || ids.isEmpty() || ids.size() > 2 || ids.stream().anyMatch(java.util.Objects::isNull)
+                || ids.stream().distinct().count() != ids.size()) {
+            return Resultado.error("Elige una o dos mesas distintas");
+        }
+        String error = validarCliente(c);
+        if (error != null) return Resultado.error(error);
+        if (!permitirIntento(ip)) return Resultado.error("Demasiados intentos seguidos. Espera unos minutos y vuelve a intentar.");
+        // Serializa el límite por CI o celular, incluso cuando las mesas solicitadas son distintas.
+        List<Integer> plazos = jdbc.queryForList("""
+                SELECT minutos_bloqueo FROM mesa_evento
+                 WHERE id = ? AND publicado AND "_estado" = 'A' AND pago_qr_archivo IS NOT NULL
+                 FOR NO KEY UPDATE
+                """, Integer.class, eventoId);
+        if (plazos.isEmpty()) return Resultado.error("El evento no tiene habilitado el pago por QR");
+        String ci = c.ci().trim().toUpperCase(Locale.ROOT);
+        String celular = soloDigitos(c.celular());
+        Integer activas = jdbc.queryForObject("""
+                SELECT COALESCE(sum(CASE WHEN id_mesa_adicional IS NULL THEN 1 ELSE 2 END), 0)::integer
+                  FROM mesa_reserva
+                 WHERE id_evento = ? AND (upper(ci) = ? OR celular = ?)
+                   AND (estado = 'EN_REVISION' OR (estado = 'BLOQUEADA' AND bloqueo_expira > clock_timestamp()))
+                """, Integer.class, eventoId, ci, celular);
+        if (activas + ids.size() > 2) {
+            return Resultado.error("Puedes tener hasta dos mesas pendientes por evento. Espera la validación del pago o cancela una reserva pendiente.");
+        }
+        List<Map<String, Object>> elegidas = jdbc.queryForList("""
+                SELECT id, precio, capacidad FROM mesa
+                 WHERE id = ANY(?) AND id_evento = ? AND "_estado" = 'A' AND estado = 'L'
+                 ORDER BY id FOR UPDATE
+                """, (Object) ids.toArray(new Long[0]), eventoId);
+        if (elegidas.size() != ids.size()) return Resultado.error("Alguna mesa seleccionada ya no está disponible. Revisa el plano.");
+        BigDecimal monto = elegidas.stream().map(m -> (BigDecimal) m.get("precio")).reduce(BigDecimal.ZERO, BigDecimal::add);
+        int capacidad = elegidas.stream().mapToInt(m -> (Integer) m.get("capacidad")).sum();
+        Long adicional = ids.size() == 2 ? ids.get(1) : null;
+        Map<String, Object> datosAdicional = elegidas.stream().filter(m -> m.get("id").equals(adicional))
+                .findFirst().orElse(Map.of());
+        String codigo = nuevoCodigo();
+        Long reservaId = jdbc.queryForObject("""
+                INSERT INTO mesa_reserva (id_evento, id_mesa, id_mesa_adicional, codigo, nombre, apellidos, ci, celular,
+                                          correo, monto, estado, bloqueo_expira, ip, personas, retiro_fisico,
+                                          monto_mesa_adicional, manillas_mesa_adicional)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BLOQUEADA', clock_timestamp() + (? * interval '1 minute'),
+                        ?, ?, TRUE, ?, ?) RETURNING id
+                """, Long.class, eventoId, ids.getFirst(), adicional, codigo, limpio(c.nombre(), 80),
+                java.util.Objects.toString(limpio(c.apellidos(), 80), ""), ci, celular, limpio(c.correo(), 120),
+                monto, plazos.getFirst(), ip, capacidad, datosAdicional.get("precio"), datosAdicional.get("capacidad"));
+        int n = jdbc.update("""
+                UPDATE mesa SET estado = 'T', id_reserva = ?,
+                       bloqueo_expira = (SELECT bloqueo_expira FROM mesa_reserva WHERE id = ?), version = version + 1
+                 WHERE id = ANY(?) AND id_evento = ? AND estado = 'L' AND "_estado" = 'A'
+                """, reservaId, reservaId, (Object) ids.toArray(new Long[0]), eventoId);
+        if (n != ids.size()) throw new Rechazo("Alguna mesa seleccionada ya no está disponible. Revisa el plano.");
+        publicarDespues(eventoId, ids);
+        avisos.avisar(reservaId, AvisoReservaMesaService.Tipo.BLOQUEADA);
+        return Resultado.ok("Mesas apartadas para pagar", Map.of("codigo", codigo));
+    }
+
+    @Transactional(rollbackFor = IOException.class)
     public Resultado adjuntarComprobante(String codigo, MultipartFile archivo) throws IOException {
         Map<String, Object> r = reservaInterna(codigo);
         if (r == null) return Resultado.error("La reserva no existe");
@@ -532,19 +550,18 @@ public class MesaService {
         }
         if (archivo.getSize() > 10L * 1024 * 1024) return Resultado.error("El comprobante no puede pasar de 10 MB");
         Long reservaId = (Long) r.get("id");
-        Long mesaId = (Long) r.get("idMesa");
         int n = jdbc.update("""
                 UPDATE mesa SET estado = 'R', bloqueo_expira = NULL, version = version + 1
-                 WHERE id = ? AND estado = 'T' AND id_reserva = ? AND bloqueo_expira > now()
-                """, mesaId, reservaId);
-        if (n == 0) return Resultado.error("El tiempo para adjuntar el comprobante venció y la mesa se liberó");
+                 WHERE id_reserva = ? AND estado = 'T' AND bloqueo_expira > clock_timestamp()
+                """, reservaId);
+        if (n != idsDeReserva(r).size()) throw new Rechazo("El tiempo para adjuntar el comprobante venció");
         String ruta = archivos.save(archivo, FileStorageService.Bucket.MESAS, "comprobante-" + codigo);
         jdbc.update("""
                 UPDATE mesa_reserva SET estado = 'EN_REVISION', comprobante_archivo = ?, comprobante_subido_en = now(),
                        bloqueo_expira = NULL
                  WHERE id = ? AND estado = 'BLOQUEADA'
                 """, ruta, reservaId);
-        publicarDespues((Long) r.get("idEvento"), List.of(mesaId));
+        publicarDespues((Long) r.get("idEvento"), idsDeReserva(r));
         return Resultado.ok("Comprobante recibido", Map.of());
     }
 
@@ -553,11 +570,12 @@ public class MesaService {
         Map<String, Object> r = reservaInterna(codigo);
         if (r == null) return Resultado.error("La reserva no existe");
         if (!"BLOQUEADA".equals(r.get("estado"))) return Resultado.error("Esta reserva ya no se puede cancelar desde aquí");
-        jdbc.update("UPDATE mesa SET estado = 'L', id_reserva = NULL, bloqueo_expira = NULL, version = version + 1 "
-                + "WHERE id = ? AND estado = 'T' AND id_reserva = ?", r.get("idMesa"), r.get("id"));
+        int n = jdbc.update("UPDATE mesa SET estado = 'L', id_reserva = NULL, bloqueo_expira = NULL, version = version + 1 "
+                + "WHERE estado = 'T' AND id_reserva = ?", r.get("id"));
+        if (n != idsDeReserva(r).size()) throw new Rechazo("Esta reserva ya no se puede cancelar");
         jdbc.update("UPDATE mesa_reserva SET estado = 'CANCELADA', bloqueo_expira = NULL, motivo = 'Cancelada por el cliente' "
                 + "WHERE id = ? AND estado = 'BLOQUEADA'", r.get("id"));
-        publicarDespues((Long) r.get("idEvento"), List.of((Long) r.get("idMesa")));
+        publicarDespues((Long) r.get("idEvento"), idsDeReserva(r));
         return Resultado.ok("Reserva cancelada", Map.of());
     }
 
@@ -566,6 +584,10 @@ public class MesaService {
         List<Map<String, Object>> filas = jdbc.query(SELECT_RESERVA + " WHERE r.codigo = ?", (rs, i) -> {
             Map<String, Object> m = reserva(rs, false);
             m.put("evento", evento(rs.getLong("id_evento"), false));
+            if ("BLOQUEADA".equals(m.get("estado")) && (Long) m.get("segundosRestantes") == 0) {
+                m.put("estado", "VENCIDA");
+                m.put("motivo", "Venció el tiempo para adjuntar el comprobante");
+            }
             if ("CONFIRMADA".equals(m.get("estado"))) m.put("pases", pases.deReserva(rs.getLong("id")));
             return m;
         }, codigo);
@@ -591,23 +613,27 @@ public class MesaService {
         Map<String, Object> r = reservaPorId(reservaId);
         if (r == null) return Resultado.error("La reserva no existe");
         Map<String, Object> datos = jdbc.queryForMap("""
-                SELECT COALESCE(r.personas, m.capacidad) AS personas, m.capacidad, m.zona
-                  FROM mesa_reserva r JOIN mesa m ON m.id = r.id_mesa WHERE r.id = ?
+                SELECT COALESCE(r.personas, m.capacidad) AS personas,
+                       m.capacidad + COALESCE(a.capacidad, 0) AS capacidad, m.zona
+                  FROM mesa_reserva r JOIN mesa m ON m.id = r.id_mesa
+                  LEFT JOIN mesa a ON a.id = r.id_mesa_adicional WHERE r.id = ?
                 """, reservaId);
         int capacidad = ((Number) datos.get("capacidad")).intValue();
-        int cuantos = personas == null ? ((Number) datos.get("personas")).intValue() : personas;
-        if (cuantos < 1 || cuantos > capacidad) return Resultado.error("La mesa admite de 1 a " + capacidad + " personas");
+        boolean retiro = Boolean.TRUE.equals(r.get("retiroFisico"));
+        int cuantos = retiro || personas == null ? ((Number) datos.get("personas")).intValue() : personas;
+        if (!retiro && (cuantos < 1 || cuantos > capacidad)) return Resultado.error("La mesa admite de 1 a " + capacidad + " personas");
         String tipo = limpio(tipoPase, 60);
         if (tipo == null) tipo = datos.get("zona") == null ? "General" : (String) datos.get("zona");
-        int n = jdbc.update("UPDATE mesa SET estado = 'O', version = version + 1 WHERE id = ? AND estado = 'R' AND id_reserva = ?",
-                r.get("idMesa"), reservaId);
-        if (n == 0) return Resultado.error("Esta reserva no está esperando validación");
+        int n = jdbc.update("UPDATE mesa SET estado = 'O', version = version + 1 WHERE estado = 'R' AND id_reserva = ?",
+                reservaId);
+        if (n != idsDeReserva(r).size()) throw new Rechazo("Esta reserva no está esperando validación");
         jdbc.update("UPDATE mesa_reserva SET estado = 'CONFIRMADA', validado_por = ?, validado_en = now(), motivo = NULL, "
                 + "personas = ?, tipo_pase = ? WHERE id = ? AND estado = 'EN_REVISION'", usuarioId, cuantos, tipo, reservaId);
-        pases.generar(reservaId, (String) r.get("codigo"), cuantos, tipo);
-        publicarDespues((Long) r.get("idEvento"), List.of((Long) r.get("idMesa")));
+        if (!retiro) pases.generar(reservaId, (String) r.get("codigo"), cuantos, tipo);
+        publicarDespues((Long) r.get("idEvento"), idsDeReserva(r));
         log.info("Reserva de mesa {} confirmada por el usuario {}", reservaId, usuarioId);
         avisos.avisar(reservaId, AvisoReservaMesaService.Tipo.CONFIRMADA);
+        if (retiro) return Resultado.ok("Pago validado. El titular ya puede retirar el vale y las manillas", Map.of());
         return Resultado.ok("Pago validado: se generaron " + cuantos + " pase" + (cuantos == 1 ? "" : "s") + " " + tipo, Map.of());
     }
 
@@ -618,11 +644,11 @@ public class MesaService {
         Map<String, Object> r = reservaPorId(reservaId);
         if (r == null) return Resultado.error("La reserva no existe");
         int n = jdbc.update("UPDATE mesa SET estado = 'L', id_reserva = NULL, version = version + 1 "
-                + "WHERE id = ? AND estado = 'R' AND id_reserva = ?", r.get("idMesa"), reservaId);
-        if (n == 0) return Resultado.error("Esta reserva no está esperando validación");
+                + "WHERE estado = 'R' AND id_reserva = ?", reservaId);
+        if (n != idsDeReserva(r).size()) throw new Rechazo("Esta reserva no está esperando validación");
         jdbc.update("UPDATE mesa_reserva SET estado = 'RECHAZADA', validado_por = ?, validado_en = now(), motivo = ? "
                 + "WHERE id = ? AND estado = 'EN_REVISION'", usuarioId, m, reservaId);
-        publicarDespues((Long) r.get("idEvento"), List.of((Long) r.get("idMesa")));
+        publicarDespues((Long) r.get("idEvento"), idsDeReserva(r));
         avisos.avisar(reservaId, AvisoReservaMesaService.Tipo.RECHAZADA);
         return Resultado.ok("Pago rechazado: la mesa volvió a estar libre", Map.of());
     }
@@ -639,11 +665,12 @@ public class MesaService {
         if (puede == null || puede == 0) {
             return Resultado.error("Solo se libera una mesa confirmada, sin ingreso registrado y pasada la hora límite");
         }
-        jdbc.update("UPDATE mesa SET estado = 'L', id_reserva = NULL, version = version + 1 "
-                + "WHERE id = ? AND estado = 'O' AND id_reserva = ?", r.get("idMesa"), reservaId);
+        int n = jdbc.update("UPDATE mesa SET estado = 'L', id_reserva = NULL, version = version + 1 "
+                + "WHERE estado = 'O' AND id_reserva = ?", reservaId);
+        if (n != idsDeReserva(r).size()) throw new Rechazo("Esta reserva ya no se puede liberar");
         jdbc.update("UPDATE mesa_reserva SET estado = 'CANCELADA', motivo = 'No se presentó antes de la hora límite', "
                 + "validado_por = ?, validado_en = now() WHERE id = ?", usuarioId, reservaId);
-        publicarDespues((Long) r.get("idEvento"), List.of((Long) r.get("idMesa")));
+        publicarDespues((Long) r.get("idEvento"), idsDeReserva(r));
         avisos.avisar(reservaId, AvisoReservaMesaService.Tipo.NO_PRESENTADO);
         return Resultado.ok("Mesa liberada por no presentación", Map.of());
     }
@@ -660,6 +687,8 @@ public class MesaService {
             m.put("evento", rs.getString("evento_nombre"));
             m.put("tiposPase", tipos(rs.getString("evento_tipos")));
             m.put("mesa", r.get("mesa"));
+            m.put("retiroFisico", r.get("retiroFisico"));
+            m.put("ingresoEn", r.get("ingresoEn"));
             m.put("zona", r.get("zona"));
             m.put("capacidad", r.get("capacidad"));
             m.put("beneficios", r.get("beneficios"));
@@ -693,6 +722,8 @@ public class MesaService {
 
     @Transactional
     public Resultado regenerarPases(Long reservaId, Integer personas, String tipoPase, Long usuarioId) {
+        Map<String, Object> reserva = reservaPorId(reservaId);
+        boolean retiro = reserva != null && Boolean.TRUE.equals(reserva.get("retiroFisico"));
         List<Map<String, Object>> f = jdbc.queryForList("""
                 SELECT r.codigo, r.estado, r.id_evento, r.id_mesa, r.tipo_pase, COALESCE(r.personas, m.capacidad) AS personas,
                        m.capacidad, m.zona,
@@ -706,6 +737,12 @@ public class MesaService {
         int usados = ((Number) r.get("usados")).intValue();
         int cuantos = personas == null ? ((Number) r.get("personas")).intValue() : personas;
         int minimo = Math.max(1, usados);
+        if (retiro) {
+            if (cuantos < 1 || cuantos > 99) return Resultado.error("Elige entre 0 y 98 credenciales adicionales");
+            pases.generar(reservaId, (String) r.get("codigo"), cuantos, "Credencial");
+            publicarDespues((Long) reserva.get("idEvento"), idsDeReserva(reserva));
+            return Resultado.ok("Credenciales generadas", Map.of());
+        }
         if (cuantos < minimo || cuantos > capacidad) {
             return Resultado.error("La cantidad de pases debe estar entre " + minimo + " y " + capacidad
                     + (usados > 0 ? " (" + usados + " ya ingresaron)" : ""));
@@ -723,6 +760,7 @@ public class MesaService {
     @Transactional
     public Resultado venderEnOficina(Long eventoId, Long mesaId, Cliente c, String tipoPase, Long usuarioId) {
         String error = validarCliente(c);
+        if (error == null && limpio(c.apellidos(), 80) == null) error = "Escribe tus apellidos";
         if (error != null) return Resultado.error(error);
         if (!existeEvento(eventoId)) return Resultado.error("El evento no existe");
         List<Object[]> mesa = jdbc.query("""
@@ -811,10 +849,15 @@ public class MesaService {
         }
         List<String> pendientes = jdbc.queryForList(
                 "SELECT codigo FROM mesa_pase WHERE id_reserva = ? AND ingreso_en IS NULL ORDER BY numero LIMIT 1", String.class, r.get("id"));
-        if (!pendientes.isEmpty()) return registrarIngreso(pendientes.get(0), usuarioId);
+        if (!Boolean.TRUE.equals(r.get("retiroFisico")) && !pendientes.isEmpty()) return registrarIngreso(pendientes.get(0), usuarioId);
         int n = jdbc.update("UPDATE mesa_reserva SET ingreso_en = now(), ingreso_por = ? WHERE id = ? AND ingreso_en IS NULL",
                 usuarioId, r.get("id"));
         detalle = consultarReserva((String) r.get("codigo"));
+        if (Boolean.TRUE.equals(r.get("retiroFisico"))) {
+            if (n == 0) return new Resultado(false, "El vale y las manillas ya fueron retirados", detalle);
+            publicarDespues((Long) r.get("idEvento"), idsDeReserva(r));
+            return Resultado.ok("Retiro del vale y las manillas registrado", detalle);
+        }
         if (n == 0) return new Resultado(false, "Esta reserva ya registró su ingreso", detalle);
         return Resultado.ok("Ingreso registrado", detalle);
     }
@@ -824,18 +867,16 @@ public class MesaService {
     public void liberarVencidas() {
         List<Object[]> liberadas = jdbc.query("""
                 WITH vencidas AS (
-                    SELECT id, id_reserva FROM mesa
-                     WHERE estado = 'T' AND bloqueo_expira < now()
-                     FOR UPDATE SKIP LOCKED)
+                    SELECT id FROM mesa_reserva WHERE estado = 'BLOQUEADA' AND bloqueo_expira <= clock_timestamp()
+                    FOR UPDATE SKIP LOCKED
+                ), reservas AS (
+                    UPDATE mesa_reserva r SET estado = 'VENCIDA', motivo = 'No se adjuntó el comprobante a tiempo'
+                     FROM vencidas v WHERE r.id = v.id RETURNING r.id
+                )
                 UPDATE mesa m SET estado = 'L', id_reserva = NULL, bloqueo_expira = NULL, version = m.version + 1
-                  FROM vencidas v
-                 WHERE m.id = v.id AND m.estado = 'T'
-                RETURNING m.id, m.id_evento, v.id_reserva
-                """, (rs, i) -> new Object[] { rs.getLong(1), rs.getLong(2), rs.getObject(3, Long.class) });
-        jdbc.update("""
-                UPDATE mesa_reserva SET estado = 'VENCIDA', motivo = 'No se adjuntó el comprobante a tiempo'
-                 WHERE estado = 'BLOQUEADA' AND bloqueo_expira < now()
-                """);
+                  FROM reservas r WHERE m.id_reserva = r.id AND m.estado = 'T'
+                RETURNING m.id, m.id_evento
+                """, (rs, i) -> new Object[] { rs.getLong(1), rs.getLong(2) });
         for (Object[] f : liberadas) publicarDespues((Long) f[1], List.of((Long) f[0]));
         long vence = System.currentTimeMillis();
         for (Map.Entry<Long, Atencion> e : atenciones.entrySet()) {
@@ -857,8 +898,8 @@ public class MesaService {
         String limite = horaLimite == null ? "la hora que indique el local" : "las " + HORA.format(horaLimite);
         return String.join("\n",
                 "Tu mesa queda bloqueada " + minutos + " minutos para que pagues y adjuntes el comprobante. Si no lo adjuntas a tiempo, la mesa se libera.",
-                "La reserva se confirma solo cuando el local valida tu pago. Tu código QR de ingreso aparecerá en la página de tu reserva.",
-                "Revisa tus datos antes de reservar: no podrán modificarse después. El titular debe presentar su carnet en el ingreso.",
+                "La reserva se confirma solo cuando el local valida tu pago. El QR para retirar el vale y las manillas aparecerá en la página de tu reserva.",
+                "Revisa tus datos antes de reservar: no podrán modificarse después. El titular debe presentar su carnet al retirar el vale y las manillas.",
                 "La mesa se guarda hasta " + limite + ". Si el titular no llega a esa hora, el local puede liberarla y venderla otra vez sin devolución.",
                 "No se admiten más personas que la capacidad indicada en la mesa.",
                 "Si el pago no coincide con el monto o el comprobante no se puede leer, la reserva se rechaza, la mesa se libera y te mostramos el motivo.",
@@ -867,13 +908,15 @@ public class MesaService {
     }
 
     private static final String SELECT_RESERVA = """
-            SELECT r.*, m.codigo AS mesa_codigo, m.zona AS mesa_zona, m.capacidad AS mesa_capacidad,
-                   m.beneficios AS mesa_beneficios, u.username AS validado_usuario,
+            SELECT r.*, concat_ws(', ', m.codigo, a.codigo) AS mesa_codigo, m.zona AS mesa_zona,
+                   m.capacidad + COALESCE(a.capacidad, 0) AS mesa_capacidad,
+                   NULLIF(concat_ws(' · ', m.beneficios, a.beneficios), '') AS mesa_beneficios, u.username AS validado_usuario,
                    (SELECT e2.nombre FROM mesa_evento e2 WHERE e2.id = r.id_evento) AS evento_nombre,
                    (SELECT e2.tipos_pase FROM mesa_evento e2 WHERE e2.id = r.id_evento) AS evento_tipos,
                    (SELECT count(*) FROM mesa_pase p WHERE p.id_reserva = r.id AND p.ingreso_en IS NOT NULL) AS ingresados
               FROM mesa_reserva r
               JOIN mesa m ON m.id = r.id_mesa
+              LEFT JOIN mesa a ON a.id = r.id_mesa_adicional
               LEFT JOIN usuario u ON u.id = r.validado_por
             """;
 
@@ -885,6 +928,9 @@ public class MesaService {
         m.put("apellidos", rs.getString("apellidos"));
         m.put("monto", rs.getBigDecimal("monto"));
         m.put("mesa", rs.getString("mesa_codigo"));
+        m.put("mesaIds", rs.getObject("id_mesa_adicional") == null ? List.of(rs.getLong("id_mesa"))
+                : List.of(rs.getLong("id_mesa"), rs.getLong("id_mesa_adicional")));
+        m.put("retiroFisico", rs.getBoolean("retiro_fisico"));
         m.put("zona", rs.getString("mesa_zona"));
         m.put("capacidad", rs.getInt("mesa_capacidad"));
         m.put("beneficios", rs.getString("mesa_beneficios"));
@@ -1022,13 +1068,13 @@ public class MesaService {
     }
 
     private Map<String, Object> reservaInterna(String codigo) {
-        List<Map<String, Object>> f = jdbc.query("SELECT id, id_mesa, id_evento, estado, codigo FROM mesa_reserva WHERE codigo = ?",
+        List<Map<String, Object>> f = jdbc.query("SELECT id, id_mesa, id_mesa_adicional, id_evento, estado, codigo, retiro_fisico FROM mesa_reserva WHERE codigo = ? FOR UPDATE",
                 (rs, i) -> filaReserva(rs), codigo);
         return f.isEmpty() ? null : f.get(0);
     }
 
     private Map<String, Object> reservaPorId(Long id) {
-        List<Map<String, Object>> f = jdbc.query("SELECT id, id_mesa, id_evento, estado, codigo FROM mesa_reserva WHERE id = ?",
+        List<Map<String, Object>> f = jdbc.query("SELECT id, id_mesa, id_mesa_adicional, id_evento, estado, codigo, retiro_fisico FROM mesa_reserva WHERE id = ? FOR UPDATE",
                 (rs, i) -> filaReserva(rs), id);
         return f.isEmpty() ? null : f.get(0);
     }
@@ -1037,10 +1083,18 @@ public class MesaService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", rs.getLong("id"));
         m.put("idMesa", rs.getLong("id_mesa"));
+        m.put("idMesaAdicional", rs.getObject("id_mesa_adicional", Long.class));
+        m.put("retiroFisico", rs.getBoolean("retiro_fisico"));
         m.put("idEvento", rs.getLong("id_evento"));
         m.put("estado", rs.getString("estado"));
         m.put("codigo", rs.getString("codigo"));
         return m;
+    }
+
+    private static List<Long> idsDeReserva(Map<String, Object> r) {
+        Long principal = (Long) r.get("idMesa");
+        Long adicional = (Long) r.get("idMesaAdicional");
+        return adicional == null ? List.of(principal) : List.of(principal, adicional);
     }
 
     private String validarEvento(EventoDatos d) {
@@ -1049,8 +1103,8 @@ public class MesaService {
         LocalDateTime inicio = fechaHora(d.fechaInicio());
         if (inicio == null) return "Indica la fecha y hora del evento";
         if (d.horaLimite() != null && !d.horaLimite().isBlank() && fechaHora(d.horaLimite()) == null) return "Hora límite no válida";
-        if (d.minutosBloqueo() != null && (d.minutosBloqueo() < 2 || d.minutosBloqueo() > 30)) {
-            return "El tiempo de bloqueo debe estar entre 2 y 30 minutos";
+        if (d.minutosBloqueo() != null && (d.minutosBloqueo() != 5 && d.minutosBloqueo() != 10)) {
+            return "El tiempo de bloqueo debe ser de 5 o 10 minutos";
         }
         return null;
     }
@@ -1060,7 +1114,7 @@ public class MesaService {
         return new Object[] { limpio(d.nombre(), 120), limpio(d.localNombre(), 120), limpio(d.localDireccion(), 200),
                 limpio(d.descripcion(), 500), Timestamp.valueOf(fechaHora(d.fechaInicio())),
                 limite == null ? null : Timestamp.valueOf(limite),
-                d.minutosBloqueo() == null ? 5 : d.minutosBloqueo(), limpio(d.pagoBanco(), 80),
+                d.minutosBloqueo() == null ? 10 : d.minutosBloqueo(), limpio(d.pagoBanco(), 80),
                 limpio(d.pagoCuenta(), 60), limpio(d.pagoTitular(), 120), limpio(d.pagoInstrucciones(), 500),
                 limpio(d.celularContacto(), 30), d.politicas() == null || d.politicas().isBlank() ? null : d.politicas().trim(),
                 Boolean.TRUE.equals(d.publicado()), usuarioId };
@@ -1069,7 +1123,6 @@ public class MesaService {
     private static String validarCliente(Cliente c) {
         if (c == null) return "Faltan tus datos";
         if (limpio(c.nombre(), 80) == null) return "Escribe tu nombre";
-        if (limpio(c.apellidos(), 80) == null) return "Escribe tus apellidos";
         if (c.ci() == null || !c.ci().trim().matches("[0-9A-Za-z\\-]{4,20}")) return "Número de carnet no válido";
         String cel = soloDigitos(c.celular());
         if (cel == null || cel.length() < 7 || cel.length() > 15) return "Número de celular no válido";
@@ -1113,7 +1166,7 @@ public class MesaService {
 
     private static long restantes(Timestamp t) {
         if (t == null) return 0;
-        return Math.max(0, (t.getTime() - System.currentTimeMillis()) / 1000);
+        return Math.max(0, (t.getTime() - System.currentTimeMillis() + 999) / 1000);
     }
 
     private static LocalDateTime fechaHora(String s) {

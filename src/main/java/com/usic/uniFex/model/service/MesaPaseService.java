@@ -48,12 +48,13 @@ public class MesaPaseService {
 
     private static final String SELECT_PASE = """
             SELECT p.numero, p.codigo AS pase, p.tipo, r.id AS reserva_id, r.codigo AS reserva, r.nombre, r.apellidos,
-                   r.ci, r.estado, r.id_evento, r.personas, m.codigo AS mesa, m.zona, e.nombre AS evento,
+                   r.ci, r.estado, r.id_evento, r.personas, r.retiro_fisico, concat_ws(', ', m.codigo, a.codigo) AS mesa, m.zona, e.nombre AS evento,
                    p.nombre AS p_nombre, p.ci AS p_ci, p.foto AS p_foto, e.local_nombre, e.logo_archivo,
                    (SELECT count(*) FROM mesa_pase x WHERE x.id_reserva = r.id) AS total
               FROM mesa_pase p
               JOIN mesa_reserva r ON r.id = p.id_reserva
               JOIN mesa m ON m.id = r.id_mesa
+              LEFT JOIN mesa a ON a.id = r.id_mesa_adicional
               JOIN mesa_evento e ON e.id = r.id_evento
             """;
 
@@ -63,7 +64,7 @@ public class MesaPaseService {
 
     private record Pase(int numero, String codigo, String tipo, Long reservaId, String reserva, String titular,
                         String ci, String estado, Long eventoId, String mesa, String zona, String evento, int total,
-                        String personaNombre, String personaCi, String personaFoto, String local, String logo) {
+                        String personaNombre, String personaCi, String personaFoto, String local, String logo, boolean retiroFisico) {
     }
 
     private static final long REPETIDA_MS = 15_000;
@@ -110,7 +111,7 @@ public class MesaPaseService {
     @Transactional
     public Map<String, Object> registrarIngreso(String codigo, Long usuarioId) {
         List<Map<String, Object>> f = jdbc.queryForList("""
-                SELECT p.id, p.numero, p.tipo, p.ingreso_en, p.dentro, p.nombre, r.codigo AS reserva, r.estado, r.personas,
+                SELECT p.id, p.numero, p.tipo, p.ingreso_en, p.dentro, p.nombre, r.codigo AS reserva, r.estado, r.personas, r.retiro_fisico,
                        (SELECT a.cuando FROM mesa_pase_acceso a WHERE a.id_pase = p.id ORDER BY a.cuando DESC, a.id DESC LIMIT 1) AS ultimo
                   FROM mesa_pase p JOIN mesa_reserva r ON r.id = p.id_reserva
                  WHERE p.codigo = ?
@@ -124,6 +125,9 @@ public class MesaPaseService {
         }
         Map<String, Object> p = f.get(0);
         res.put("reserva", p.get("reserva"));
+        if (Boolean.TRUE.equals(p.get("retiro_fisico"))) {
+            return Map.of("ok", false, "mensaje", "Esta credencial es de una reserva con manillas físicas");
+        }
         res.put("pase", p.get("numero") + " de " + p.get("personas"));
         res.put("tipo", p.get("tipo"));
         if (!"CONFIRMADA".equals(p.get("estado"))) {
@@ -182,11 +186,13 @@ public class MesaPaseService {
     @Transactional(readOnly = true)
     public byte[] recibo(Long reservaId) {
         List<Map<String, Object>> f = jdbc.queryForList("""
-                SELECT r.*, m.codigo AS mesa, m.zona, m.capacidad, m.beneficios, e.nombre AS evento,
+                SELECT r.*, concat_ws(', ', m.codigo, a.codigo) AS mesa, m.zona, m.capacidad,
+                       NULLIF(concat_ws(' · ', m.beneficios, a.beneficios), '') AS beneficios, e.nombre AS evento,
                        e.local_nombre, e.local_direccion, e.fecha_inicio, u.username AS validador,
                        (SELECT count(*) FROM mesa_pase p WHERE p.id_reserva = r.id) AS pases
                   FROM mesa_reserva r
                   JOIN mesa m ON m.id = r.id_mesa
+                  LEFT JOIN mesa a ON a.id = r.id_mesa_adicional
                   JOIN mesa_evento e ON e.id = r.id_evento
                   LEFT JOIN usuario u ON u.id = r.validado_por
                  WHERE r.id = ?
@@ -244,9 +250,13 @@ public class MesaPaseService {
             Timestamp inicio = (Timestamp) d.get("fecha_inicio");
             par(det, "Fecha", inicio == null ? "—" : inicio.toLocalDateTime().format(F_HORA), etiqueta, normal);
             par(det, "Mesa", texto(d.get("mesa")) + (d.get("zona") == null ? "" : " · " + d.get("zona")), etiqueta, normal);
-            par(det, "Personas", texto(d.get("personas") == null ? d.get("capacidad") : d.get("personas"))
+            if (Boolean.TRUE.equals(d.get("retiro_fisico"))) {
+                par(det, "Retiro", "Vale de consumo y " + d.get("personas") + " manillas", etiqueta, normal);
+            } else {
+                par(det, "Personas", texto(d.get("personas") == null ? d.get("capacidad") : d.get("personas"))
                     + " · " + d.get("pases") + " pase(s)" + (d.get("tipo_pase") == null ? "" : " " + d.get("tipo_pase")),
                     etiqueta, normal);
+            }
             if (d.get("beneficios") != null) par(det, "Incluye", texto(d.get("beneficios")), etiqueta, normal);
             par(det, "Pago", d.get("registrado_por") != null ? "En oficina"
                     : d.get("comprobante_archivo") != null ? "Comprobante adjunto" : "—", etiqueta, normal);
@@ -294,15 +304,22 @@ public class MesaPaseService {
                 (rs.getString("nombre") + " " + rs.getString("apellidos")).trim(), rs.getString("ci"),
                 rs.getString("estado"), rs.getLong("id_evento"), rs.getString("mesa"), rs.getString("zona"),
                 rs.getString("evento"), rs.getInt("total"), rs.getString("p_nombre"), rs.getString("p_ci"),
-                rs.getString("p_foto"), rs.getString("local_nombre"), rs.getString("logo_archivo")), args);
+                rs.getString("p_foto"), rs.getString("local_nombre"), rs.getString("logo_archivo"), rs.getBoolean("retiro_fisico")), args);
     }
 
     private byte[] dibujar(Pase p, PlantillaCredencial plantilla) {
+        if (p.retiroFisico()) {
+            boolean titular = p.numero() == 1;
+            return imagenes.generarPase(plantilla, titular ? p.reserva() : p.codigo(), titular ? p.titular() : "Invitado " + (p.numero() - 1),
+                    titular ? p.evento() : "Representante: " + p.titular(), titular ? p.ci() : null,
+                    "Mesa(s) " + p.mesa(), p.zona(), titular ? "Titular" : "Invitado", p.logo(), true);
+        }
         boolean conPersona = p.personaNombre() != null && !p.personaNombre().isBlank();
-        String nombre = conPersona ? p.personaNombre() : p.numero() == 1 ? p.titular() : p.local();
+        String nombre = conPersona ? p.personaNombre() : p.numero() == 1 ? p.titular() : "Invitado " + (p.numero() - 1);
         String ci = conPersona ? p.personaCi() : p.numero() == 1 ? p.ci() : null;
         boolean conFoto = p.personaFoto() != null && !p.personaFoto().isBlank();
-        return imagenes.generarPase(plantilla, p.codigo(), nombre, p.evento(), ci, "Mesa " + p.mesa(),
+        String referencia = p.numero() == 1 || conPersona ? p.evento() : "Representante: " + p.titular();
+        return imagenes.generarPase(plantilla, p.codigo(), nombre, referencia, ci, "Mesa(s) " + p.mesa(),
                 p.zona(), p.tipo(), conFoto ? p.personaFoto() : p.logo(), !conFoto);
     }
 

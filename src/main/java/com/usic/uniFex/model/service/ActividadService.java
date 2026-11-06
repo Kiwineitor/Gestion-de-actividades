@@ -32,6 +32,8 @@ public class ActividadService {
     private final PlantillaCredencialService plantillas;
     private final FileStorageService archivos;
     private final AvisoPublicoService avisoPublico;
+    private final CategoriaMapaService categoriaMapa;
+    private final CategoriaOpcionService categoriaOpcion;
 
     private static final Set<String> TIPOS_IMAGEN = Set.of("image/png", "image/jpeg", "image/webp");
 
@@ -40,7 +42,7 @@ public class ActividadService {
                         String lugar, String fechasTexto, String descripcionPublica, String contacto,
                         Boolean publica, Boolean recibeInteresados,
                         String pagoBanco, String pagoCuenta, String pagoTitular, String pagoInstrucciones,
-                        String pagoOficina) {
+                        String pagoOficina, List<CategoriaMapaService.NuevaCategoria> categorias) {
     }
 
     public record Resultado(boolean ok, String mensaje, Long id) {
@@ -52,8 +54,12 @@ public class ActividadService {
         return jdbc.query("""
                 SELECT e.id, e.nombre, e.anio, e.tipo, e.activa, e.plano_archivo IS NOT NULL AS con_plano,
                        e.lugar, e.fechas_texto, e.descripcion_publica, e.contacto, e.portada_archivo,
-                       e.publica, e.recibe_interesados, e.pago_qr_archivo, e.pago_banco, e.pago_cuenta,
+                       e.publica, e.recibe_interesados, e.publicacion_independiente, e.pago_qr_archivo, e.pago_banco, e.pago_cuenta,
                        e.pago_titular, e.pago_instrucciones, e.pago_oficina,
+                       e.tipo_espacio, e.etiqueta_espacio, e.vende_espacios, e.vende_entradas, e.configuracion_paso, e.finalizada,
+                       (SELECT min(d.fecha) FROM edicion_dia d WHERE d.id_edicion = e.id) AS primer_dia,
+                       (SELECT max(d.fecha) FROM edicion_dia d WHERE d.id_edicion = e.id) AS ultimo_dia,
+                       (SELECT count(*) FROM entrada_tipo t WHERE t.id_edicion = e.id AND t."_estado" <> 'X') AS tipos_entrada,
                        (SELECT count(*) FROM categoria c
                          WHERE c.id_edicion = e.id AND (c."_estado" IS NULL OR c."_estado" <> 'X')) AS categorias,
                        (SELECT count(*) FROM puesto p JOIN categoria c ON c.id = p.id_categoria
@@ -84,6 +90,7 @@ public class ActividadService {
             String portada = rs.getString("portada_archivo");
             m.put("portadaUrl", portada == null ? null : "/files/" + portada);
             m.put("publica", rs.getBoolean("publica"));
+            m.put("publicada", rs.getBoolean("publica") && (rs.getBoolean("activa") || rs.getBoolean("publicacion_independiente")));
             m.put("recibeInteresados", rs.getBoolean("recibe_interesados"));
             String qr = rs.getString("pago_qr_archivo");
             m.put("pagoQrUrl", qr == null ? null : "/files/" + qr);
@@ -92,6 +99,15 @@ public class ActividadService {
             m.put("pagoTitular", rs.getString("pago_titular"));
             m.put("pagoInstrucciones", rs.getString("pago_instrucciones"));
             m.put("pagoOficina", rs.getString("pago_oficina"));
+            m.put("tipoEspacio", rs.getString("tipo_espacio"));
+            m.put("etiquetaEspacio", rs.getString("etiqueta_espacio"));
+            m.put("vendeEspacios", rs.getBoolean("vende_espacios"));
+            m.put("vendeEntradas", rs.getBoolean("vende_entradas"));
+            m.put("configuracionPaso", rs.getInt("configuracion_paso"));
+            m.put("finalizada", rs.getBoolean("finalizada"));
+            m.put("primerDia", rs.getString("primer_dia"));
+            m.put("ultimoDia", rs.getString("ultimo_dia"));
+            m.put("tiposEntrada", rs.getLong("tipos_entrada"));
             return m;
         });
     }
@@ -105,8 +121,13 @@ public class ActividadService {
         if (existeNombre(nombre, null)) return Resultado.error("Ya existe una actividad con ese nombre");
         if (d.copiarDe() != null && !existe(d.copiarDe())) return Resultado.error("La actividad de origen no existe");
 
+        if (d.categorias() != null && (d.categorias().size() > 30 || d.categorias().stream().anyMatch(c ->
+                c == null || limpio(c.nombre(), 100) == null || c.cantidad() == null || c.cantidad() < 1 || c.cantidad() > 500
+                        || c.precioBase() == null || c.precioBase().signum() < 0))) {
+            return Resultado.error("Revisa los nombres, cantidades (1 a 500) y precios de las categorías");
+        }
         Long id = jdbc.queryForObject(
-                "INSERT INTO edicion (nombre, anio, tipo, activa, plano_version) VALUES (?, ?, ?, FALSE, 0) RETURNING id",
+                "INSERT INTO edicion (nombre, anio, tipo, activa, plano_version, plano_sin_fondo) VALUES (?, ?, ?, FALSE, 0, TRUE) RETURNING id",
                 Long.class, nombre, anio, limpio(d.tipo(), 40));
         guardarPublico(id, d);
 
@@ -115,6 +136,12 @@ public class ActividadService {
             if (Boolean.TRUE.equals(d.copiarPlano())) copiarPlano(d.copiarDe(), id);
             if (Boolean.TRUE.equals(d.copiarTextos())) copiarTextos(d.copiarDe(), id, usuarioId);
             log.info("Actividad {} creada copiando {} categoria(s) de la actividad {}", id, categorias, d.copiarDe());
+        }
+        if (d.categorias() != null) {
+            for (var c : d.categorias()) {
+                var guardada = categoriaMapa.crear(c, usuarioId, id);
+                categoriaOpcion.asegurarPredeterminada(guardada.getId(), guardada.getNombre(), guardada.getPrecioBase(), usuarioId);
+            }
         }
         return new Resultado(true, "Actividad creada", id);
     }
@@ -210,9 +237,17 @@ public class ActividadService {
     @Transactional
     public Resultado habilitar(Long id, boolean habilitada) {
         if (!existe(id)) return Resultado.error("La actividad no existe");
-        jdbc.update("UPDATE edicion SET publica = ?, recibe_interesados = ? WHERE id = ?", habilitada, habilitada, id);
+        boolean conEspacios = Boolean.TRUE.equals(jdbc.queryForObject("SELECT vende_espacios FROM edicion WHERE id = ?", Boolean.class, id));
+        if (habilitada && conEspacios && !id.equals(activaActual()) && !Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS(SELECT 1 FROM puesto p JOIN categoria c ON c.id = p.id_categoria
+                    WHERE c.id_edicion = ? AND p.mapa_x IS NOT NULL AND p.mapa_y IS NOT NULL
+                      AND p."_estado" IS DISTINCT FROM 'X' AND c."_estado" IS DISTINCT FROM 'X')
+                """, Boolean.class, id))) {
+            return Resultado.error("Ubica al menos un espacio en el plano antes de publicar la actividad");
+        }
+        jdbc.update("UPDATE edicion SET publica = ?, publicacion_independiente = ? WHERE id = ?", habilitada, habilitada, id);
         avisoPublico.cambio("actividad", id);
-        return new Resultado(true, habilitada ? "Actividad habilitada: visible y recibiendo solicitudes"
+        return new Resultado(true, habilitada ? "Actividad publicada en el portal"
                 : "Actividad deshabilitada: oculta al público", id);
     }
 

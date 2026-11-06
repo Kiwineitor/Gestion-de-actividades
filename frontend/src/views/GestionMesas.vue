@@ -93,7 +93,7 @@ function vacio() {
   const fecha = manana.toISOString().slice(0, 10);
   return {
     nombre: '', localNombre: '', localDireccion: '', descripcion: '', fechaInicio: `${fecha}T22:00`, horaLimite: `${fecha}T23:30`,
-    minutosBloqueo: 5, pagoBanco: '', pagoCuenta: '', pagoTitular: '', pagoInstrucciones: '', celularContacto: '',
+    minutosBloqueo: 10, pagoBanco: '', pagoCuenta: '', pagoTitular: '', pagoInstrucciones: '', celularContacto: '',
     politicas: '', publicado: false, tiposPase: 'General\nVIP',
   };
 }
@@ -158,7 +158,7 @@ function nuevoEvento() {
 async function guardarEvento() {
   guardando.value = true;
   try {
-    const cuerpo = { ...form, minutosBloqueo: Number(form.minutosBloqueo) || 5 };
+    const cuerpo = { ...form, minutosBloqueo: Number(form.minutosBloqueo) || 10 };
     const nuevo = !selId.value;
     const r = nuevo
       ? await apiFetch('/api/app/mesas/eventos', { method: 'POST', body: JSON.stringify(cuerpo) })
@@ -563,7 +563,7 @@ onUnmounted(() => {
               <label class="campo ancho"><span>Número de cuenta</span><input id="ev-cuenta" v-model="form.pagoCuenta" class="control" maxlength="60" inputmode="numeric" /></label>
               <label class="campo"><span>WhatsApp de consultas</span><input id="ev-cel" v-model="form.celularContacto" class="control" maxlength="30" inputmode="tel" placeholder="70000000" /></label>
               <label class="campo"><span>Tiempo para pagar</span>
-                <span class="con-sufijo"><input id="ev-min" v-model.number="form.minutosBloqueo" type="number" min="2" max="30" class="control" /><em>min</em></span>
+                <span class="con-sufijo"><select id="ev-min" v-model.number="form.minutosBloqueo" class="control"><option :value="5">5 minutos</option><option :value="10">10 minutos</option></select></span>
               </label>
             </div>
           </div>
@@ -691,7 +691,7 @@ onUnmounted(() => {
             <p v-if="mesaElegida.reservadoPor" class="muted chico">Reserva de {{ mesaElegida.reservadoPor }}</p>
             <div class="acciones">
               <button v-if="mesaElegida.id && (mesaElegida.estado === 'L' || mesaElegida.estado === 'X')" class="btn btn-sm" @click="alternarVenta(mesaElegida)">
-                {{ mesaElegida.estado === 'X' ? 'Volver a vender' : 'Sacar de venta' }}
+                {{ mesaElegida.estado === 'X' ? 'Liberar para venta pública' : 'Apartar para VIP / fuera de venta' }}
               </button>
               <button v-if="!mesaElegida.id || mesaElegida.estado === 'L' || mesaElegida.estado === 'X'" class="btn btn-sm btn-peligro" @click="quitarMesa(mesaElegida)">Eliminar</button>
               <button v-if="mesaElegida.estado === 'O' && mesaElegida.reservaId" class="btn btn-sm btn-primario" @click="entregaId = mesaElegida.reservaId">📲 Recibo y pases</button>

@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.usic.uniFex.model.dto.PlanoDTO;
@@ -34,20 +35,21 @@ public class PlanoApiController {
     private final PlanoService planoService;
 
     @GetMapping
-    public PlanoDTO activo() {
-        return planoService.activo();
+    @PreAuthorize("#edicion == null or (" + Roles.EDITA_PLANO_O_PANTALLA + ")")
+    public PlanoDTO activo(@RequestParam(required = false) Long edicion) {
+        return planoService.deEdicion(edicion);
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
-    public ResponseEntity<Map<String, Object>> reemplazar(@RequestPart("archivo") MultipartFile archivo) {
+    public ResponseEntity<Map<String, Object>> reemplazar(@RequestPart("archivo") MultipartFile archivo, @RequestParam(required = false) Long edicion) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         Long usuarioId = (auth != null && auth.getPrincipal() instanceof JwtUser ju) ? ju.id() : null;
         if (usuarioId == null) {
             return ResponseEntity.status(401).body(Map.of("ok", false, "mensaje", "No autenticado"));
         }
 
-        return responder(planoService.reemplazar(archivo, usuarioId));
+        return responder(planoService.reemplazar(archivo, usuarioId, edicion));
     }
 
     public record Forma(Integer ancho, Integer alto, Boolean conservar) {
@@ -55,18 +57,18 @@ public class PlanoApiController {
 
     @PatchMapping("/forma")
     @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
-    public ResponseEntity<Map<String, Object>> cambiarForma(@RequestBody Forma req) {
+    public ResponseEntity<Map<String, Object>> cambiarForma(@RequestBody Forma req, @RequestParam(required = false) Long edicion) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         Long usuarioId = (auth != null && auth.getPrincipal() instanceof JwtUser ju) ? ju.id() : null;
-        return responder(planoService.cambiarForma(req.ancho(), req.alto(), !Boolean.FALSE.equals(req.conservar()), usuarioId));
+        return responder(planoService.cambiarForma(req.ancho(), req.alto(), !Boolean.FALSE.equals(req.conservar()), usuarioId, edicion));
     }
 
     @DeleteMapping
     @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
-    public ResponseEntity<Map<String, Object>> quitarFondo() {
+    public ResponseEntity<Map<String, Object>> quitarFondo(@RequestParam(required = false) Long edicion) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         Long usuarioId = (auth != null && auth.getPrincipal() instanceof JwtUser ju) ? ju.id() : null;
-        return responder(planoService.quitarFondo(usuarioId));
+        return responder(planoService.quitarFondo(usuarioId, edicion));
     }
 
     private ResponseEntity<Map<String, Object>> responder(PlanoService.Resultado r) {

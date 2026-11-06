@@ -199,11 +199,12 @@ public class InscripcionGeneralService {
         StringBuilder sql = new StringBuilder("""
                 SELECT r.id, r.codigo, ev.id AS evento_id, ev.nombre AS actividad, r.creado_en AS fecha,
                        btrim(concat_ws(' ', r.nombre, r.apellidos)) AS cliente, r.ci, r.celular,
-                       m.codigo AS mesa, m.zona, r.personas, r.tipo_pase, r.monto, r.estado,
+                       concat_ws(', ', m.codigo, ad.codigo) AS mesa, m.zona, r.personas, r.tipo_pase, r.monto, r.estado,
                        r.comprobante_archivo IS NOT NULL AS con_comprobante, r.registrado_por IS NOT NULL AS en_oficina,
                        u.id AS vendedor_id, %s AS vendedor
                   FROM mesa_reserva r
                   JOIN mesa m ON m.id = r.id_mesa
+                  LEFT JOIN mesa ad ON ad.id = r.id_mesa_adicional
                   JOIN mesa_evento ev ON ev.id = r.id_evento AND ev."_estado" = 'A'
                   LEFT JOIN usuario u ON u.id = coalesce(r.registrado_por, r.validado_por)
                   LEFT JOIN persona vp ON vp.id = u.persona_id
@@ -213,7 +214,8 @@ public class InscripcionGeneralService {
             sql.append(" AND r.id_evento = ?");
             params.add(a.id());
             if (f.categoria() != null && !f.categoria().isBlank()) {
-                sql.append(" AND m.zona = ?");
+                sql.append(" AND (m.zona = ? OR ad.zona = ?)");
+                params.add(f.categoria().trim());
                 params.add(f.categoria().trim());
             }
         }

@@ -104,6 +104,10 @@ List<Puesto> findLibresPorCategoriaOrdenados(@Param("estadoPuesto") String estad
            + "AND p.categoria.idEdicion = (SELECT e.id FROM Edicion e WHERE e.activa = true)")
     List<Puesto> listarActivos();
 
+    @EntityGraph(attributePaths = {"categoria"})
+    @Query("SELECT p FROM Puesto p WHERE (p.estado IS NULL OR p.estado <> 'X') AND p.categoria.idEdicion = :edicion")
+    List<Puesto> listarActivosDe(@Param("edicion") Long edicion);
+
     @Modifying(clearAutomatically = true)
     @Query(value = "UPDATE puesto SET mapa_x = :x, mapa_y = :y, " +
            "mapa_escala = COALESCE(:escala, mapa_escala), " +

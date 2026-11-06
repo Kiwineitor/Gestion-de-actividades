@@ -295,10 +295,11 @@ const mensajeRepetido = computed(() =>
       <dl v-if="resultado.reserva" class="datos">
         <div><dt>Evento</dt><dd>{{ resultado.reserva.evento?.nombre || '—' }}</dd></div>
         <div><dt>Mesa</dt><dd>{{ resultado.reserva.mesa }}<template v-if="resultado.reserva.zona"> · {{ resultado.reserva.zona }}</template></dd></div>
-        <div><dt>Movimiento</dt><dd>{{ resultado.sentido === 'S' ? 'Salida' : 'Entrada' }}</dd></div>
+        <div><dt>Movimiento</dt><dd>{{ resultado.reserva.retiroFisico ? 'Retiro' : resultado.sentido === 'S' ? 'Salida' : 'Entrada' }}</dd></div>
         <div v-if="resultado.reserva.persona"><dt>Persona</dt><dd>{{ resultado.reserva.persona }}</dd></div>
         <div><dt>Titular</dt><dd>{{ resultado.reserva.nombre }} {{ resultado.reserva.apellidos }}</dd></div>
-        <div><dt>Ingresaron</dt><dd>{{ resultado.reserva.ingresados }} de {{ resultado.reserva.personas }}</dd></div>
+        <div v-if="resultado.reserva.retiroFisico"><dt>Entregar</dt><dd>Vale de consumo y {{ resultado.reserva.personas }} manillas</dd></div>
+        <div v-else><dt>Ingresaron</dt><dd>{{ resultado.reserva.ingresados }} de {{ resultado.reserva.personas }}</dd></div>
         <div v-if="resultado.reserva.pase"><dt>Pase</dt><dd>{{ resultado.reserva.pase }}<template v-if="resultado.reserva.tipo"> · {{ resultado.reserva.tipo }}</template></dd></div>
       </dl>
       <div class="fila">

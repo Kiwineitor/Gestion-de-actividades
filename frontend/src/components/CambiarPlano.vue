@@ -21,7 +21,7 @@ function ir(v) {
   if (!v || v === props.actual) return;
   const [tipo, id] = v.split('-');
   if (tipo === 'e') router.push(aModulo('mesas', { evento: id, tab: 'plano' }));
-  else router.push(aModulo('editor'));
+  else router.push(aModulo('editor', { edicion: id }));
 }
 
 async function leer(ruta) {
@@ -45,8 +45,8 @@ onMounted(async () => {
     <span>Plano de</span>
     <select v-model="valor" aria-label="Plano de la actividad">
       <optgroup v-if="ferias.length" label="Ferias (puestos)">
-        <option v-for="f in ferias" :key="`f-${f.id}`" :value="`f-${f.id}`" :disabled="!f.activa">
-          {{ f.nombre }}{{ f.activa ? '' : ' — ponla en curso para editar' }}
+        <option v-for="f in ferias" :key="`f-${f.id}`" :value="`f-${f.id}`">
+          {{ f.nombre }}
         </option>
       </optgroup>
       <optgroup v-if="eventos.length" label="Eventos con mesas">

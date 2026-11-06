@@ -64,6 +64,7 @@ async function subirFotoPase(evento) {
 
 const confirmada = computed(() => entrega.value?.estado === 'CONFIRMADA');
 const pases = computed(() => entrega.value?.pases || []);
+const pasesVisibles = computed(() => entrega.value?.retiroFisico ? pases.value.slice(0, 1) : pases.value);
 const usados = computed(() => pases.value.filter((p) => p.ingresoEn).length);
 
 function liberarImagenes() {
@@ -74,7 +75,7 @@ function liberarImagenes() {
 async function cargarImagenes() {
   liberarImagenes();
   const nuevas = {};
-  await Promise.all(pases.value.map(async (p) => {
+  await Promise.all(pasesVisibles.value.map(async (p) => {
     const r = await apiFetch(`/api/app/mesas/reservas/${props.reservaId}/pases/${p.numero}/imagen`);
     if (r.ok) nuevas[p.numero] = URL.createObjectURL(await r.blob());
   }));
@@ -86,7 +87,7 @@ async function cargar() {
   const r = await apiFetch(`/api/app/mesas/reservas/${props.reservaId}/entrega`);
   if (!r.ok) { error.value = r.status === 403 ? 'No tienes permiso para ver esta reserva.' : 'No se pudo cargar la reserva.'; return; }
   entrega.value = await r.json();
-  nueva.personas = entrega.value.personas || 1;
+  nueva.personas = entrega.value.retiroFisico ? Math.max(0, pases.value.length - 1) : entrega.value.personas || 1;
   nueva.tipoPase = entrega.value.tipoPase || '';
   await cargarImagenes();
 }
@@ -107,15 +108,16 @@ const mensaje = computed(() => {
     `Tu reserva para *${e.evento}* está *confirmada* ✅`,
     e.fechaTexto ? `📅 ${e.fechaTexto}${e.local ? ` · ${e.local}` : ''}` : null,
     `🍸 Mesa *${e.mesa}*${e.zona ? ` (${e.zona})` : ''}`,
-    `👥 Personas: *${e.personas}*${e.tipoPase ? ` · pase ${e.tipoPase}` : ''}`,
+    `👥 ${e.retiroFisico ? "Manillas" : "Personas"}: *${e.personas}*${e.tipoPase ? ` · pase ${e.tipoPase}` : ''}`,
     `💵 Total: ${bs(e.monto)}`,
     `🔑 Código: *${e.codigo}*`,
     e.horaLimiteTexto ? `⏰ Llega hasta las ${e.horaLimiteTexto}` : null,
     '',
-    '🧾 Te enviamos tu recibo y tus pases en este chat.',
-    `🎟️ También puedes verlos aquí: ${enlacePublico.value}`,
+    e.retiroFisico ? 'Presenta tu carnet y el QR del enlace para retirar el vale de consumo y las manillas.' : '🧾 Te enviamos tu recibo y tus pases en este chat.',
+    `🎟️ Consulta tu reserva aquí: ${enlacePublico.value}`,
+    pases.value.length ? "Desde ese enlace puedes descargar tus credenciales." : null,
     '',
-    'Cada pase tiene su QR y permite un ingreso. ¡Te esperamos!',
+    e.retiroFisico ? '¡Gracias por tu reserva!' : 'Cada pase tiene su QR y permite un ingreso. ¡Te esperamos!',
   ].filter((l) => l !== null).join('\n');
 });
 
@@ -155,8 +157,14 @@ async function bajarTodos() {
 }
 
 async function regenerar() {
-  const n = Number(nueva.personas);
-  if (!(await confirmar(`¿Generar de nuevo ${n} pase${n === 1 ? '' : 's'}? Los que aún no ingresaron se vuelven a emitir con el mismo código.`, { titulo: 'Generar pases', aceptar: 'Sí, generar' }))) return;
+  const retiro = entrega.value.retiroFisico;
+  const cantidad = Number(nueva.personas);
+  const n = retiro ? cantidad + 1 : cantidad;
+  if (retiro && (!Number.isInteger(cantidad) || cantidad < 0 || cantidad > 98)) {
+    toast("Elige entre 0 y 98 credenciales adicionales", "advertencia");
+    return;
+  }
+  if (!retiro && !(await confirmar(`¿Generar de nuevo ${n} pase${n === 1 ? '' : 's'}? Los que aún no ingresaron se vuelven a emitir con el mismo código.`, { titulo: 'Generar pases', aceptar: 'Sí, generar' }))) return;
   ocupado.value = 'regenerar';
   try {
     const r = await apiFetch(`/api/app/mesas/reservas/${props.reservaId}/pases`, {
@@ -177,7 +185,13 @@ async function archivosParaCompartir() {
   const archivos = [];
   const r = await apiFetch(`/api/app/mesas/reservas/${props.reservaId}/recibo`);
   if (r.ok) archivos.push(new File([await r.blob()], `recibo-${entrega.value.codigo}.pdf`, { type: 'application/pdf' }));
-  for (const p of pases.value) {
+  if (entrega.value.retiroFisico && pases.value.length) {
+    const pdf = await apiFetch('/api/app/mesas/pases/pdf', {
+      method: 'POST', body: JSON.stringify({ reservas: [props.reservaId] }),
+    });
+    if (pdf.ok) archivos.push(new File([await pdf.blob()], `credenciales-${entrega.value.codigo}.pdf`, { type: 'application/pdf' }));
+  }
+  for (const p of pasesVisibles.value) {
     const url = imagenes.value[p.numero];
     if (url) archivos.push(new File([await (await fetch(url)).blob()], `pase-${p.numero}.png`, { type: 'image/png' }));
   }
@@ -232,21 +246,25 @@ const puedeCompartirArchivos = typeof navigator !== 'undefined' && typeof naviga
         <p class="titular"><b>{{ entrega.titular }}</b> · C.I. {{ entrega.ci || '—' }} · 📱 {{ entrega.celular || '—' }}<template v-if="entrega.correo"> · {{ entrega.correo }}</template></p>
       </section>
 
+      <section v-if="confirmada && entrega.retiroFisico" class="bloque">
+        <header><b>Retiro del vale y las manillas</b><small>{{ entrega.ingresoEn ? 'Retirado' : 'Pendiente' }}</small></header>
+        <p>{{ entrega.personas }} manillas. El QR de verificación está en el enlace del titular.</p>
+      </section>
       <section v-if="confirmada" class="bloque">
         <header>
-          <b>Pases</b>
+          <b>Credenciales de la reserva</b>
           <small>{{ pases.length }} pase(s){{ entrega.tipoPase ? ` · ${entrega.tipoPase}` : '' }}{{ usados ? ` · ${usados} ya ingresaron` : '' }}</small>
         </header>
         <ul class="pases">
-          <li v-for="p in pases" :key="p.numero">
+          <li v-for="p in pasesVisibles" :key="p.numero">
             <img v-if="imagenes[p.numero]" :src="imagenes[p.numero]" :alt="`Pase ${p.numero}`" />
             <span v-else class="sin-imagen">Generando…</span>
-            <small>Pase {{ p.numero }}<template v-if="p.nombre"> · {{ p.nombre }}</template>{{ p.dentro ? ' · adentro' : p.ingresoEn ? ' · ya ingresó' : '' }}</small>
-            <button type="button" class="btn btn-sm" :disabled="!imagenes[p.numero]" @click="bajarPase(p)">⬇ Descargar</button>
-            <button type="button" class="btn btn-sm btn-fantasma" @click="editarPersona(p)">✏️ Datos</button>
+            <small>{{ p.numero === 1 ? 'Titular' : `Invitado ${p.numero - 1}` }}<template v-if="p.nombre"> · {{ p.nombre }}</template>{{ p.dentro ? ' · adentro' : p.ingresoEn ? ' · ya ingresó' : '' }}</small>
+            <button type="button" class="btn btn-sm" :disabled="!imagenes[p.numero]" @click="bajarPase(p)">{{ p.numero === 1 ? '⬇ Descargar titular' : '⬇ Descargar' }}</button>
+            <button type="button" v-if="!entrega.retiroFisico" class="btn btn-sm btn-fantasma" @click="editarPersona(p)">✏️ Datos</button>
           </li>
         </ul>
-        <div v-if="persona.numero != null" class="persona-pase">
+        <div v-if="!entrega.retiroFisico && persona.numero != null" class="persona-pase">
           <strong>Pase {{ persona.numero }}: datos de la persona</strong>
           <p class="muted chico">Opcional. Si no los cargas, el pase lleva {{ persona.numero === 1 ? 'el nombre del titular' : 'el nombre del local' }} y el logo del local.</p>
           <div class="fila-persona">
@@ -265,21 +283,25 @@ const puedeCompartirArchivos = typeof navigator !== 'undefined' && typeof naviga
           </div>
         </div>
         <div class="fila-acciones">
-          <button type="button" class="btn btn-sm" :disabled="Boolean(ocupado) || !pases.length" @click="bajarTodos">{{ ocupado === 'todos' ? 'Preparando…' : '⬇ Todos los pases (PDF)' }}</button>
-          <button v-if="!nueva.abierta" type="button" class="btn btn-sm btn-fantasma" @click="nueva.abierta = true">🔄 Generar de nuevo</button>
+          <button type="button" class="btn btn-sm" :disabled="Boolean(ocupado) || !pases.length" @click="bajarTodos">{{ ocupado === 'todos' ? 'Preparando…' : '⬇ Credenciales (PDF)' }}</button>
+          <button v-if="!nueva.abierta" type="button" class="btn btn-sm btn-fantasma" @click="nueva.abierta = true">{{ pases.length ? 'Cambiar cantidad' : 'Generar credenciales' }}</button>
         </div>
         <div v-if="nueva.abierta" class="nueva">
-          <label class="campo"><span>Cantidad de pases</span>
+          <label v-if="entrega.retiroFisico" class="campo"><span>Credenciales adicionales sin nombre</span>
+            <input v-model.number="nueva.personas" type="number" class="control" min="0" max="98" />
+          </label>
+          <p v-if="entrega.retiroFisico" class="nota">Se incluye una credencial del titular. Las adicionales indican las mesas y el representante.</p>
+          <label v-else class="campo"><span>Cantidad total (incluye al titular)</span>
             <input v-model.number="nueva.personas" type="number" class="control" :min="Math.max(1, usados)" :max="entrega.capacidad" />
           </label>
-          <label class="campo"><span>Tipo de pase</span>
+          <label v-if="!entrega.retiroFisico" class="campo"><span>Tipo de pase</span>
             <select v-if="entrega.tiposPase?.length" v-model="nueva.tipoPase" class="control">
               <option value="">{{ entrega.zona || 'General' }}</option>
               <option v-for="t in entrega.tiposPase" :key="t" :value="t">{{ t }}</option>
             </select>
             <input v-else v-model="nueva.tipoPase" class="control" maxlength="60" :placeholder="entrega.zona || 'General'" />
           </label>
-          <p class="nota">La mesa admite hasta {{ entrega.capacidad }} persona(s).</p>
+          <p v-if="!entrega.retiroFisico" class="nota">La mesa admite hasta {{ entrega.capacidad }} persona(s).</p>
           <div class="nueva-acciones">
             <button type="button" class="btn btn-sm btn-fantasma" @click="nueva.abierta = false">Cancelar</button>
             <button type="button" class="btn btn-sm btn-primario" :disabled="ocupado === 'regenerar'" @click="regenerar">{{ ocupado === 'regenerar' ? 'Generando…' : 'Generar' }}</button>
@@ -292,14 +314,14 @@ const puedeCompartirArchivos = typeof navigator !== 'undefined' && typeof naviga
         <div class="acciones">
           <button type="button" class="btn" :disabled="Boolean(ocupado)" @click="recibo">{{ ocupado === 'recibo' ? 'Descargando…' : '🧾 Recibo PDF' }}</button>
           <a v-if="whatsapp && confirmada" class="btn btn-whatsapp" :href="whatsapp" target="_blank" rel="noopener">💬 Abrir WhatsApp con el mensaje</a>
-          <button v-if="puedeCompartirArchivos && confirmada" type="button" class="btn" :disabled="Boolean(ocupado)" @click="compartir">{{ ocupado === 'compartir' ? 'Preparando…' : '📤 Compartir recibo y pases' }}</button>
+          <button v-if="puedeCompartirArchivos && confirmada" type="button" class="btn" :disabled="Boolean(ocupado)" @click="compartir">{{ ocupado === 'compartir' ? 'Preparando…' : pases.length ? '📤 Compartir recibo y credenciales' : '📤 Compartir recibo' }}</button>
         </div>
         <details v-if="confirmada" class="vista-mensaje">
           <summary>Ver el mensaje que se envía</summary>
           <pre>{{ mensaje }}</pre>
           <button type="button" class="btn btn-sm btn-fantasma" @click="copiarMensaje">Copiar mensaje</button>
         </details>
-        <p class="nota">«Abrir WhatsApp» lleva el texto con el enlace de la reserva; el recibo y los pases se adjuntan arrastrándolos al chat o con «Compartir».</p>
+        <p v-if="!entrega.retiroFisico" class="nota">«Abrir WhatsApp» lleva el texto con el enlace de la reserva; el recibo y los pases se adjuntan arrastrándolos al chat o con «Compartir».</p>
       </section>
     </template>
   </div>

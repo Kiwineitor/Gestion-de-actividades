@@ -2,21 +2,22 @@
 import { onMounted, onUnmounted } from 'vue';
 
 const props = defineProps({
+  enPagina: Boolean,
   titulo: { type: String, default: '' },
   ancho: { type: String, default: '480px' },
 });
 const emit = defineEmits(['cerrar']);
 
 function onTecla(e) {
-  if (e.key === 'Escape') emit('cerrar');
+  if (!props.enPagina && e.key === 'Escape') emit('cerrar');
 }
 onMounted(() => window.addEventListener('keydown', onTecla));
 onUnmounted(() => window.removeEventListener('keydown', onTecla));
 </script>
 
 <template>
-  <div class="overlay" @click.self="emit('cerrar')">
-    <div class="dialogo card" :style="{ maxWidth: ancho }" role="dialog" aria-modal="true">
+  <div :class="enPagina ? 'en-pagina' : 'overlay'" @click.self="!enPagina && emit('cerrar')">
+    <div class="dialogo card" :style="enPagina ? null : { maxWidth: ancho }" :role="enPagina ? null : 'dialog'" :aria-modal="enPagina ? null : true">
       <header class="cabecera">
         <h2>{{ titulo }}</h2>
         <button class="btn btn-fantasma btn-icono" @click="emit('cerrar')" aria-label="Cerrar">✕</button>
@@ -40,6 +41,7 @@ onUnmounted(() => window.removeEventListener('keydown', onTecla));
   width: 100%; max-height: 90vh; box-shadow: var(--sombra-md);
   display: flex; flex-direction: column; overflow: hidden;
 }
+.en-pagina .dialogo { max-height: none; }
 .cabecera { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.1rem 0.6rem; }
 .cabecera h2 { margin: 0; font-size: 1.15rem; overflow-wrap: anywhere; }
 .cuerpo { flex: 1; min-height: 0; overflow: auto; padding: 0.4rem 1.1rem 1rem; display: flex; flex-direction: column; gap: 0.8rem; }

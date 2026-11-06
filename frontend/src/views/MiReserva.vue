@@ -26,6 +26,7 @@ const condiciones = ref(false);
 const confirmarCancelar = ref(false);
 const guardandoQr = ref(false);
 let reloj = null;
+let venceEn = 0;
 let sondeo = null;
 let soltarCanal = null;
 
@@ -61,6 +62,7 @@ async function cargar() {
     const antes = reserva.value?.estado;
     reserva.value = await r.json();
     segundos.value = reserva.value.segundosRestantes || 0;
+    venceEn = Date.now() + segundos.value * 1000;
     recordarReserva(reserva.value);
     if (antes && antes !== reserva.value.estado) avisoPublico(ESTADOS[reserva.value.estado]?.txt || 'Tu reserva cambió');
   } catch {
@@ -80,7 +82,7 @@ const urlPdf = computed(() => (reserva.value ? urlApi(`/api/publico/mesas/reserv
 
 async function prepararPases() {
   const lista = reserva.value?.pases ?? [];
-  if (!lista.length) {
+  if (reserva.value?.retiroFisico || !lista.length) {
     qr.value = await QRCode.toDataURL(reserva.value.codigo, { width: 320, margin: 1, errorCorrectionLevel: 'M' });
     return;
   }
@@ -93,7 +95,7 @@ watch(() => JSON.stringify(reserva.value?.pases ?? []), () => { if (reserva.valu
 watch(() => evento.value?.id, (id) => {
   soltarCanal?.();
   soltarCanal = id ? escucharPublico(`/topic/publico/mesas/${id}`, (cambios) => {
-    if (Array.isArray(cambios) && cambios.some((c) => c.codigo === reserva.value?.mesa)) cargar();
+    if (Array.isArray(cambios) && cambios.some((c) => reserva.value?.mesaIds?.includes(c.id))) cargar();
   }, { reconectado: cargar }) : null;
 });
 
@@ -167,8 +169,8 @@ onMounted(async () => {
   window.addEventListener('pageshow', alVolver);
   await cargar();
   reloj = setInterval(() => {
-    if (reserva.value?.estado !== 'BLOQUEADA') return;
-    segundos.value -= 1;
+    if (reserva.value?.estado !== 'BLOQUEADA' || segundos.value <= 0) return;
+    segundos.value = Math.max(0, Math.ceil((venceEn - Date.now()) / 1000));
     if (segundos.value === 0) cargar();
   }, 1000);
 });
@@ -203,11 +205,11 @@ onUnmounted(() => {
           <button type="button" class="copiable" @click="copiar(reserva.codigo, 'Código')">{{ reserva.codigo }}</button>
         </div>
         <dl class="datos">
-          <div><dt>Mesa</dt><dd>{{ reserva.mesa }}<small v-if="reserva.zona"> · {{ reserva.zona }}</small></dd></div>
+          <div><dt>{{ reserva.mesaIds?.length === 2 ? 'Mesas' : 'Mesa' }}</dt><dd>{{ reserva.mesa }}<small v-if="reserva.zona"> · {{ reserva.zona }}</small></dd></div>
           <div><dt>Total</dt><dd>{{ bs(reserva.monto) }}</dd></div>
           <div><dt>Titular</dt><dd>{{ reserva.nombre }} {{ reserva.apellidos }}</dd></div>
           <div><dt>Carnet</dt><dd>{{ reserva.ci }}</dd></div>
-          <div><dt>Personas</dt><dd>{{ reserva.personas }}<small v-if="reserva.tipoPase"> · {{ reserva.tipoPase }}</small></dd></div>
+          <div><dt>{{ reserva.retiroFisico ? 'Manillas' : 'Personas' }}</dt><dd>{{ reserva.personas }}<small v-if="reserva.tipoPase"> · {{ reserva.tipoPase }}</small></dd></div>
         </dl>
         <div v-if="reserva.estado === 'BLOQUEADA'" class="tiempo" :class="{ urgente: segundos < 60 }">
           <div class="anillo" :style="{ '--avance': avance }"><strong>{{ minutos }}</strong></div>
@@ -215,7 +217,8 @@ onUnmounted(() => {
         </div>
         <p class="whatsapp-nota">
           <span class="icono" aria-hidden="true">💬</span>
-          <span v-if="reserva.estado === 'CONFIRMADA'">Te enviamos tus pases por WhatsApp<template v-if="reserva.celular"> al <b>{{ reserva.celular }}</b></template>; también están aquí abajo.</span>
+          <span v-if="reserva.estado === 'CONFIRMADA' && reserva.retiroFisico">Usa el QR de esta página para el retiro.</span>
+          <span v-else-if="reserva.estado === 'CONFIRMADA'">Te enviamos tus pases por WhatsApp<template v-if="reserva.celular"> al <b>{{ reserva.celular }}</b></template>; también están aquí abajo.</span>
           <span v-else>Te escribiremos por WhatsApp<template v-if="reserva.celular"> al <b>{{ reserva.celular }}</b></template> cuando el encargado revise tu pago.</span>
         </p>
       </section>
@@ -249,18 +252,24 @@ onUnmounted(() => {
           </label>
           <div class="botones">
             <button type="button" class="pub-boton secundario" @click="confirmarCancelar = true">Cancelar reserva</button>
-            <button type="button" class="pub-boton" :disabled="!archivo || subiendo" @click="enviarComprobante">{{ subiendo ? 'Enviando…' : 'Enviar comprobante' }}</button>
+            <button type="button" class="pub-boton" :disabled="!archivo || subiendo || segundos <= 0" @click="enviarComprobante">{{ subiendo ? 'Enviando…' : 'Enviar comprobante' }}</button>
           </div>
         </template>
 
         <div v-else-if="reserva.estado === 'EN_REVISION'" class="mensaje-estado">
           <span class="grande" aria-hidden="true">⏳</span>
           <h2>Recibimos tu comprobante</h2>
-          <p>El encargado está revisando tu pago. Te escribirá por WhatsApp<template v-if="reserva.celular"> al <b>{{ reserva.celular }}</b></template> y esta página se actualizará sola con tu QR de ingreso.</p>
+          <p>El encargado está revisando tu pago. Te escribirá por WhatsApp<template v-if="reserva.celular"> al <b>{{ reserva.celular }}</b></template> y esta página se actualizará sola con tu {{ reserva.retiroFisico ? 'QR de verificación' : 'QR de ingreso' }}.</p>
         </div>
 
         <div v-else-if="reserva.estado === 'CONFIRMADA'" class="mensaje-estado confirmada">
-          <template v-if="pases.length">
+          <template v-if="reserva.retiroFisico">
+            <h2>Reserva a nombre de {{ reserva.nombre }} {{ reserva.apellidos }}</h2>
+            <img v-if="qr" :src="qr" alt="QR de verificación de la reserva" class="qr" />
+            <p>Presenta este QR y tu carnet para retirar tu vale de consumo y {{ reserva.personas }} manillas de entrada. ¡Gracias!</p>
+            <a v-if="pases.length" :href="urlPdf" target="_blank" rel="noopener" class="pub-boton chico">⬇ Descargar credenciales (PDF)</a>
+          </template>
+          <template v-else-if="pases.length">
             <div class="pase-cab">
               <button type="button" class="flecha" :disabled="paseActual === 0" aria-label="Pase anterior" @click="paseActual--">‹</button>
               <span>Pase <b>{{ paseActual + 1 }}</b> de {{ pases.length }}<template v-if="pase?.tipo"> · {{ pase.tipo }}</template></span>
@@ -277,7 +286,7 @@ onUnmounted(() => {
           </template>
           <p v-if="evento.horaLimiteTexto" class="nota">Llega antes de las <b>{{ evento.horaLimiteTexto }}</b>.</p>
           <p v-if="reserva.beneficios" class="nota">Incluye: {{ reserva.beneficios }}</p>
-          <p v-if="reserva.ingresoEn" class="nota ok">Ingreso registrado ✓</p>
+          <p v-if="reserva.ingresoEn" class="nota ok">{{ reserva.retiroFisico ? 'Retiro registrado' : 'Ingreso registrado' }} ✓</p>
         </div>
 
         <div v-else class="mensaje-estado">
@@ -301,7 +310,7 @@ onUnmounted(() => {
     </ModalPublico>
 
     <ModalPublico v-if="confirmarCancelar" titulo="¿Cancelar tu reserva?" ancho="420px" @cerrar="confirmarCancelar = false">
-      <p class="nota">La mesa {{ reserva?.mesa }} quedará libre para otra persona.</p>
+      <p class="nota">Se liberará tu selección ({{ reserva?.mesa }}).</p>
       <template #pie>
         <button type="button" class="pub-boton secundario" @click="confirmarCancelar = false">No, volver</button>
         <button type="button" class="pub-boton peligro" @click="cancelar">Sí, cancelar</button>

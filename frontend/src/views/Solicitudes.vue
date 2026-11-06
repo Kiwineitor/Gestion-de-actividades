@@ -65,7 +65,7 @@ function abrirAprobar(r) {
 
 async function confirmarAprobacion() {
   const tipo = aprobar.tipo === '__otro' ? aprobar.otro.trim() : aprobar.tipo;
-  if (!tipo) { toast('Escribe el tipo de pase', 'advertencia'); return; }
+  if (!aprobar.r.retiroFisico && !tipo) { toast('Escribe el tipo de pase', 'advertencia'); return; }
   aprobar.enviando = true;
   try {
     const res = await apiFetch(`/api/app/mesas/reservas/${aprobar.r.id}/confirmar`, {
@@ -201,7 +201,7 @@ onUnmounted(() => clearInterval(reloj));
             <td><strong>{{ r.mesa }}</strong><br /><span class="muted chico">{{ r.evento }}</span></td>
             <td>{{ r.nombre }} {{ r.apellidos }}<br /><span class="muted chico">{{ r.celular }}</span></td>
             <td>{{ r.personas }} · {{ r.tipoPase || '—' }}</td>
-            <td>{{ r.ingresados }} / {{ r.personas }}</td>
+            <td>{{ r.retiroFisico ? (r.ingresoEn ? 'Retirado' : 'Retiro pendiente') : r.ingresados + ' / ' + r.personas }}</td>
             <td class="acciones">
               <button class="btn btn-sm btn-primario" title="Recibo, pases y WhatsApp" @click="entregaId = r.id">📲 Entregar</button>
               <button v-if="!r.ingresados" class="btn btn-sm btn-fantasma" title="Solo después de la hora límite" @click="noPresentado(r)">No vino</button>
@@ -216,7 +216,9 @@ onUnmounted(() => clearInterval(reloj));
     <UiModal v-if="aprobar.abierto" :titulo="`Aprobar mesa ${aprobar.r?.mesa}`" ancho="560px"
              @cerrar="!aprobar.enviando && (aprobar.abierto = false)">
       <template v-if="aprobar.r">
-        <p class="muted">{{ aprobar.r.nombre }} {{ aprobar.r.apellidos }} pagó <b>{{ bs(aprobar.r.monto) }}</b>. Revisa que el comprobante coincida.</p>
+        <p class="muted">{{ aprobar.r.nombre }} {{ aprobar.r.apellidos }} pagó <b>{{ bs(aprobar.r.monto) }}</b>. Confirma el abono en el banco antes de aprobar.</p>
+        <p v-if="aprobar.r.retiroFisico">Al aprobar se habilita el QR para retirar el vale de consumo y {{ aprobar.r.personas }} manillas.</p>
+        <template v-else>
         <label class="campo"><span>Tipo de pase</span>
           <select v-model="aprobar.tipo" class="control">
             <option v-for="t in tiposDe(aprobar.r)" :key="t" :value="t">{{ t }}</option>
@@ -228,10 +230,11 @@ onUnmounted(() => clearInterval(reloj));
           <input v-model.number="aprobar.personas" type="number" min="1" :max="aprobar.r.capacidad" class="control" />
         </label>
         <p class="muted chico">Se generará un pase con QR por persona, con el diseño de credencial vinculado al evento. Al aprobar se abre el recibo y los pases para enviarlos al cliente.</p>
+        </template>
       </template>
       <template #pie>
         <button class="btn btn-fantasma" :disabled="aprobar.enviando" @click="aprobar.abierto = false">Cancelar</button>
-        <button class="btn btn-primario" :disabled="aprobar.enviando" @click="confirmarAprobacion">{{ aprobar.enviando ? 'Aprobando…' : 'Aprobar y generar pases' }}</button>
+        <button class="btn btn-primario" :disabled="aprobar.enviando" @click="confirmarAprobacion">{{ aprobar.enviando ? 'Aprobando…' : 'Confirmar pago' }}</button>
       </template>
     </UiModal>
 

@@ -53,9 +53,10 @@ public class PuestoApiController {
     private final PuestoOcupacionService ocupacionService;
 
     @GetMapping
-    public List<PuestoEstadoDTO> listar(@RequestParam(value = "categoriaId", required = false) Long categoriaId) {
+    @PreAuthorize("#edicion == null or (" + Roles.EDITA_PLANO_O_PANTALLA + ")")
+    public List<PuestoEstadoDTO> listar(@RequestParam(value = "categoriaId", required = false) Long categoriaId, @RequestParam(required = false) Long edicion) {
         if (usuarioActual() == null) return List.of();
-        return puestoDao.listarActivos().stream()
+        return (edicion == null ? puestoDao.listarActivos() : puestoDao.listarActivosDe(edicion)).stream()
                 .filter(p -> categoriaId == null
                         || (p.getCategoria() != null && categoriaId.equals(p.getCategoria().getId())))
                 .map(PuestoEstadoDTO::de)

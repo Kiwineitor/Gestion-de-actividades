@@ -33,14 +33,13 @@ public class PlanoTextoService {
     }
 
     @Transactional(readOnly = true)
-    public List<PlanoTextoDTO> listar() {
-        Long edicionId = edicionDao.findFirstByActivaTrueOrderByAnioDesc()
-                .map(e -> e.getId()).orElse(null);
+    public List<PlanoTextoDTO> listar(Long edicion) {
+        Long edicionId = edicion == null ? activa() : edicion;
         return dao.vivosDe(edicionId).stream().map(PlanoTextoDTO::de).toList();
     }
 
     @Transactional
-    public PlanoTextoDTO crear(CambioTexto req, Long usuarioId) {
+    public PlanoTextoDTO crear(CambioTexto req, Long usuarioId, Long edicion) {
         String contenido = limpio(req.contenido());
         if (contenido == null) throw new IllegalArgumentException("El texto no puede estar vacio");
 
@@ -58,13 +57,14 @@ public class PlanoTextoService {
             t.setAncho(req.ancho() == null ? 0.16 : medida(req.ancho()));
             t.setAlto(req.alto() == null ? 0.08 : medida(req.alto()));
         }
-        t.setEdicion(edicionDao.findFirstByActivaTrueOrderByAnioDesc().orElse(null));
+        t.setEdicion(edicion == null ? edicionDao.findFirstByActivaTrueOrderByAnioDesc().orElse(null)
+                : edicionDao.findById(edicion).orElseThrow(() -> new IllegalArgumentException("La feria no existe")));
         t.setRegistro(new Date());
         t.setRegistroIdUsuario(usuarioId);
         t.setEstado(PlanoTexto.REGISTRO_ACTIVO);
 
         PlanoTextoDTO dto = PlanoTextoDTO.de(dao.save(t));
-        difundir(dto);
+        difundir(dto, t.getEdicion() == null ? null : t.getEdicion().getId());
         log.info("Rotulo {} creado en el plano por el usuario {}", dto.id(), usuarioId);
         return dto;
     }
@@ -92,7 +92,7 @@ public class PlanoTextoService {
         t.setModificacionIdUsuario(usuarioId);
 
         PlanoTextoDTO dto = PlanoTextoDTO.de(dao.save(t));
-        difundir(dto);
+        difundir(dto, t.getEdicion() == null ? null : t.getEdicion().getId());
         return dto;
     }
 
@@ -104,20 +104,36 @@ public class PlanoTextoService {
         t.setModificacion(new Date());
         t.setModificacionIdUsuario(usuarioId);
         dao.save(t);
-        difundir(PlanoTextoDTO.baja(id));
+        difundir(PlanoTextoDTO.baja(id), t.getEdicion() == null ? null : t.getEdicion().getId());
         log.info("Rotulo {} retirado del plano por el usuario {}", id, usuarioId);
         return true;
     }
 
     @Transactional(readOnly = true)
-    public void difundirTodos() {
-        listar().forEach(this::difundir);
+    public void difundirTodos(Long edicion) {
+        listar(edicion).forEach(dto -> difundir(dto, edicion));
     }
 
-    private void difundir(PlanoTextoDTO dto) {
-        avisoPublico.cambio("feria", dto.id());
+    private Long activa() {
+        return edicionDao.findFirstByActivaTrueOrderByAnioDesc().map(e -> e.getId()).orElse(null);
+    }
+
+    private void difundir(PlanoTextoDTO dto, Long edicion) {
+        avisoPublico.cambio("feria", edicion);
+        boolean enCurso = java.util.Objects.equals(activa(), edicion);
+        Runnable enviar = () -> enviar(dto, edicion, enCurso);
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override public void afterCommit() { enviar.run(); }
+                    });
+        } else enviar.run();
+    }
+
+    private void enviar(PlanoTextoDTO dto, Long edicion, boolean enCurso) {
         try {
-            messaging.convertAndSend(TOPIC, dto);
+            if (edicion != null) messaging.convertAndSend(TOPIC + "/ediciones/" + edicion, dto);
+            if (enCurso) messaging.convertAndSend(TOPIC, dto);
         } catch (Exception e) {
             log.warn("No se pudo difundir el rotulo {}: {}", dto.id(), e.getMessage());
         }

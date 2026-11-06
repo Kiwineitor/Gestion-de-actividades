@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import com.usic.uniFex.model.dto.PlanoTextoDTO;
 import com.usic.uniFex.model.service.PlanoTextoService;
@@ -31,16 +32,16 @@ public class PlanoTextoApiController {
     private final PlanoTextoService service;
 
     @GetMapping
-    @PreAuthorize("isAuthenticated()")
-    public List<PlanoTextoDTO> listar() {
-        return service.listar();
+    @PreAuthorize("#edicion == null or (" + Roles.EDITA_PLANO_O_PANTALLA + ")")
+    public List<PlanoTextoDTO> listar(@RequestParam(required = false) Long edicion) {
+        return service.listar(edicion);
     }
 
     @PostMapping
     @PreAuthorize(Roles.EDITA_PLANO_O_PANTALLA)
-    public ResponseEntity<?> crear(@RequestBody PlanoTextoService.CambioTexto req) {
+    public ResponseEntity<?> crear(@RequestBody PlanoTextoService.CambioTexto req, @RequestParam(required = false) Long edicion) {
         try {
-            return ResponseEntity.ok(service.crear(req, usuarioActual()));
+            return ResponseEntity.ok(service.crear(req, usuarioActual(), edicion));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("ok", false, "mensaje", e.getMessage()));
         }

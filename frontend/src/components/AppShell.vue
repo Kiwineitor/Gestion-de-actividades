@@ -87,40 +87,41 @@ watch(clave, () => {
 }, { immediate: true });
 
 const GRUPOS = [
-  'Mi trabajo', 'Actividades', 'Ventas', 'Reportes', 'Usuarios y permisos', 'Comunicación', 'Sistema',
+  'Mi trabajo', 'Actividades', 'Ventas y cobros', 'Punto de venta', 'Ingreso', 'Comunicación', 'Usuarios y permisos', 'Sistema',
 ];
 
 const TODOS = [
   { m: 'inicio', g: 'Mi trabajo', icono: '🏠', txt: 'Inicio' },
 
-  { m: 'actividades', g: 'Actividades', icono: '🗓️', txt: 'Centro de actividades' },
-  { m: 'solicitudes', g: 'Actividades', icono: '📥', txt: 'Solicitudes' },
-  { m: 'inscripciones', g: 'Actividades', icono: '📋', txt: 'Inscripciones' },
-  { m: 'credenciales', g: 'Actividades', icono: '🪪', txt: 'Credenciales' },
-  { m: 'ingreso', g: 'Actividades', icono: '🎟️', txt: 'Ingreso y accesos' },
-  { m: 'editor', siNo: 'actividades', g: 'Actividades', icono: '✏️', txt: 'Editor del plano' },
+  { m: 'actividades', g: 'Actividades', icono: '🗓️', txt: 'Mis actividades' },
+  { m: 'editor', siNo: 'actividades', g: 'Actividades', icono: '🗺️', txt: 'Plano' },
   { m: 'categorias', siNo: 'actividades', g: 'Actividades', icono: '🏷️', txt: 'Categorías y precios' },
 
-  { m: 'mapa', g: 'Ventas', icono: '🗺️', txt: 'Mapa de ventas' },
-  { m: 'mis-ventas', g: 'Ventas', icono: '🧾', txt: 'Mis ventas' },
-  { m: 'catalogo', g: 'Ventas', icono: '📚', txt: 'Catálogo de precios' },
+  { m: 'solicitudes', g: 'Ventas y cobros', icono: '📥', txt: 'Pagos por validar' },
+  { m: 'inscripciones', g: 'Ventas y cobros', icono: '📋', txt: 'Ventas registradas' },
+  { m: 'reportes', g: 'Ventas y cobros', icono: '📊', txt: 'Recaudación y reportes' },
 
-  { m: 'reportes', g: 'Reportes', icono: '📊', txt: 'Reportes' },
+  { m: 'mapa', g: 'Punto de venta', icono: '🧾', txt: 'Vender' },
+  { m: 'mis-ventas', g: 'Punto de venta', icono: '🗂️', txt: 'Mis ventas' },
+  { m: 'credenciales', g: 'Punto de venta', icono: '🪪', txt: 'Credenciales e impresión' },
+  { m: 'catalogo', siNo: 'actividades', g: 'Punto de venta', icono: '📚', txt: 'Catálogo de precios' },
+
+  { m: 'ingreso', g: 'Ingreso', icono: '🎟️', txt: 'Control de ingreso' },
+
+  { m: 'anuncios', g: 'Comunicación', icono: '📣', txt: 'Anuncios y promociones' },
 
   { m: 'usuarios', g: 'Usuarios y permisos', icono: '👤', txt: 'Usuarios' },
   { m: 'roles', g: 'Usuarios y permisos', icono: '🛡️', txt: 'Roles y permisos' },
   { m: 'permisos', siNo: 'roles', g: 'Usuarios y permisos', icono: '🔐', txt: 'Roles y permisos' },
 
-  { m: 'anuncios', g: 'Comunicación', icono: '📣', txt: 'Comunicados' },
-  { m: 'whatsapp', g: 'Comunicación', icono: '💬', txt: 'WhatsApp' },
-
   { m: 'sistema', g: 'Sistema', icono: '🏷️', txt: 'Datos del sistema' },
+  { m: 'whatsapp', g: 'Sistema', icono: '💬', txt: 'WhatsApp' },
   { m: 'mantenimiento', g: 'Sistema', icono: '⚙️', txt: 'Mantenimiento' },
   { m: 'errores', g: 'Sistema', icono: '⚠️', txt: 'Registro de errores' },
 ];
 
-const PREFERIDOS = ['inicio', 'actividades', 'solicitudes', 'mapa', 'mis-ventas', 'ingreso', 'credenciales'];
-const CLAVE_GRUPOS = 'menu.grupos.v3';
+const PREFERIDOS = ['inicio', 'actividades', 'solicitudes', 'mapa', 'ingreso', 'reportes'];
+const CLAVE_GRUPOS = 'menu.grupos.v4';
 
 const busqueda = ref('');
 const buscador = ref(null);
@@ -129,8 +130,8 @@ const abiertos = ref(new Set(leerGrupos()));
 function leerGrupos() {
   try {
     const g = JSON.parse(localStorage.getItem(CLAVE_GRUPOS) || 'null');
-    return Array.isArray(g) ? g : ['Mi trabajo', 'Actividades'];
-  } catch { return ['Mi trabajo', 'Actividades']; }
+    return Array.isArray(g) ? g : ['Mi trabajo', 'Actividades', 'Ventas y cobros', 'Punto de venta'];
+  } catch { return ['Mi trabajo', 'Actividades', 'Ventas y cobros', 'Punto de venta']; }
 }
 
 function alternarGrupo(g) {

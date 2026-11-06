@@ -3,7 +3,7 @@ import { confirmar, pedirTexto } from '../ui/alerta';
 import { usePermisosStore } from '../stores/permisos';
 import { ref, reactive, computed, watch, nextTick, onMounted, onActivated, onDeactivated, onUnmounted, defineAsyncComponent } from 'vue';
 import { aModulo } from '../modulos';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { primeraPaginaEnCanvas } from '../ui/pdf';
 import PanZoom from '../components/PanZoom.vue';
 import RotuloPlano from '../components/RotuloPlano.vue';
@@ -14,6 +14,7 @@ import { useActividadStore } from '../stores/actividad';
 import { imagenPlanoFeria } from '../ui/imagenPlano';
 import { guardarBlob } from '../ui/descargas';
 import { apiFetch } from '../api';
+import { apiDeFeria, editorDeFeria } from '../ui/editorFeria';
 import { toast } from '../ui/toast';
 import { useAuthStore } from '../stores/auth';
 import { usePuestosStore } from '../stores/puestos';
@@ -39,15 +40,26 @@ const ESTADOS = [
 const auth = useAuthStore();
 const router = useRouter();
 const actividadEnCurso = useActividadStore();
-const tienda = usePuestosStore();
-const planoTienda = usePlanoStore();
-const textosTienda = usePlanoTextosStore();
+const rutaInicial = useRoute();
+const edicion = Number(rutaInicial.query.edicion) || null;
+async function seguirAsistente() {
+  if (dirty.value.size) await guardar();
+  if (dirty.value.size) return;
+  router.push(aModulo('actividad', { id: edicion, paso: 'credenciales' }));
+}
+const desdeAsistente = computed(() => rutaInicial.query.asistente === '1' && Boolean(edicion));
+const feria = ref(null);
+const editor = edicion ? editorDeFeria(edicion) : null;
+const tienda = editor?.puestos ?? usePuestosStore();
+const planoTienda = editor?.plano ?? usePlanoStore();
+const textosTienda = editor?.textos ?? usePlanoTextosStore();
+const consultarPlano = (ruta, opciones) => apiDeFeria(ruta, edicion, opciones);
 
 const puestos = computed(() => tienda.puestos);
 const permisos = usePermisosStore();
 const puedeDisenar = computed(() => auth.puedeEditarPlano || permisos.puedeVer('editor'));
 
-const modo = ref('gestion');
+const modo = ref(edicion ? 'diseno' : 'gestion');
 const herramienta = ref(null);
 const enDiseno = computed(() => modo.value === 'diseno' && puedeDisenar.value);
 
@@ -215,7 +227,7 @@ const puedeCategorias = computed(() => auth.puedeEditarPlano || permisos.puedeVe
 
 async function cerrarCategorias() {
   cajonCategorias.value = false;
-  await tienda.recargar();
+  if (!edicion) await tienda.recargar();
 }
 const modalForma = ref(false);
 const conFondoPropio = computed(() => Boolean(planoTienda.src && planoTienda.plano.propio && !planoTienda.plano.sinFondo));
@@ -661,7 +673,7 @@ async function eliminarCasetas() {
       else rechazadas.push(`${p.categoria} ${p.codigo}`);
     }
     limpiarSeleccion();
-    await tienda.recargar();
+    if (!edicion) await tienda.recargar();
     if (ok) await compactarNumeracion(categoriasTocadas);
     if (rechazadas.length) toast(`No se eliminaron (vendidos o reservados): ${rechazadas.join(', ')}`, 'advertencia');
     else toast(`${ok} puesto(s) eliminados`, 'ok');
@@ -745,7 +757,7 @@ async function pegar() {
     }
     if (!posiciones.length) { toast('No se pudo pegar.', 'error'); return; }
     await apiFetch('/api/app/puestos/posiciones', { method: 'POST', body: JSON.stringify(posiciones) });
-    await tienda.recargar();
+    if (!edicion) await tienda.recargar();
     seleccion.value = new Set(posiciones.map((p) => p.id));
     principalId.value = posiciones[0].id;
   } catch (e) {
@@ -768,7 +780,7 @@ async function agregarCaseta() {
     });
     const d = await r.json().catch(() => ({}));
     if (!d.ok) { toast(d.mensaje || 'No se pudo crear el puesto', 'error'); return; }
-    await tienda.recargar();
+    if (!edicion) await tienda.recargar();
     herramienta.value = 'colocar';
     toast(`Puesto ${codigo} creado: haz clic en el mapa para colocarlo`, 'info');
   } finally {
@@ -809,6 +821,33 @@ async function compactarNumeracion(categoriaIds) {
       toast('No se pudo corregir la numeración', 'advertencia');
     }
   }
+}
+
+async function cargarFeria() {
+  if (!edicion) return;
+  const r = await apiFetch('/api/app/ediciones/resumen');
+  if (r.ok) feria.value = (await r.json()).find((f) => f.id === edicion);
+}
+
+async function publicarFeria() {
+  if (ocupado.value || !feria.value) return;
+  clearTimeout(temporizadorTexto);
+  await enviarTextos();
+  if (sinConfirmar.size) { toast("Hay textos sin guardar. Revisa la conexión antes de publicar", "error"); return; }
+  if (dirty.value.size) await guardar();
+  if (dirty.value.size) return;
+  if (!colocadas.value.length) { toast('Ubica al menos un puesto antes de publicar', 'advertencia'); return; }
+  ocupado.value = true;
+  try {
+    const r = await apiFetch(`/api/app/ediciones/${edicion}/habilitar`, {
+      method: 'POST', body: JSON.stringify({ habilitada: true }),
+    });
+    const datos = await r.json();
+    if (!r.ok || !datos.ok) throw new Error(datos.mensaje || 'No se pudo publicar');
+    feria.value.publicada = true;
+    toast('Plano publicado', 'ok');
+  } catch (e) { toast(e.message, 'error'); }
+  finally { ocupado.value = false; }
 }
 
 async function guardar() {
@@ -991,7 +1030,7 @@ async function subirPlano(archivo) {
     if (archivo.type === 'application/pdf') subir = new File([await pdfAImagen(archivo)], 'plano.png', { type: 'image/png' });
     const datos = new FormData();
     datos.append('archivo', subir);
-    const r = await apiFetch('/api/app/plano', { method: 'POST', body: datos });
+    const r = await consultarPlano('/api/app/plano', { method: 'POST', body: datos });
     const d = await r.json().catch(() => ({}));
     if (r.ok && d.ok) {
       planoTienda.aplicar(d.plano);
@@ -1012,7 +1051,7 @@ async function quitarFondo() {
   if (!si) return;
   ocupado.value = true;
   try {
-    const r = await apiFetch('/api/app/plano', { method: 'DELETE' });
+    const r = await consultarPlano('/api/app/plano', { method: 'DELETE' });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.ok) { toast(d.mensaje || 'No se pudo quitar el fondo', 'error'); return; }
     planoTienda.aplicar(d.plano);
@@ -1028,12 +1067,14 @@ async function aplicarForma(forma) {
   if (dirty.value.size) return;
   ocupado.value = true;
   try {
-    const r = await apiFetch('/api/app/plano/forma', { method: 'PATCH', body: JSON.stringify(forma) });
+    const r = await consultarPlano('/api/app/plano/forma', { method: 'PATCH', body: JSON.stringify(forma) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.ok) { toast(d.mensaje || 'No se pudo cambiar la forma', 'error'); return; }
     planoTienda.aplicar(d.plano);
-    tienda.recargar();
-    textosTienda.cargar();
+    if (!edicion) {
+      tienda.recargar();
+      textosTienda.cargar();
+    }
     modalForma.value = false;
     toast('Forma del plano actualizada', 'ok', 1600);
   } finally {
@@ -1054,7 +1095,7 @@ function pantallaCompleta() {
 }
 
 function abrirPublico() {
-  window.open(router.resolve({ path: '/', query: { v: 'actividad' } }).href, '_blank', 'noopener');
+  window.open(router.resolve({ path: '/', query: { v: 'actividad', ...(edicion ? { edicion } : {}) } }).href, '_blank', 'noopener');
 }
 
 async function descargarImagen() {
@@ -1129,7 +1170,7 @@ async function crearTexto(punto, zona = false) {
     const cuerpo = zona
       ? { contenido: 'ZONA', mapaX: aRejilla(punto.x), mapaY: aRejilla(punto.y), fondo: '#7c5cff', ancho: 0.16, alto: 0.08, color: '#3b2a8f', tamano: 0.02 }
       : { contenido: 'TEXTO', mapaX: aRejilla(punto.x), mapaY: aRejilla(punto.y) };
-    const r = await apiFetch('/api/app/plano-textos', { method: 'POST', body: JSON.stringify(cuerpo) });
+    const r = await consultarPlano('/api/app/plano-textos', { method: 'POST', body: JSON.stringify(cuerpo) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { toast(d.mensaje || 'No se pudo crear el texto', 'error'); return; }
     textosTienda.aplicar(d);
@@ -1205,6 +1246,7 @@ function sesionCaducada() {
 }
 
 onMounted(async () => {
+  cargarFeria().catch(() => {});
   quitarGuardia = tienda.protegerLocales((id) => dirty.value.has(id));
   planoTienda.asegurar();
   textosTienda.asegurar();
@@ -1213,6 +1255,7 @@ onMounted(async () => {
   if (puedeDisenar.value && leerPreferencia(CLAVE_AYUDA) !== '1') ayudaAbierta.value = true;
 });
 onActivated(() => {
+  cargarFeria().catch(() => {});
   cargarPagados();
   window.addEventListener('keydown', onTecla);
   window.addEventListener('beforeunload', avisarSinGuardar);
@@ -1229,14 +1272,20 @@ onUnmounted(() => {
   if (pendientesTexto.size) enviarTextos();
   soltarProteccionTextos();
   if (quitarGuardia) quitarGuardia();
+  editor?.cerrar();
 });
 </script>
 
 <template>
   <div class="editor">
     <header class="barra">
-      <router-link :to="aModulo('actividades')" class="herr volver" title="Volver al Centro de actividades">← Centro</router-link>
-      <CambiarPlano v-if="actividadEnCurso.actual" :actual="`f-${actividadEnCurso.actual.id}`" />
+      <router-link v-if="desdeAsistente" :to="aModulo('actividad', { id: edicion, paso: 'plano' })" class="herr volver" title="Volver a la configuración de la actividad">← Configuración</router-link>
+      <router-link v-else :to="aModulo('actividades')" class="herr volver" title="Volver a Mis actividades">← Actividades</router-link>
+      <CambiarPlano v-if="edicion || actividadEnCurso.actual" :actual="`f-${edicion || actividadEnCurso.actual.id}`" />
+      <span v-if="feria" class="badge">{{ feria.nombre }}</span>
+      <button v-if="desdeAsistente" type="button" class="btn btn-primario btn-sm" :disabled="ocupado" title="Guarda el plano y sigue con las credenciales" @click="seguirAsistente">Plano listo · Seguir →</button>
+      <button v-else-if="feria && !feria.publicada" type="button" class="herr" :disabled="ocupado" @click="publicarFeria">Publicar</button>
+      <router-link v-if="feria?.publicada" :to="{ path: '/', query: { v: 'actividad', edicion } }" target="_blank" class="herr">Ver página pública</router-link>
       <button v-if="puedeCategorias" type="button" class="herr" title="Categorías, precios y personas por puesto de esta feria" @click="cajonCategorias = true">🏷️ Categorías y precios</button>
       <div v-if="puedeDisenar" class="segmentado" role="tablist" aria-label="Modo del editor">
         <button role="tab" :aria-selected="modo === 'gestion'" :class="{ on: modo === 'gestion' }"
@@ -1270,7 +1319,7 @@ onUnmounted(() => {
       </div>
 
       <div class="grupo">
-        <button class="herr" title="Ver la página pública de la actividad" @click="abrirPublico">👁 Vista pública</button>
+        <button class="herr" :disabled="Boolean(edicion && !feria?.publicada)" title="Ver la página pública de la actividad" @click="abrirPublico">👁 Vista pública</button>
         <button class="herr" :disabled="generandoImagen" title="Descargar el plano como imagen PNG" @click="descargarImagen">{{ generandoImagen ? 'Generando…' : '⬇ Imagen' }}</button>
         <button class="herr icono" title="Pantalla completa" @click="pantallaCompleta">⛶</button>
         <button class="herr icono" title="Cómo se usa el editor" @click="ayudaAbierta = true">?</button>
@@ -1449,7 +1498,7 @@ onUnmounted(() => {
             <div><strong>🏷️ Categorías y precios</strong><p>Lo que cambies aquí se ve en el plano al cerrar este panel.</p></div>
             <button type="button" class="btn btn-fantasma btn-icono" aria-label="Cerrar" @click="cerrarCategorias">✕</button>
           </header>
-          <div class="cajon-cuerpo"><Categorias /></div>
+          <div class="cajon-cuerpo"><Categorias :edicion="edicion" :aspecto="planoTienda.aspecto" /></div>
         </aside>
       </div>
       <ModalFondo v-if="modalFondo" :fondo-url="planoTienda.src" acepta="image/png,image/jpeg,application/pdf"
@@ -1519,7 +1568,7 @@ onUnmounted(() => {
             <div class="campo">
               <span>Precio (Bs)</span>
               <label class="check"><input type="checkbox" v-model="ficha.precioPropio" /> Precio propio</label>
-              <input v-if="ficha.precioPropio" class="control" type="number" min="0" step="1" v-model="ficha.precio" />
+              <input v-if="ficha.precioPropio" class="control" type="number" min="0" step="0.01" v-model="ficha.precio" />
               <p v-else class="muted chico">Usa el de su categoría: {{ precioCategoria ?? fichaPuesto.precio }} Bs</p>
             </div>
 

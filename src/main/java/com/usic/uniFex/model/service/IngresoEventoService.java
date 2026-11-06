@@ -56,6 +56,7 @@ public class IngresoEventoService {
                       LEFT JOIN usuario u ON u.id = r.ingreso_por
                       LEFT JOIN persona vp ON vp.id = u.persona_id
                      WHERE r.ingreso_en IS NOT NULL
+                       AND NOT r.retiro_fisico
                        AND NOT EXISTS (SELECT 1 FROM mesa_pase t WHERE t.id_reserva = r.id)
                 ) x
                  WHERE x.id_evento = ?%2$s
@@ -88,7 +89,7 @@ public class IngresoEventoService {
                        coalesce((SELECT max(p.ingreso_en) FROM mesa_pase p WHERE p.id_reserva = r.id), r.ingreso_en) AS ultimo
                   FROM mesa_reserva r
                   JOIN mesa m ON m.id = r.id_mesa
-                 WHERE r.id_evento = ? AND r.estado = 'CONFIRMADA'
+                 WHERE r.id_evento = ? AND r.estado = 'CONFIRMADA' AND NOT r.retiro_fisico
                  ORDER BY ultimo DESC NULLS LAST, m.codigo
                 """, (rs, i) -> {
             Map<String, Object> m = new LinkedHashMap<>();

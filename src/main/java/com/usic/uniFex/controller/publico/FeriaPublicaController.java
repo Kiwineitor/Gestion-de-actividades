@@ -9,6 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.usic.uniFex.model.dao.ICategoriaDao;
@@ -36,13 +37,42 @@ public class FeriaPublicaController {
     private final PlanoTextoService planoTextos;
     private final JdbcTemplate jdbc;
 
+    @GetMapping("/ediciones")
+    public List<Map<String, Object>> edicionesPublicas() {
+        return jdbc.query("""
+                SELECT e.id, e.nombre, e.anio, e.activa, e.lugar, e.fechas_texto, e.portada_archivo,
+                       count(p.id) AS total, count(p.id) FILTER (WHERE p.estado_puesto = 'L') AS libres
+                  FROM edicion e
+                  LEFT JOIN categoria c ON c.id_edicion = e.id AND c."_estado" IS DISTINCT FROM 'X'
+                  LEFT JOIN puesto p ON p.id_categoria = c.id AND p."_estado" IS DISTINCT FROM 'X'
+                 WHERE e.publica AND (e.activa OR e.publicacion_independiente) GROUP BY e.id ORDER BY e.activa DESC, e.anio DESC, e.id DESC
+                """, (rs, i) -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", rs.getLong("id"));
+            m.put("nombre", rs.getString("nombre"));
+            m.put("anio", rs.getInt("anio"));
+            m.put("activa", rs.getBoolean("activa"));
+            m.put("lugar", rs.getString("lugar"));
+            m.put("fechasTexto", rs.getString("fechas_texto"));
+            String portada = rs.getString("portada_archivo");
+            m.put("portadaUrl", portada == null ? null : "/files/" + portada);
+            m.put("total", rs.getLong("total"));
+            m.put("libres", rs.getLong("libres"));
+            return m;
+        });
+    }
+
+    private Edicion edicion(Long id) {
+        return (id == null ? edicionDao.findFirstByActivaTrueOrderByAnioDesc() : edicionDao.findById(id)).orElse(null);
+    }
+
     @GetMapping
-    public Map<String, Object> info() {
+    public Map<String, Object> info(@RequestParam(required = false) Long edicion) {
         Map<String, Object> cuerpo = new LinkedHashMap<>();
 
-        Edicion edicionActiva = edicionDao.findFirstByActivaTrueOrderByAnioDesc().orElse(null);
+        Edicion edicionActiva = edicion(edicion);
         Map<String, Object> publico = edicionActiva == null ? null : datosPublicos(edicionActiva.getId());
-        if (publico != null && !Boolean.TRUE.equals(publico.get("publica"))) {
+        if (publico == null || !Boolean.TRUE.equals(publico.get("publica"))) {
             cuerpo.put("edicion", null);
             return cuerpo;
         }
@@ -66,24 +96,15 @@ public class FeriaPublicaController {
                     ? "/files/" + edicionActiva.getPlanoArchivo() + "?v=" + edicionActiva.getPlanoVersion()
                     : "/files/mapa.pdf");
             edicionInfo.putAll(publico);
+            edicionInfo.put("recibeInteresados", Boolean.TRUE.equals(edicionActiva.getActiva()) && Boolean.TRUE.equals(publico.get("recibeInteresados")));
             cuerpo.put("edicion", edicionInfo);
         } else {
             cuerpo.put("edicion", null);
         }
 
-        List<Map<String, Object>> ediciones = edicionDao.findAllByOrderByAnioDesc().stream()
-                .map(e -> {
-                    Map<String, Object> m = new LinkedHashMap<>();
-                    m.put("id", e.getId());
-                    m.put("nombre", e.getNombre());
-                    m.put("anio", e.getAnio());
-                    m.put("activa", Boolean.TRUE.equals(e.getActiva()));
-                    return m;
-                })
-                .toList();
-        cuerpo.put("ediciones", ediciones);
+        cuerpo.put("ediciones", edicionesPublicas());
 
-        List<Categoria> categorias = categoriaDao.deEdicionActiva();
+        List<Categoria> categorias = categoriaDao.deEdicion(edicionActiva.getId());
         List<Map<String, Object>> categoriasInfo = categorias.stream()
                 .filter(c -> c.getEstado() == null || !"X".equals(c.getEstado()))
                 .map(c -> {
@@ -100,7 +121,7 @@ public class FeriaPublicaController {
                 .toList();
         cuerpo.put("categorias", categoriasInfo);
 
-        List<Puesto> puestosActivos = puestoDao.listarActivos();
+        List<Puesto> puestosActivos = puestoDao.listarActivosDe(edicionActiva.getId());
         long total = puestosActivos.size();
         long libres = puestosActivos.stream().filter(p -> "L".equals(p.getEstadoPuesto())).count();
         long enTramite = puestosActivos.stream().filter(p -> "T".equals(p.getEstadoPuesto())).count();
@@ -141,7 +162,7 @@ public class FeriaPublicaController {
                 .toList();
         cuerpo.put("estadisticasPorCategoria", statsPorCategoria);
 
-        PlanoDTO plano = planoService.activo();
+        PlanoDTO plano = planoService.deEdicion(edicionActiva.getId());
         if (plano != null) {
             Map<String, Object> planoInfo = new LinkedHashMap<>();
             planoInfo.put("url", plano.url());
@@ -159,7 +180,7 @@ public class FeriaPublicaController {
     private Map<String, Object> datosPublicos(Long id) {
         return jdbc.queryForObject("""
                 SELECT lugar, fechas_texto, descripcion_publica, contacto, portada_archivo, publica, recibe_interesados,
-                       pago_qr_archivo, pago_banco, pago_cuenta, pago_titular, pago_instrucciones, pago_oficina
+                       (activa OR publicacion_independiente) AS publicable, pago_qr_archivo, pago_banco, pago_cuenta, pago_titular, pago_instrucciones, pago_oficina
                   FROM edicion WHERE id = ?
                 """, (rs, i) -> {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -169,7 +190,7 @@ public class FeriaPublicaController {
             m.put("contacto", rs.getString("contacto"));
             String portada = rs.getString("portada_archivo");
             m.put("portadaUrl", portada == null ? null : "/files/" + portada);
-            m.put("publica", rs.getBoolean("publica"));
+            m.put("publica", rs.getBoolean("publica") && rs.getBoolean("publicable"));
             m.put("recibeInteresados", rs.getBoolean("recibe_interesados"));
             String qr = rs.getString("pago_qr_archivo");
             Map<String, Object> pago = new LinkedHashMap<>();
@@ -185,15 +206,15 @@ public class FeriaPublicaController {
     }
 
     @GetMapping("/plano")
-    public Map<String, Object> plano() {
+    public Map<String, Object> plano(@RequestParam(required = false) Long edicion) {
         Map<String, Object> cuerpo = new LinkedHashMap<>();
-        Edicion activa = edicionDao.findFirstByActivaTrueOrderByAnioDesc().orElse(null);
+        Edicion activa = edicion(edicion);
         Map<String, Object> publico = activa == null ? null : datosPublicos(activa.getId());
         if (publico == null || !Boolean.TRUE.equals(publico.get("publica"))) {
             cuerpo.put("disponible", false);
             return cuerpo;
         }
-        PlanoDTO plano = planoService.activo();
+        PlanoDTO plano = planoService.deEdicion(activa.getId());
         Map<String, Object> planoInfo = new LinkedHashMap<>();
         planoInfo.put("url", plano.url());
         planoInfo.put("ancho", plano.ancho());
@@ -236,7 +257,7 @@ public class FeriaPublicaController {
             m.put("mapaProporcion", rs.getObject("mapa_proporcion") == null ? 1.0 : rs.getDouble("mapa_proporcion"));
             return m;
         }, activa.getId()));
-        cuerpo.put("textos", planoTextos.listar());
+        cuerpo.put("textos", planoTextos.listar(activa.getId()));
         return cuerpo;
     }
 

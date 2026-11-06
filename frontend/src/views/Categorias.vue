@@ -2,11 +2,13 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue';
 import UiModal from '../components/UiModal.vue';
 import { apiFetch } from '../api';
+import { apiDeFeria } from '../ui/editorFeria';
 import { toast } from '../ui/toast';
 import { aviso, alertaConAccion } from '../ui/alerta';
 import { usePlanoStore } from '../stores/plano';
 import { medidaLegible } from '../mapa';
 
+const props = defineProps({ edicion: Number, aspecto: Number });
 const planoTienda = usePlanoStore();
 
 const categorias = ref([]);
@@ -29,7 +31,7 @@ const aFraccion = (v) => (Number(v) || 0) / 1000;
 
 const modal = reactive({
   abierto: false, editando: null,
-  nombre: '', color: '#3b82f6', forma: 'cuadrado', tamanoMilesimas: 12, cantidad: 10,
+  precioBase: 0, nombre: '', color: '#3b82f6', forma: 'cuadrado', tamanoMilesimas: 12, cantidad: 10,
   proporcion: 1, tamano: '3x3', cantidadOriginal: 0, tamanoOriginal: '', personas: 2, costoExtra: 15,
 });
 
@@ -41,7 +43,7 @@ watch(() => modal.forma, (f, previa) => {
 
 const vistaPrevia = computed(() => {
   const ancho = aFraccion(modal.tamanoMilesimas);
-  const alto = (ancho * modal.proporcion) / (planoTienda.aspecto || 1);
+  const alto = (ancho * modal.proporcion) / (props.aspecto || planoTienda.aspecto || 1);
   return Array.from({ length: 3 }, (_, i) => ({
     left: `${(0.5 + (i - 1) * ancho * 1.35) * 100}%`,
     top: '50%',
@@ -66,7 +68,7 @@ const bs = (n) => Number(n || 0).toLocaleString('es-BO');
 async function cargar() {
   cargando.value = true;
   try {
-    const r = await apiFetch('/api/app/categorias');
+    const r = await apiDeFeria('/api/app/categorias', props.edicion);
     categorias.value = await r.json();
   } catch (e) {
     toast(e.message, 'error');
@@ -81,7 +83,7 @@ onMounted(() => {
 
 function abrirCrear() {
   Object.assign(modal, {
-    abierto: true, editando: null,
+    abierto: true, editando: null, precioBase: 0,
     nombre: '', color: '#3b82f6', forma: 'cuadrado', tamanoMilesimas: 12, cantidad: 10,
     proporcion: 1, tamano: '3x3', cantidadOriginal: 0, tamanoOriginal: '', personas: 2, costoExtra: 15,
   });
@@ -136,9 +138,9 @@ async function guardarCategoria() {
     else if (tamano && tamano !== modal.tamanoOriginal) cuerpo.tamano = tamano;
     const r = modal.editando
       ? await apiFetch(`/api/app/categorias/${modal.editando.id}`, { method: 'PATCH', body: JSON.stringify(cuerpo) })
-      : await apiFetch('/api/app/categorias', {
+      : await apiDeFeria('/api/app/categorias', props.edicion, {
         method: 'POST',
-        body: JSON.stringify({ ...cuerpo, cantidad, precioBase: 0 }),
+        body: JSON.stringify({ ...cuerpo, cantidad, precioBase: Number(modal.precioBase) || 0 }),
       });
     const d = await r.json();
     if (!r.ok || d.ok === false) { toast(d.mensaje || 'No se pudo guardar', 'error'); return; }
@@ -366,9 +368,9 @@ async function eliminarOpcion(c, o) {
         </label>
       </div>
 
+      <label v-if="!modal.editando" class="campo"><span>Precio base (Bs)</span><input v-model.number="modal.precioBase" class="control" type="number" min="0" step="0.01" /></label>
       <p v-if="!modal.editando" class="muted chico">
-        La categoría nace con una opción de precio en 0 Bs, con su mismo nombre.
-        Ponle precio en cuanto la crees o se venderá en cero.
+        La categoría nace con una opción de precio con su mismo nombre.
       </p>
     </div>
     <template #pie>

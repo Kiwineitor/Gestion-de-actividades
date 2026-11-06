@@ -53,7 +53,8 @@ public class ReporteEventoService {
                          WHERE r.id_evento = ? AND r.estado = 'CONFIRMADA') AS pases,
                        (SELECT count(*) FROM mesa_pase p JOIN mesa_reserva r ON r.id = p.id_reserva
                          WHERE r.id_evento = ? AND p.ingreso_en IS NOT NULL) AS pases_usados,
-                       (SELECT count(*) FROM mesa_reserva r WHERE r.id_evento = ? AND r.ingreso_en IS NOT NULL) AS reservas_con_ingreso
+                       (SELECT count(*) FROM mesa_reserva r WHERE r.id_evento = ? AND r.ingreso_en IS NOT NULL
+                         AND NOT r.retiro_fisico) AS reservas_con_ingreso
                 """, eventoId, eventoId, eventoId, eventoId, eventoId, eventoId, eventoId, eventoId, eventoId, eventoId,
                 eventoId, eventoId);
         Map<String, Object> t = new LinkedHashMap<>();
@@ -77,8 +78,12 @@ public class ReporteEventoService {
         List<Map<String, Object>> porZona = jdbc.query("""
                 SELECT coalesce(nullif(btrim(m.zona), ''), 'Sin zona') AS zona, count(*) AS mesas,
                        count(*) FILTER (WHERE m.estado = 'O') AS vendidas,
-                       coalesce(sum(r.monto) FILTER (WHERE r.estado = 'CONFIRMADA'), 0) AS recaudado,
-                       coalesce(sum(r.personas) FILTER (WHERE r.estado = 'CONFIRMADA'), 0) AS personas
+                       coalesce(sum(CASE WHEN m.id = r.id_mesa_adicional THEN r.monto_mesa_adicional
+                           ELSE r.monto - coalesce(r.monto_mesa_adicional, 0) END)
+                           FILTER (WHERE r.estado = 'CONFIRMADA'), 0) AS recaudado,
+                       coalesce(sum(CASE WHEN m.id = r.id_mesa_adicional THEN r.manillas_mesa_adicional
+                           ELSE r.personas - coalesce(r.manillas_mesa_adicional, 0) END)
+                           FILTER (WHERE r.estado = 'CONFIRMADA'), 0) AS personas
                   FROM mesa m
                   LEFT JOIN mesa_reserva r ON r.id = m.id_reserva
                  WHERE m.id_evento = ? AND m."_estado" = 'A'
@@ -152,13 +157,15 @@ public class ReporteEventoService {
         }
         return jdbc.query("""
                 SELECT r.id, r.codigo, btrim(concat_ws(' ', r.nombre, r.apellidos)) AS cliente, r.ci, r.celular,
-                       m.codigo AS mesa, m.zona, r.personas, r.tipo_pase, r.monto, r.estado, r.creado_en, r.validado_en,
-                       r.registrado_por IS NOT NULL AS en_oficina, r.motivo, r.ingreso_en,
+                       concat_ws(', ', m.codigo, a.codigo) AS mesa, m.zona, r.personas, r.tipo_pase, r.monto,
+                       r.estado, r.creado_en, r.validado_en, r.registrado_por IS NOT NULL AS en_oficina, r.motivo,
+                       CASE WHEN NOT r.retiro_fisico THEN r.ingreso_en END AS ingreso_en,
                        (SELECT count(*) FROM mesa_pase p WHERE p.id_reserva = r.id) AS pases,
                        (SELECT count(*) FROM mesa_pase p WHERE p.id_reserva = r.id AND p.ingreso_en IS NOT NULL) AS pases_usados,
                        %s AS atendio
                   FROM mesa_reserva r
                   JOIN mesa m ON m.id = r.id_mesa
+                  LEFT JOIN mesa a ON a.id = r.id_mesa_adicional
                   LEFT JOIN usuario u ON u.id = coalesce(r.registrado_por, r.validado_por)
                   LEFT JOIN persona vp ON vp.id = u.persona_id
                  WHERE r.id_evento = ?%s

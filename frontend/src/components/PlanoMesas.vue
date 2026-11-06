@@ -8,7 +8,7 @@ const props = defineProps({
   planoUrl: { type: String, default: null },
   aspecto: { type: Number, default: 0.62 },
   editable: { type: Boolean, default: false },
-  seleccionada: { type: [Number, String], default: null },
+  seleccionada: { type: [Number, String, Array], default: null },
   elementoSel: { type: String, default: null },
   gestion: { type: Boolean, default: false },
   rejilla: { type: Boolean, default: false },
@@ -123,7 +123,7 @@ function tocarFondo(e) {
             @pointerdown="bajarElemento($event, el, 'tamano')" @pointermove="mover" @pointerup="subir()" @pointercancel="subir()"></span>
     </div>
     <button v-for="m in visibles" :key="m.id ?? m.clave" type="button" class="mesa"
-            :class="[`forma-${m.forma || 'circulo'}`, `est-${m.estado || 'L'}`, { sel: seleccionada != null && (m.id ?? m.clave) === seleccionada, liberada: resaltadas.has(m.id), cargando: ocupada === m.id }]"
+            :class="[`forma-${m.forma || 'circulo'}`, `est-${m.estado || 'L'}`, { sel: Array.isArray(seleccionada) ? seleccionada.includes(m.id) : seleccionada != null && (m.id ?? m.clave) === seleccionada, liberada: resaltadas.has(m.id), cargando: ocupada === m.id }]"
             :style="estiloMesa(m)"
             :aria-label="`Mesa ${m.codigo}, ${ETIQUETA[m.estado || 'L']}`"
             :title="`Mesa ${m.codigo} · ${m.capacidad} personas · ${ETIQUETA[m.estado || 'L']}`"

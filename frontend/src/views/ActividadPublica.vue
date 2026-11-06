@@ -1,5 +1,6 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
+import { useRoute } from 'vue-router';
 import ModalPublico from '../components/ModalPublico.vue';
 import SelectorPublico from '../components/SelectorPublico.vue';
 import PanZoom from '../components/PanZoom.vue';
@@ -14,6 +15,8 @@ import { estiloPin, anchoParaTocar, anchoParaLeer, medidaLegible } from '../mapa
 const RUBROS = ['Comida y bebidas', 'Artesanía', 'Ropa y accesorios', 'Belleza y cuidado', 'Tecnología', 'Servicios', 'Educación', 'Hogar y decoración'];
 const ESTADO = { L: 'Libre', S: 'Solicitado', R: 'Reservado', T: 'En trámite', O: 'Ocupado', X: 'No disponible' };
 
+const edicion = useRoute().query.edicion;
+const consulta = edicion ? `?${new URLSearchParams({ edicion })}` : '';
 const datos = ref(null);
 const plano = ref(null);
 const error = ref('');
@@ -91,7 +94,7 @@ const umbralNumeros = computed(() => anchoParaLeer(puestos.value));
 
 async function cargar() {
   try {
-    const [ri, rp] = await Promise.all([fetch(urlApi('/api/publico/feria')), fetch(urlApi('/api/publico/feria/plano'))]);
+    const [ri, rp] = await Promise.all([fetch(urlApi(`/api/publico/feria${consulta}`)), fetch(urlApi(`/api/publico/feria/plano${consulta}`))]);
     if (!ri.ok) throw new Error();
     datos.value = await ri.json();
     plano.value = rp.ok ? await rp.json() : null;
@@ -104,7 +107,7 @@ async function cargar() {
 
 async function recargarPlano() {
   const antes = new Map(puestos.value.map((p) => [p.id, p.estado]));
-  const r = await fetch(urlApi('/api/publico/feria/plano')).catch(() => null);
+  const r = await fetch(urlApi(`/api/publico/feria/plano${consulta}`)).catch(() => null);
   if (!r?.ok) return;
   plano.value = await r.json();
   const liberados = puestos.value.filter((p) => p.estado === 'L' && antes.get(p.id) && antes.get(p.id) !== 'L').map((p) => p.id);

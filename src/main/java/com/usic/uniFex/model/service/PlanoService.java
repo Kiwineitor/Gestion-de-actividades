@@ -42,12 +42,22 @@ public class PlanoService {
                 .orElseGet(PlanoDTO::respaldo);
     }
 
+    @Transactional(readOnly = true)
+    public PlanoDTO deEdicion(Long id) {
+        Edicion edicion = buscarEdicion(id);
+        return edicion == null ? PlanoDTO.respaldo() : PlanoDTO.de(edicion);
+    }
+
+    private Edicion buscarEdicion(Long id) {
+        return (id == null ? edicionDao.findFirstByActivaTrueOrderByAnioDesc() : edicionDao.findById(id)).orElse(null);
+    }
+
     @Transactional
-    public Resultado reemplazar(MultipartFile archivo, Long usuarioId) {
+    public Resultado reemplazar(MultipartFile archivo, Long usuarioId, Long idEdicion) {
         if (archivo == null || archivo.isEmpty()) {
             return new Resultado(false, "No llego ninguna imagen", null);
         }
-        Edicion edicion = edicionDao.findFirstByActivaTrueOrderByAnioDesc().orElse(null);
+        Edicion edicion = buscarEdicion(idEdicion);
         if (edicion == null) {
             return new Resultado(false, "No hay una edicion activa a la que asignarle el plano", null);
         }
@@ -90,8 +100,8 @@ public class PlanoService {
     }
 
     @Transactional
-    public Resultado cambiarForma(Integer ancho, Integer alto, boolean conservar, Long usuarioId) {
-        Edicion edicion = edicionDao.findFirstByActivaTrueOrderByAnioDesc().orElse(null);
+    public Resultado cambiarForma(Integer ancho, Integer alto, boolean conservar, Long usuarioId, Long idEdicion) {
+        Edicion edicion = buscarEdicion(idEdicion);
         if (edicion == null) return new Resultado(false, "No hay una edicion activa", null);
         if (edicion.getPlanoArchivo() != null && !Boolean.TRUE.equals(edicion.getPlanoSinFondo())) {
             return new Resultado(false, "La forma la da la imagen de fondo. Quita el fondo para elegir otra forma.", null);
@@ -129,14 +139,14 @@ public class PlanoService {
         edicion.setPlanoVersion((edicion.getPlanoVersion() == null ? 0 : edicion.getPlanoVersion()) + 1);
         edicionDao.save(edicion);
         avisoPublico.cambio("feria", edicion.getId());
-        if (conservar) textos.difundirTodos();
+        if (conservar) textos.difundirTodos(edicion.getId());
         log.info("Forma del plano de la edicion {} cambiada a {}x{} por el usuario {}", edicion.getId(), ancho, alto, usuarioId);
         return new Resultado(true, "Forma del plano actualizada", PlanoDTO.de(edicion));
     }
 
     @Transactional
-    public Resultado quitarFondo(Long usuarioId) {
-        Edicion edicion = edicionDao.findFirstByActivaTrueOrderByAnioDesc().orElse(null);
+    public Resultado quitarFondo(Long usuarioId, Long idEdicion) {
+        Edicion edicion = buscarEdicion(idEdicion);
         if (edicion == null) {
             return new Resultado(false, "No hay una edicion activa", null);
         }

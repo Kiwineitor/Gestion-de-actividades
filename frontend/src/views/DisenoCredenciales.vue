@@ -1,4 +1,5 @@
 <script setup>
+import { aModulo } from '../modulos';
 import { ref, reactive, computed, watch, nextTick, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue';
 import UiModal from '../components/UiModal.vue';
 import MenuAcciones from '../components/MenuAcciones.vue';
@@ -649,9 +650,10 @@ onUnmounted(() => {
           </p>
           <p v-else class="chico">
             {{ vinculo
-              ? 'Se usa al aprobar ventas o reservas de esta actividad: las credenciales y los pases que recibe el cliente salen con este diseño.'
+              ? 'Este diseño se aplica a las credenciales que emitas desde la venta o reserva de esta actividad.'
               : 'Sin vincular: las ferias sin diseño propio usan la «Credencial virtual» y los eventos con mesas, el «Pase de evento».' }}
           </p>
+          <router-link v-if="seleccionada?.idEvento" class="btn btn-sm" :to="aModulo('inscripciones', { tab: 'todas', actividad: `e-${seleccionada.idEvento}` })">Ver reservas para emitir credenciales</router-link>
         </div>
         <h4>Plantilla</h4>
         <label class="campo"><span>Nombre</span><input v-model="borrador.etiqueta" class="control" maxlength="80" /></label>
@@ -696,8 +698,7 @@ onUnmounted(() => {
 
         <h4>Campos</h4>
         <p class="muted chico">
-          En eventos con mesas cada pase lleva: nombre de la persona (o el del local si no se cargó), nombre del evento,
-          mesa, zona y tipo de pase. Si la persona no tiene foto, en su lugar va el logo del local.
+          En eventos con mesas, la credencial del titular lleva su nombre. Las de invitados indican las mesas y el representante. El logo del local ocupa el lugar de la foto cuando corresponde.
         </p>
         <div class="campos">
           <label v-for="c in CAMPOS" :key="c.id" class="chip-campo" :class="{ sel: campoSel === c.id, activo: !!borrador.cajas[c.id] }">

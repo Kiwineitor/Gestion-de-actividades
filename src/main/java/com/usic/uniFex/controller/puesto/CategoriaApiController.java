@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import com.usic.uniFex.model.dao.IPuestoDao;
 import com.usic.uniFex.model.entity.Categoria;
@@ -42,10 +43,10 @@ public class CategoriaApiController {
     private final IPuestoDao puestoDao;
 
     @GetMapping
-    @PreAuthorize("isAuthenticated()")
-    public List<Map<String, Object>> listar() {
+    @PreAuthorize("#edicion == null or (" + Roles.EDITA_PLANO_O_PANTALLA + ")")
+    public List<Map<String, Object>> listar(@RequestParam(required = false) Long edicion) {
         Map<Long, List<CategoriaOpcion>> porCategoria = opciones.porCategoria();
-        return service.listar().stream()
+        return service.listar(edicion).stream()
                 .map(c -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("id", c.getId());
@@ -110,8 +111,8 @@ public class CategoriaApiController {
     }
 
     @PostMapping
-    public ResponseEntity<Map<String, Object>> crear(@RequestBody CategoriaMapaService.NuevaCategoria req) {
-        Categoria c = service.crear(req, usuarioActual());
+    public ResponseEntity<Map<String, Object>> crear(@RequestBody CategoriaMapaService.NuevaCategoria req, @RequestParam(required = false) Long edicion) {
+        Categoria c = service.crear(req, usuarioActual(), edicion);
         opciones.asegurarPredeterminada(c.getId(), c.getNombre(), c.getPrecioBase(), usuarioActual());
         publisher.publicarVarios(puestoDao.idsActivosDeCategoria(c.getId()));
         return ResponseEntity.ok(Map.<String, Object>of("ok", true, "id", c.getId(), "nombre", c.getNombre()));

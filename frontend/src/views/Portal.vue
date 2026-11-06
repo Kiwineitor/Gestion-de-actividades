@@ -30,7 +30,7 @@ const seccion = computed(() => {
 });
 
 const eventos = ref([]);
-const feria = ref(null);
+const ferias = ref([]);
 const cargando = ref(true);
 const codigo = ref('');
 const aviso = ref('');
@@ -53,14 +53,12 @@ const actividades = computed(() => {
     libres: e.libres, total: e.mesas, unidad: 'mesas', desde: e.desde,
     accion: 'Elegir mi mesa', destino: { path: '/', query: { evento: e.id } },
   }));
-  if (feria.value?.edicion) {
-    const f = feria.value.edicion;
-    const s = feria.value.estadisticas;
+  for (const f of ferias.value) {
     lista.push({
       clave: `a${f.id ?? 'activa'}`, tipo: 'actividad', etiqueta: 'Feria · espacios', nombre: f.nombre, lugar: f.lugar,
       fecha: f.fechasTexto, imagen: f.portadaUrl ? urlApi(f.portadaUrl) : null,
-      libres: s?.libres, total: s?.total, unidad: 'espacios', desde: null,
-      accion: 'Ver información', destino: { path: '/', query: { v: 'actividad' } },
+      libres: f.libres, total: f.total, unidad: 'espacios', desde: null,
+      accion: 'Ver información', destino: { path: '/', query: { v: 'actividad', edicion: f.id } },
     });
   }
   return lista;
@@ -79,10 +77,10 @@ async function cargar(silencioso = false) {
   if (!silencioso) cargando.value = true;
   const [ev, fe] = await Promise.allSettled([
     fetch(urlApi('/api/publico/mesas')).then((r) => (r.ok ? r.json() : [])),
-    fetch(urlApi('/api/publico/feria')).then((r) => (r.ok ? r.json() : null)),
+    fetch(urlApi('/api/publico/feria/ediciones')).then((r) => (r.ok ? r.json() : [])),
   ]);
   if (ev.status === 'fulfilled' && Array.isArray(ev.value)) eventos.value = ev.value;
-  if (fe.status === 'fulfilled') feria.value = fe.value;
+  if (fe.status === 'fulfilled' && Array.isArray(fe.value)) ferias.value = fe.value;
   cargando.value = false;
 }
 

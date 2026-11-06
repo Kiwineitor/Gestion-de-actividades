@@ -41,7 +41,7 @@ onUnmounted(() => puestos.desconectar());
 <template>
   <AppShell>
     <KeepAlive :include="incluidas" :max="12">
-      <component :is="actual" :key="actual.name" />
+      <component :is="actual" :key="claveModulo(route) === 'editor' ? `${actual.name}-${route.query.edicion || 'activa'}` : actual.name" />
     </KeepAlive>
   </AppShell>
 </template>

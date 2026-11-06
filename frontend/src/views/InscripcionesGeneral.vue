@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
 import { ediciones, eventos, cargarActividades } from '../ui/actividadElegida';
@@ -18,7 +19,11 @@ const ESTADOS = [
   { v: 'TODAS', t: 'Todas' },
 ];
 
-const actividad = ref('');
+const route = useRoute();
+const actividad = ref(/^[fe]-\d+$/.test(route.query.actividad) ? route.query.actividad : '');
+watch(() => route.query.actividad, (valor) => {
+  if (route.query.m === 'inscripciones' && /^[fe]-\d+$/.test(valor)) actividad.value = valor;
+});
 const categoria = ref('');
 const vendedor = ref('');
 const estado = ref('');

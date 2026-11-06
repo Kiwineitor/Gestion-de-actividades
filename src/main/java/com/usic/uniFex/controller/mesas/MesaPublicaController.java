@@ -31,7 +31,7 @@ public class MesaPublicaController {
     private final MesaService mesas;
     private final MesaPaseService pases;
 
-    public record PeticionReserva(Long mesaId, MesaService.Cliente cliente, String token) {
+    public record PeticionReserva(Long mesaId, List<Long> mesaIds, MesaService.Cliente cliente, String token) {
     }
 
     public record PeticionAtencion(String token) {
@@ -51,8 +51,10 @@ public class MesaPublicaController {
     @PostMapping("/eventos/{id}/reservas")
     public ResponseEntity<Map<String, Object>> reservar(@PathVariable Long id, @RequestBody PeticionReserva req,
                                                         HttpServletRequest http) {
-        if (req == null || req.mesaId() == null) return responder(new MesaService.Resultado(false, "Elige una mesa", null));
-        return responder(mesas.reservar(id, req.mesaId(), req.cliente(), http.getRemoteAddr(), req.token()));
+        if (req == null) return responder(new MesaService.Resultado(false, "Elige una mesa", null));
+        List<Long> ids = req.mesaIds() != null ? req.mesaIds()
+                : req.mesaId() == null ? List.of() : List.of(req.mesaId());
+        return responder(mesas.reservar(id, ids, req.cliente(), http.getRemoteAddr()));
     }
 
     @PostMapping("/eventos/{id}/mesas/{mesaId}/atencion")

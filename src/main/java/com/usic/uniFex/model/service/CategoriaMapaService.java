@@ -53,15 +53,21 @@ public class CategoriaMapaService {
 
     @Transactional(readOnly = true)
     public List<Categoria> listar() {
-        return categoriaDao.deEdicionActiva();
+        return listar(null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Categoria> listar(Long edicion) {
+        return edicion == null ? categoriaDao.deEdicionActiva() : categoriaDao.deEdicion(edicion);
     }
 
     @Transactional
-    public Categoria crear(NuevaCategoria req, Long usuarioId) {
+    public Categoria crear(NuevaCategoria req, Long usuarioId, Long edicion) {
         Date now = new Date();
         Categoria c = new Categoria();
         c.setNombre(req.nombre());
-        c.setIdEdicion(edicionDao.findFirstByActivaTrueOrderByAnioDesc().map(com.usic.uniFex.model.entity.Edicion::getId).orElse(null));
+        c.setIdEdicion(edicion == null
+                ? edicionDao.findFirstByActivaTrueOrderByAnioDesc().map(e -> e.getId()).orElse(null) : edicion);
         c.setColor(req.color());
         c.setForma(formaValida(req.forma()));
         c.setTamanoMapa(req.tamanoMapa() != null ? req.tamanoMapa() : Categoria.TAMANO_MAPA_POR_DEFECTO);

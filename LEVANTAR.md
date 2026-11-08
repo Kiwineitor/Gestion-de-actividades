@@ -45,6 +45,8 @@ Usuario inicial:
 
 Esa contraseña inicial solo sirve para ese primer ingreso. Después ya no vale.
 
+El manual de usuario, con capturas de cada pantalla, está en `docs/Manual-de-usuario.pdf`.
+
 También vienen usuarios de prueba (`vendedor1`, `vendedor2`, `control1`, `asesoria1`, todos con `Fexpo2026`) y una feria de ejemplo para practicar.
 
 ## 4. Comandos que vas a usar

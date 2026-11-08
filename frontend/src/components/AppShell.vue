@@ -328,8 +328,8 @@ function salir() {
             <span class="r">{{ etiquetaRol(auth.rol) }}</span>
           </div>
         </div>
-        <div class="cuenta txt-menu">
-          <button class="btn btn-fantasma btn-sm" title="Cambiar mi contraseña" @click="cuenta = 'clave'">🔑 Contraseña</button>
+        <div class="mi-cuenta txt-menu">
+          <button class="btn btn-fantasma btn-sm" title="Cambiar mi contraseña" @click="cuenta = 'clave'">🔑 Clave</button>
           <button class="btn btn-fantasma btn-sm" title="Términos de uso del sistema" @click="cuenta = 'terminos'">📜 Términos</button>
           <button class="btn btn-fantasma btn-sm" @click="salir">Salir</button>
         </div>
@@ -426,10 +426,10 @@ nav { display: flex; flex-direction: column; gap: 2px; padding: 0.4rem 0.6rem; f
 .ico { width: 1.3rem; text-align: center; }
 
 .pie-side { border-top: 1px solid var(--border); padding: 0.8rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
-.cuenta { display: flex; width: 100%; gap: 0.2rem; justify-content: space-between; }
-.cuenta .btn { padding: 0.3rem 0.45rem; font-size: 0.78rem; }
-.sidebar.plegado .cuenta { display: none; }
-.sidebar.plegado.asomado .cuenta { display: flex; }
+.mi-cuenta { display: flex; width: 100%; gap: 0.2rem; justify-content: space-between; }
+.mi-cuenta .btn { padding: 0.3rem 0.45rem; font-size: 0.78rem; }
+.sidebar.plegado .mi-cuenta { display: none; }
+.sidebar.plegado.asomado .mi-cuenta { display: flex; }
 .quien { display: flex; align-items: center; gap: 0.55rem; min-width: 0; }
 .avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--acento-suave); color: var(--acento); font-weight: 700; flex: none; }
 .datos { display: flex; flex-direction: column; min-width: 0; }

@@ -5,22 +5,23 @@ const props = defineProps({
   enPagina: Boolean,
   titulo: { type: String, default: '' },
   ancho: { type: String, default: '480px' },
+  sinCerrar: Boolean,
 });
 const emit = defineEmits(['cerrar']);
 
 function onTecla(e) {
-  if (!props.enPagina && e.key === 'Escape') emit('cerrar');
+  if (!props.enPagina && !props.sinCerrar && e.key === 'Escape') emit('cerrar');
 }
 onMounted(() => window.addEventListener('keydown', onTecla));
 onUnmounted(() => window.removeEventListener('keydown', onTecla));
 </script>
 
 <template>
-  <div :class="enPagina ? 'en-pagina' : 'overlay'" @click.self="!enPagina && emit('cerrar')">
+  <div :class="enPagina ? 'en-pagina' : 'overlay'" @click.self="!enPagina && !sinCerrar && emit('cerrar')">
     <div class="dialogo card" :style="enPagina ? null : { maxWidth: ancho }" :role="enPagina ? null : 'dialog'" :aria-modal="enPagina ? null : true">
       <header class="cabecera">
         <h2>{{ titulo }}</h2>
-        <button class="btn btn-fantasma btn-icono" @click="emit('cerrar')" aria-label="Cerrar">✕</button>
+        <button v-if="!sinCerrar" class="btn btn-fantasma btn-icono" @click="emit('cerrar')" aria-label="Cerrar">✕</button>
       </header>
       <div class="cuerpo desliza">
         <slot />

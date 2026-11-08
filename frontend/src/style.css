@@ -157,6 +157,7 @@ a { color: var(--acento); }
 .badge-ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
 .badge-muted { background: color-mix(in srgb, var(--muted) 18%, transparent); color: var(--muted); }
 .badge-danger { background: var(--danger-suave); color: var(--danger); }
+.badge-advertencia { background: color-mix(in srgb, var(--tramite) 18%, transparent); color: var(--text); border: 0; cursor: pointer; font: inherit; font-size: 0.75rem; font-weight: 700; margin-left: 0.3rem; }
 .badge-parcial { background: color-mix(in srgb, var(--tramite) 16%, transparent); color: var(--tramite); }
 
 .libre { background: var(--libre); color: #fff; }

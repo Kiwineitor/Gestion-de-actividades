@@ -37,6 +37,7 @@ public class UsuarioApiController {
 
     private final GestionUsuarioService gestion;
     private final GestionPersonaService gestionPersona;
+    private final com.usic.uniFex.security.AccesoSeguro acceso;
 
     @GetMapping
     public List<UsuarioDTO> listar() {
@@ -75,6 +76,19 @@ public class UsuarioApiController {
     @PatchMapping("/{id}/estado")
     public ResponseEntity<Map<String, Object>> estado(@PathVariable Long id, @RequestBody EstadoReq req) {
         return responder(gestion.cambiarEstado(id, Boolean.TRUE.equals(req.activo()), actor()));
+    }
+
+    @GetMapping("/en-pausa")
+    public java.util.Set<String> enPausa() {
+        return acceso.enPausa();
+    }
+
+    @PostMapping("/{id}/desbloquear")
+    public ResponseEntity<Map<String, Object>> desbloquear(@PathVariable Long id) {
+        var u = gestion.listar().stream().filter(x -> x.getId().equals(id)).findFirst().orElse(null);
+        if (u == null) return ResponseEntity.status(404).body(Map.of("ok", false, "mensaje", "Usuario no encontrado."));
+        acceso.desbloquear(u.getUsername());
+        return ResponseEntity.ok(Map.of("ok", true, "mensaje", "Listo: " + u.getUsername() + " ya puede volver a intentar ingresar."));
     }
 
     @DeleteMapping("/{id}")

@@ -60,6 +60,12 @@ public class Usuario extends AuditoriaConfig{
     @Column(name = "terminos_aceptados_en")
     private Date terminosAceptadosEn;
 
+    @Column(name = "codigo_recuperacion", length = 100)
+    private String codigoRecuperacion;
+
+    @Column(name = "codigo_recuperacion_en")
+    private Date codigoRecuperacionEn;
+
     public void setUsername(String username) {
         this.username = username;
         resellar();

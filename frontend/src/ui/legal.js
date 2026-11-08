@@ -14,7 +14,8 @@ export function terminosDeUso({ institucion, contacto }) {
         'Al primer ingreso debes cambiar la contraseña inicial por una propia de al menos 10 caracteres, con letras y números.',
         'Eres responsable de todo lo que se haga con tu cuenta. Cierra sesión al terminar, sobre todo en equipos compartidos.',
         'Si sospechas que alguien conoce tu contraseña, cámbiala de inmediato desde «Cambiar mi contraseña» y avisa a tu responsable.',
-        'Después de varios intentos fallidos la cuenta se bloquea unos minutos por seguridad.',
+        'Después de varios intentos fallidos el ingreso se pausa unos minutos en ese equipo por seguridad.',
+        'Al crear tu contraseña recibes un código de recuperación: guárdalo en un lugar seguro y no lo compartas. Sirve para crear una contraseña nueva si la olvidas.',
       ] },
       { titulo: '3. Uso permitido', parrafos: [
         'Usa el sistema solo para las tareas que te asignaron según tu rol: vender, validar pagos, entregar entradas o credenciales, controlar el ingreso, diseñar actividades o administrar, según corresponda.',

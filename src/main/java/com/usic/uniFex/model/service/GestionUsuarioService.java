@@ -44,6 +44,7 @@ public class GestionUsuarioService {
     private final PasswordEncoder passwordEncoder;
     private final VendedorAsignacionService vendedorAsignacion;
     private final WhatsAppService whatsApp;
+    private final com.usic.uniFex.security.AccesoSeguro acceso;
 
     @Value("${app.base-url:https://fexpo-uapv2.uap.edu.bo/app/}")
     private String baseUrl;
@@ -171,6 +172,7 @@ public class GestionUsuarioService {
         u.setModificacion(new Date());
         u.setModificacionIdUsuario(actor.id());
         Usuario guardado = usuarioDao.save(u);
+        acceso.desbloquear(u.getUsername());
         logger.info("Contrasena cambiada al usuario {} por usuario {}", u.getUsername(), actor.id());
         return Resultado.exito("Contrasena actualizada." + avisarClavePorWhatsApp(guardado, nueva), guardado);
     }

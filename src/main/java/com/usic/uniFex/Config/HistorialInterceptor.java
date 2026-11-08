@@ -93,6 +93,7 @@ public class HistorialInterceptor implements HandlerInterceptor {
             r("PATCH", "/api/app/interesados-stand/{id}/estado", "Ventas y cobros", "Cambió el estado de la solicitud de espacio #{id}"),
             r("PATCH", "/api/app/interesados-stand/{id}", "Ventas y cobros", "Cambió la categoría de la solicitud #{id}"),
             r("POST", "/api/app/interesados-stand/{id}/comprobante", "Ventas y cobros", "Reemplazó el comprobante de la solicitud #{id}"),
+            r("POST", "/api/app/usuarios/{id}/desbloquear", "Usuarios y permisos", "Quitó la pausa de ingreso del usuario #{id}"),
             r("POST", "/api/app/llegadas/{id}", "Recepción e ingreso", "Confirmó la llegada de la venta #{id}"),
             r("DELETE", "/api/app/llegadas/{id}", "Recepción e ingreso", "Quitó la llegada de la venta #{id}"),
             r("POST", "/api/app/punto-venta/espacios", "Punto de venta", "Vendió espacios en el punto de venta"),

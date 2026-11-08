@@ -3,6 +3,8 @@ import { ref, onMounted } from 'vue';
 import { useAuthStore } from '../stores/auth';
 import { alerta } from '../ui/alerta';
 import { marca, iniciales, cargarMarca } from '../ui/marca';
+import { url as urlApi } from '../config.js';
+import CodigoRecuperacion from '../components/CodigoRecuperacion.vue';
 
 const usuario = ref('');
 const contrasena = ref('');
@@ -11,6 +13,45 @@ const cargando = ref(false);
 const auth = useAuthStore();
 const formVisible = ref(false);
 const campoContrasena = ref(null);
+const modo = ref('entrar');
+const rec = ref({ usuario: '', codigo: '', nueva: '', repetir: '' });
+const recError = ref('');
+const nuevoCodigo = ref('');
+
+function abrirRecuperacion() {
+  rec.value = { usuario: usuario.value, codigo: '', nueva: '', repetir: '' };
+  recError.value = '';
+  modo.value = 'recuperar';
+}
+
+async function recuperar() {
+  if (cargando.value) return;
+  recError.value = '';
+  if (rec.value.nueva !== rec.value.repetir) { recError.value = 'Las dos contraseñas no coinciden.'; return; }
+  cargando.value = true;
+  try {
+    const r = await fetch(urlApi('/api/auth/recuperar'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario: rec.value.usuario.trim(), codigo: rec.value.codigo, nueva: rec.value.nueva }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) { recError.value = d.mensaje || 'No se pudo recuperar el acceso.'; return; }
+    nuevoCodigo.value = d.codigoRecuperacion;
+    modo.value = 'codigo';
+  } catch {
+    recError.value = 'No se pudo conectar con el servidor.';
+  } finally {
+    cargando.value = false;
+  }
+}
+
+function volverAEntrar() {
+  usuario.value = rec.value.usuario.trim();
+  contrasena.value = '';
+  nuevoCodigo.value = '';
+  modo.value = 'entrar';
+  error.value = '';
+}
 
 cargarMarca();
 
@@ -58,7 +99,7 @@ onMounted(() => {
         <p>Ingresa tus credenciales para continuar</p>
       </header>
 
-      <form class="formulario" @submit.prevent="entrar">
+      <form v-if="modo === 'entrar'" class="formulario" @submit.prevent="entrar">
         <div class="campo-grupo">
           <label for="usuario" class="etiqueta">Usuario</label>
           <div class="input-contenedor">
@@ -99,7 +140,27 @@ onMounted(() => {
           <span v-if="cargando" class="spinner" aria-hidden="true"></span>
           <span v-else>Ingresar</span>
         </button>
+        <button type="button" class="olvide" @click="abrirRecuperacion">¿Olvidaste tu contraseña?</button>
       </form>
+
+      <form v-else-if="modo === 'recuperar'" class="formulario recuperar" @submit.prevent="recuperar">
+        <p class="ayuda-rec">Escribe tu usuario y el <b>código de recuperación</b> que guardaste cuando creaste tu contraseña. Si no lo tienes, pide a un administrador de tu organización que te asigne una contraseña nueva.</p>
+        <label class="campo-rec"><span class="etiqueta">Usuario</span><input v-model="rec.usuario" class="control sin-icono" autocomplete="username" /></label>
+        <label class="campo-rec"><span class="etiqueta">Código de recuperación</span><input v-model="rec.codigo" class="control sin-icono codigo-rec" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" /></label>
+        <label class="campo-rec"><span class="etiqueta">Nueva contraseña</span><input v-model="rec.nueva" class="control sin-icono" type="password" autocomplete="new-password" maxlength="72" /></label>
+        <label class="campo-rec"><span class="etiqueta">Repite la nueva contraseña</span><input v-model="rec.repetir" class="control sin-icono" type="password" autocomplete="new-password" maxlength="72" /></label>
+        <p class="ayuda-rec chica">Al menos 10 caracteres, con letras y números, y sin tu nombre de usuario.</p>
+        <p v-if="recError" class="error" role="alert">{{ recError }}</p>
+        <button type="submit" class="btn-entrar" :disabled="cargando || !rec.usuario.trim() || !rec.codigo.trim() || !rec.nueva">
+          <span v-if="cargando" class="spinner" aria-hidden="true"></span><span v-else>Cambiar mi contraseña</span>
+        </button>
+        <button type="button" class="olvide" @click="modo = 'entrar'">← Volver al ingreso</button>
+      </form>
+
+      <div v-else class="formulario">
+        <p class="ayuda-rec"><b>✓ Listo, tu contraseña se cambió.</b> El código que usaste ya no sirve; este es tu código nuevo:</p>
+        <CodigoRecuperacion :codigo="nuevoCodigo" :usuario="rec.usuario" @listo="volverAEntrar" />
+      </div>
 
       <footer class="pie-login">
         <p>{{ marca.lema || marca.nombre }}</p>
@@ -397,6 +458,15 @@ onMounted(() => {
 @keyframes girar {
   to { transform: rotate(360deg); }
 }
+
+.olvide { align-self: center; border: 0; background: none; color: var(--acento); font: inherit; font-weight: 700; font-size: 0.88rem; cursor: pointer; padding: 0.3rem; }
+.olvide:hover { text-decoration: underline; }
+.recuperar { gap: 0.7rem; }
+.campo-rec { display: flex; flex-direction: column; gap: 0.3rem; }
+.control.sin-icono { padding-left: 0.85rem; }
+.codigo-rec { font-family: ui-monospace, Consolas, monospace; letter-spacing: 0.08em; text-transform: uppercase; }
+.ayuda-rec { margin: 0; font-size: 0.86rem; color: var(--muted); line-height: 1.45; }
+.ayuda-rec.chica { font-size: 0.78rem; }
 
 .pie-login {
   margin-top: 2rem;

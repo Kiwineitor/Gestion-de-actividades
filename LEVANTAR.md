@@ -7,7 +7,6 @@ Hola, te dejo los pasos directos para que lo tengas corriendo en tu máquina. So
 ```bash
 git clone https://github.com/Kiwineitor/Gestion-de-actividades.git
 cd Gestion-de-actividades
-git checkout reorganizacion-actividades
 ```
 
 ## 2. Levantar
@@ -45,6 +44,8 @@ Usuario inicial:
 
 Esa contraseña inicial solo sirve para ese primer ingreso. Después ya no vale.
 
+Al guardar tu contraseña el sistema te muestra un **código de recuperación** (algo como `K7QM-3XRP-…`). Guárdalo bien: si un día olvidas la contraseña, con ese código creas una nueva tú mismo desde «¿Olvidaste tu contraseña?».
+
 El manual de usuario, con capturas de cada pantalla, está en `docs/Manual-de-usuario.pdf`.
 
 También vienen usuarios de prueba (`vendedor1`, `vendedor2`, `control1`, `asesoria1`, todos con `Fexpo2026`) y una feria de ejemplo para practicar.
@@ -63,8 +64,11 @@ También vienen usuarios de prueba (`vendedor1`, `vendedor2`, `control1`, `aseso
 ## 5. Si algo falla
 
 - **`port is already allocated`**: tienes algo usando el 7676 o el 5433. Crea un archivo `.env` con `APP_PUERTO=7680` y `DB_PUERTO_LOCAL=5440` (o los puertos que tengas libres) y vuelve a levantar.
-- **Pone «Demasiados intentos fallidos»**: te equivocaste 5 veces de contraseña. Espera 15 minutos.
-- **Olvidaste tu contraseña de `admin1`**: agrega esto al `.env`, ejecuta `docker compose up -d` y entra con esa clave temporal (te pedirá cambiarla). Luego borra esas dos líneas y vuelve a ejecutar `docker compose up -d`.
+- **Te pide esperar antes de volver a intentar**: te equivocaste varias veces de contraseña. La pausa es corta (1 minuto, luego 5 y como máximo 15) y solo en ese equipo. Antes de la pausa el sistema avisa cuántos intentos te quedan.
+- **Olvidaste tu contraseña**, en este orden:
+  1. En la pantalla de ingreso, «¿Olvidaste tu contraseña?», con tu usuario y tu código de recuperación.
+  2. Otro administrador entra a *Usuarios* y te pone una contraseña nueva (y, si estás en pausa, «Quitar pausa de ingreso»).
+  3. Si nadie puede entrar, agrega esto al `.env`, ejecuta `docker compose up -d` y entra con esa clave temporal (te pedirá cambiarla). Luego borra esas dos líneas y vuelve a ejecutar `docker compose up -d`.
   ```
   UNIFEX_RESTABLECER_USUARIO=admin1
   UNIFEX_RESTABLECER_CLAVE=Temporal-2026-xyz

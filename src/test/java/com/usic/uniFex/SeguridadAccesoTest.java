@@ -81,6 +81,33 @@ class SeguridadAccesoTest {
     }
 
     @Test
+    void laPausaEsPorEquipoAvisaYUnAdministradorLaQuita() {
+        acceso.ingresar(nombre, "mal1", "10.7.7.7");
+        acceso.ingresar(nombre, "mal2", "10.7.7.7");
+        assertThat(acceso.ingresar(nombre, "mal3", "10.7.7.7").mensaje()).contains("Te quedan 2 intentos");
+        acceso.ingresar(nombre, "mal4", "10.7.7.7");
+        acceso.ingresar(nombre, "mal5", "10.7.7.7");
+        assertThat(acceso.ingresar(nombre, claveInicial, "10.7.7.7").estado()).isEqualTo(429);
+        assertThat(acceso.ingresar(nombre, claveInicial, "10.6.6.6").ok()).isTrue();
+        assertThat(acceso.enPausa()).contains(nombre.toLowerCase());
+        acceso.desbloquear(nombre);
+        assertThat(acceso.ingresar(nombre, claveInicial, "10.7.7.7").ok()).isTrue();
+    }
+
+    @Test
+    void elCodigoDeRecuperacionPermiteCrearOtraClaveUnaSolaVez() {
+        String codigo = acceso.generarCodigo(usuarioId);
+        assertThat(codigo).matches("[A-Z2-9]{4}(-[A-Z2-9]{4}){3}");
+        assertThat(acceso.recuperar(nombre, "AAAA-BBBB-CCCC-DDDD", "Recuperada-2026x", "10.5.5.5").ok()).isFalse();
+        AccesoSeguro.Recuperacion r = acceso.recuperar(nombre, codigo.toLowerCase().replace("-", " "), "Recuperada-2026x", "10.5.5.5");
+        assertThat(r.ok()).as(r.mensaje()).isTrue();
+        assertThat(r.nuevoCodigo()).isNotEqualTo(codigo);
+        assertThat(acceso.ingresar(nombre, "Recuperada-2026x", "10.5.5.5").ok()).isTrue();
+        assertThat(acceso.recuperar(nombre, codigo, "OtraClave-2026x", "10.5.5.5").ok()).isFalse();
+        assertThat(acceso.recuperar(nombre, r.nuevoCodigo(), "corta", "10.5.5.5").mensaje()).contains("10 caracteres");
+    }
+
+    @Test
     void unaContrasenaPegadaEnLaBaseNoSirve() {
         jdbc.update("UPDATE usuario SET password = ? WHERE id = ?", encoder.encode("HackeadaDesdeLaBase1"), usuarioId);
         AccesoSeguro.Ingreso r = acceso.ingresar(nombre, "HackeadaDesdeLaBase1", "10.8.8.8");

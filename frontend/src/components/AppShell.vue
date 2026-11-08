@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
+import { apiFetch } from '../api';
 import { usePermisosStore } from '../stores/permisos';
 import { usePuestosStore } from '../stores/puestos';
 import { toast } from '../ui/toast';
@@ -133,6 +134,16 @@ const CLAVE_GRUPOS = 'menu.grupos.v4';
 
 const busqueda = ref('');
 const cuenta = ref(null);
+const claveCodigo = ref('');
+
+async function generarCodigo() {
+  const r = await apiFetch('/api/auth/codigo-recuperacion', { method: 'POST', body: JSON.stringify({ clave: claveCodigo.value }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.ok) { toast(d.mensaje || 'No se pudo generar el código', 'error'); return; }
+  claveCodigo.value = '';
+  cuenta.value = null;
+  auth.codigoRecuperacion = d.codigoRecuperacion;
+}
 const buscador = ref(null);
 const abiertos = ref(new Set(leerGrupos()));
 
@@ -361,6 +372,14 @@ function salir() {
     <UiModalCuenta v-if="cuenta === 'clave'" titulo="🔑 Cambiar mi contraseña" ancho="520px" @cerrar="cuenta = null">
       <p class="muted" style="margin-top: 0">Al cambiarla se cierran tus sesiones abiertas en otros equipos.</p>
       <FormCambioClave @listo="cuenta = null" />
+      <div class="codigo-cuenta">
+        <strong>🗝️ Código de recuperación</strong>
+        <p class="muted">Sirve para crear una contraseña nueva tú mismo si la olvidas. Si lo perdiste, genera otro: el anterior deja de servir.</p>
+        <div class="fila-codigo">
+          <input v-model="claveCodigo" class="control" type="password" placeholder="Tu contraseña actual" autocomplete="current-password" />
+          <button type="button" class="btn" :disabled="!claveCodigo" @click="generarCodigo">Generar código nuevo</button>
+        </div>
+      </div>
     </UiModalCuenta>
     <UiModalCuenta v-if="cuenta === 'terminos'" titulo="📜 Términos de uso del sistema" ancho="720px" @cerrar="cuenta = null">
       <TextoLegal :documento="terminosDeUso({ institucion: marca.nombre, contacto: marca.contacto })" compacto />
@@ -426,6 +445,10 @@ nav { display: flex; flex-direction: column; gap: 2px; padding: 0.4rem 0.6rem; f
 .ico { width: 1.3rem; text-align: center; }
 
 .pie-side { border-top: 1px solid var(--border); padding: 0.8rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.codigo-cuenta { margin-top: 1rem; padding-top: 0.9rem; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 0.4rem; }
+.codigo-cuenta p { margin: 0; font-size: 0.85rem; }
+.fila-codigo { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.fila-codigo .control { flex: 1 1 180px; }
 .mi-cuenta { display: flex; width: 100%; gap: 0.2rem; justify-content: space-between; }
 .mi-cuenta .btn { padding: 0.3rem 0.45rem; font-size: 0.78rem; }
 .sidebar.plegado .mi-cuenta { display: none; }

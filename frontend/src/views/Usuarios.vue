@@ -78,6 +78,7 @@ function accionesDe(u) {
     { txt: 'Editar usuario', accion: () => abrirEditar(u) },
     { txt: 'Datos personales', accion: () => abrirDatos(u) },
     { txt: 'Cambiar contraseña', accion: () => abrirPassword(u) },
+    ...(enPausa.value.has((u.username || '').toLowerCase()) ? [{ txt: 'Quitar pausa de ingreso', accion: () => quitarPausa(u) }] : []),
     { txt: 'Ver permisos', accion: () => router.push(aModulo('permisos', { usuario: u.id })) },
     { txt: 'Ver historial', accion: () => router.push(aModulo('historial', { usuario: u.id })) },
     { txt: u.estado === 'ACTIVO' ? 'Desactivar' : 'Activar', accion: () => alternarEstado(u) },
@@ -88,15 +89,26 @@ function accionesDe(u) {
 
 const rolElegido = computed(() => roles.value.find((r) => r.id === modal.rolId) || null);
 
+const enPausa = ref(new Set());
+
+async function quitarPausa(u) {
+  const r = await apiFetch(`/api/app/usuarios/${u.id}/desbloquear`, { method: 'POST' });
+  const d = await r.json().catch(() => ({}));
+  toast(d.mensaje || (r.ok ? 'Listo' : 'No se pudo'), r.ok ? 'ok' : 'error');
+  await cargar();
+}
+
 async function cargar() {
   cargando.value = true;
   try {
-    const [ru, rr] = await Promise.all([
+    const [ru, rr, rp] = await Promise.all([
       apiFetch('/api/app/usuarios'),
       apiFetch('/api/app/roles'),
+      apiFetch('/api/app/usuarios/en-pausa'),
     ]);
     usuarios.value = await ru.json();
     roles.value = await rr.json();
+    enPausa.value = new Set(rp.ok ? (await rp.json()).map((x) => String(x).toLowerCase()) : []);
   } catch (e) {
     toast(e.message, 'error');
   } finally {
@@ -339,6 +351,7 @@ onMounted(() => {
               <span class="badge" :class="u.estado === 'ACTIVO' ? 'badge-ok' : 'badge-danger'">
                 {{ u.estado === 'ACTIVO' ? 'Activo' : 'Inactivo' }}
               </span>
+              <button v-if="enPausa.has((u.username || '').toLowerCase())" type="button" class="badge badge-advertencia pausa" title="Se equivocó varias veces de contraseña. Toca para dejarlo intentar de nuevo." @click="quitarPausa(u)">⏸ En pausa · quitar</button>
             </td>
             <td class="acciones">
               <MenuAcciones :acciones="accionesDe(u)" :deshabilitado="ocupado" :etiqueta="`Acciones de ${u.username}`" />

@@ -78,7 +78,7 @@ Comandos del día a día:
 | `control1` | `Fexpo2026` | CONTROL | Puerta: escanea credenciales y registra entradas/salidas |
 | `asesoria1` | `Fexpo2026` | ASESORIA | Consulta: inscripciones, rendición de cuentas y reportes |
 
-**Primer ingreso obligatorio.** Al entrar por primera vez con `admin1` o `admin2` (o con cualquier usuario al que un administrador le haya puesto o restablecido la contraseña) el sistema pide aceptar los términos de uso y cambiar la contraseña inicial por una propia de al menos 10 caracteres con letras y números. Hasta hacerlo, la API responde 403 a todo lo demás. Cinco contraseñas equivocadas seguidas bloquean el usuario 15 minutos.
+**Primer ingreso obligatorio.** Al entrar por primera vez con `admin1` o `admin2` (o con cualquier usuario al que un administrador le haya puesto o restablecido la contraseña) el sistema pide aceptar los términos de uso y cambiar la contraseña inicial por una propia de al menos 10 caracteres con letras y números. Hasta hacerlo, la API responde 403 a todo lo demás. Al guardar la contraseña se entrega un **código de recuperación** de un solo uso para crear otra contraseña desde «¿Olvidaste tu contraseña?». Las contraseñas equivocadas generan pausas cortas y progresivas (1, 5 y 15 minutos) solo para ese usuario en ese equipo; un administrador puede quitarlas desde *Usuarios*.
 
 **Sello de integridad.** Cada cuenta lleva una firma calculada con `JWT_SECRET` (o `SELLO_SECRETO` si se define). Si alguien cambia la contraseña o el rol directamente en la base, la firma deja de coincidir y la cuenta queda bloqueada. Para recuperar un acceso se arranca una vez con `UNIFEX_RESTABLECER_USUARIO` y `UNIFEX_RESTABLECER_CLAVE` en `.env` (la clave temporal obliga a cambiarla al entrar) y luego se quitan esas dos líneas. Si se cambia `JWT_SECRET`/`SELLO_SECRETO`, hay que arrancar una vez con `UNIFEX_RESELLAR=true`.
 
@@ -280,5 +280,5 @@ docker compose up -d --no-build
 | `port is already allocated` | Otro programa usa 7676 o 5433: cambiar `APP_PUERTO` / `DB_PUERTO_LOCAL` |
 | `$'\r': command not found` en `db` | Scripts con fin de línea Windows. La imagen ya los corrige; reconstruir con `--build` |
 | Login responde 401 con la contraseña correcta de admin1 | La base se creó con otra `ADMIN1_PASSWORD`: vale la del primer arranque, o la que pusiste en el primer ingreso. Para recuperarla: `UNIFEX_RESTABLECER_USUARIO` / `UNIFEX_RESTABLECER_CLAVE` |
-| «Demasiados intentos fallidos» | Cinco contraseñas equivocadas: esperar 15 minutos |
+| Pide esperar antes de volver a intentar | Varias contraseñas equivocadas: esperar 1 a 15 minutos, usar «¿Olvidaste tu contraseña?» con el código de recuperación o pedir a un administrador «Quitar pausa de ingreso» |
 | «Esta cuenta fue modificada fuera del sistema» | Se tocó la contraseña o el rol en la base. Restablecer con `UNIFEX_RESTABLECER_USUARIO` / `UNIFEX_RESTABLECER_CLAVE` |

@@ -6,6 +6,8 @@ import { usePermisosStore } from '../stores/permisos';
 import { moduloActual, puedeAbrir } from '../modulos';
 import Login from '../views/Login.vue';
 import PrimerIngreso from '../views/PrimerIngreso.vue';
+import UiModal from './UiModal.vue';
+import CodigoRecuperacion from './CodigoRecuperacion.vue';
 import AppLayout from './AppLayout.vue';
 
 const auth = useAuthStore();
@@ -24,4 +26,7 @@ watch(() => auth.autenticado, async (dentro) => {
   <PrimerIngreso v-if="auth.autenticado && auth.pendientes.length" />
   <AppLayout v-else-if="auth.autenticado" />
   <Login v-else />
+  <UiModal v-if="auth.autenticado && auth.codigoRecuperacion" titulo="🗝️ Tu código de recuperación" ancho="520px" sin-cerrar>
+    <CodigoRecuperacion :codigo="auth.codigoRecuperacion" :usuario="auth.usuario" @listo="auth.codigoRecuperacion = ''" />
+  </UiModal>
 </template>

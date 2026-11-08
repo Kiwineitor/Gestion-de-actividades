@@ -46,6 +46,7 @@ export const useAuthStore = defineStore('auth', {
     rol: localStorage.getItem('rol') || '',
     pendientes: leerPendientes(),
     pendientesIniciales: 0,
+    codigoRecuperacion: '',
   }),
   getters: {
     autenticado: (s) => {
@@ -87,6 +88,7 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem('usuario', this.usuario);
       localStorage.setItem('rol', this.rol);
       this.aplicarPendientes(Array.isArray(data.pendientes) ? data.pendientes : []);
+      if (data.codigoRecuperacion) this.codigoRecuperacion = data.codigoRecuperacion;
     },
     aplicarPendientes(lista) {
       this.pendientes = lista;
@@ -104,6 +106,7 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('rol');
       this.pendientes = [];
       this.pendientesIniciales = 0;
+      this.codigoRecuperacion = '';
       localStorage.removeItem('pendientes');
       try { localStorage.removeItem(CACHE_PERMISOS); } catch { }
     },

@@ -93,14 +93,27 @@ public class InteresadoStandApiController {
                 .toList();
     }
 
-    public record CambioEstado(String estado) {
+    public record CambioEstado(String estado, String motivo) {
+    }
+
+    @PostMapping(value = "/{id}/comprobante", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> reemplazarComprobante(@PathVariable Long id,
+                                                                     @org.springframework.web.bind.annotation.RequestParam("archivo") org.springframework.web.multipart.MultipartFile archivo)
+            throws java.io.IOException {
+        Resultado r = servicio.reemplazarComprobante(id, archivo, usuarioActual());
+        if (r.ok()) publisher.publicar(r.interesado());
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("ok", r.ok());
+        cuerpo.put("mensaje", r.mensaje());
+        cuerpo.put("interesado", r.interesado() != null ? InteresadoStandDTO.de(r.interesado()) : null);
+        return r.ok() ? ResponseEntity.ok(cuerpo) : ResponseEntity.badRequest().body(cuerpo);
     }
 
     @PatchMapping("/{id}/estado")
     public ResponseEntity<Map<String, Object>> cambiarEstado(@PathVariable Long id, @RequestBody CambioEstado req) {
         Resultado r;
         try {
-            r = servicio.cambiarEstado(id, req == null ? null : req.estado());
+            r = servicio.cambiarEstado(id, req == null ? null : req.estado(), req == null ? null : req.motivo(), usuarioActual());
         } catch (DataIntegrityViolationException e) {
             return ResponseEntity.badRequest().body(Map.of("ok", false, "mensaje", "Ese espacio ya tiene otra solicitud vigente."));
         }

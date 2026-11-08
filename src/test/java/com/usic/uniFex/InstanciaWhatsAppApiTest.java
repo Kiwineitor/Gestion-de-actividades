@@ -24,13 +24,15 @@ import com.usic.uniFex.security.JwtUser;
 class InstanciaWhatsAppApiTest {
     @Autowired MockMvc mvc;
     @MockitoBean JwtService jwt;
+    @MockitoBean com.usic.uniFex.security.AccesoSeguro acceso;
     @MockitoBean MantenimientoService mantenimiento;
     @MockitoBean InstanciaWhatsAppService servicio;
     private static final String RUTA = "/api/app/whatsapp/instancias";
 
     @BeforeEach void preparar() {
-        when(jwt.validar("admin")).thenReturn(new JwtUser(1L, "admin", "ADMINISTRADOR"));
-        when(jwt.validar("vendedor")).thenReturn(new JwtUser(2L, "vendedor", "ADMINISTRATIVO"));
+        when(acceso.sesionValida(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(true);
+        when(jwt.leer("admin")).thenReturn(new JwtService.Datos(new JwtUser(1L, "admin", "ADMINISTRADOR"), 0, java.util.List.of()));
+        when(jwt.leer("vendedor")).thenReturn(new JwtService.Datos(new JwtUser(2L, "vendedor", "ADMINISTRATIVO"), 0, java.util.List.of()));
         when(mantenimiento.estado()).thenReturn(mock(com.usic.uniFex.model.dto.MantenimientoDTO.class));
     }
 

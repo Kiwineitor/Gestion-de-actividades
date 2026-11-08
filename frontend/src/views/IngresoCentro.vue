@@ -10,9 +10,15 @@ const ve = (p) => permisos.puedeVer(p);
 
 const pestanas = computed(() => [
   {
-    k: 'escanear', t: 'Escanear', icono: '📷',
+    k: 'llegadas', t: 'Llegadas', icono: '✅',
     visible: auth.puedeEditarPlano || ['escaner', 'control-acceso', 'mesas-ingreso', 'mesas'].some(ve),
-    ayuda: 'Un solo lector para todo: credenciales de expositores y de apoyo, y pases de mesa.',
+    ayuda: 'Valida al dueño de cada lugar el día del evento: búscalo por nombre, C.I., número de mesa o puesto o n.º de venta y confirma su llegada. Funciona con o sin credenciales.',
+    vista: defineAsyncComponent(() => import('./Llegadas.vue')),
+  },
+  {
+    k: 'escanear', t: 'Escanear credencial', icono: '📷',
+    visible: auth.puedeEditarPlano || ['escaner', 'control-acceso', 'mesas-ingreso', 'mesas'].some(ve),
+    ayuda: 'Un solo lector para todo: credenciales, pases de acompañante, personal de apoyo y entradas.',
     vista: defineAsyncComponent(() => import('./Escaner.vue')),
   },
   {

@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.usic.uniFex.model.repository.FuncionesInscripcion;
-import com.usic.uniFex.model.service.ReporteEventoService;
 import com.usic.uniFex.security.JwtUser;
 
 import lombok.RequiredArgsConstructor;
@@ -27,7 +26,6 @@ public class MisVentasApiController {
 
     private final FuncionesInscripcion funciones;
     private final com.usic.uniFex.model.dao.IInscripcionDao inscripcionDao;
-    private final ReporteEventoService reporteEvento;
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> mias(
@@ -80,23 +78,6 @@ public class MisVentasApiController {
             return ResponseEntity.status(404).body(Map.of("ok", false, "mensaje", "Inscripción no encontrada"));
         }
         return ResponseEntity.ok(funciones.obtener_puestos_por_inscripcion(idInscripcion));
-    }
-
-    @GetMapping("/mesas")
-    public ResponseEntity<Map<String, Object>> misReservas(@RequestParam("evento") Long evento) {
-        Long uid = usuarioActual();
-        if (uid == null) return noAutenticado();
-        List<Map<String, Object>> reservas = reporteEvento.reservas(evento, esSuperUsuario() ? null : uid);
-        BigDecimal total = reservas.stream()
-                .filter(r -> "CONFIRMADA".equals(r.get("estado")))
-                .map(r -> asBigDecimal(r.get("monto")))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        Map<String, Object> cuerpo = new LinkedHashMap<>();
-        cuerpo.put("evento", evento);
-        cuerpo.put("cantidad", reservas.stream().filter(r -> "CONFIRMADA".equals(r.get("estado"))).count());
-        cuerpo.put("total", total);
-        cuerpo.put("reservas", reservas);
-        return ResponseEntity.ok(cuerpo);
     }
 
     private Long usuarioActual() {

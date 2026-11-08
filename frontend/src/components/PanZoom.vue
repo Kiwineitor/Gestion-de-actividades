@@ -16,6 +16,7 @@ const props = defineProps({
 const viewport = ref(null);
 const world = ref(null);
 const t = { x: 0, y: 0, scale: 1 };
+const porcentaje = ref(100);
 
 const MS_NITIDEZ = 220;
 let capaPromovida = false;
@@ -52,6 +53,8 @@ function pintarYa() {
   if (!el) return;
   if (cuadroPendiente) { cancelAnimationFrame(cuadroPendiente); cuadroPendiente = 0; }
   el.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scale})`;
+  porcentaje.value = Math.round(t.scale * 100);
+  el.style.setProperty('--zoom', String(t.scale));
 }
 
 let anchoPrevio = 0;
@@ -209,14 +212,16 @@ defineExpose({ focusOn, reset, zoomAt });
     @pointermove="onMove"
     @pointerup="onUp"
     @pointercancel="onUp"
+    @contextmenu.prevent
   >
     <div class="world" ref="world">
       <slot />
     </div>
-    <div class="controls">
-      <button @pointerdown.stop @click="zoomAt(vpRect().left + vpRect().width / 2, vpRect().top + vpRect().height / 2, 1.3)">+</button>
-      <button @pointerdown.stop @click="zoomAt(vpRect().left + vpRect().width / 2, vpRect().top + vpRect().height / 2, 1 / 1.3)">−</button>
-      <button @pointerdown.stop title="Ajustar" @click="reset">⤢</button>
+    <div class="controls" role="group" aria-label="Zoom del plano">
+      <button type="button" title="Acercar" aria-label="Acercar" @pointerdown.stop @click="zoomAt(vpRect().left + vpRect().width / 2, vpRect().top + vpRect().height / 2, 1.3)">+</button>
+      <span class="nivel" aria-live="polite">{{ porcentaje }}%</span>
+      <button type="button" title="Alejar" aria-label="Alejar" @pointerdown.stop @click="zoomAt(vpRect().left + vpRect().width / 2, vpRect().top + vpRect().height / 2, 1 / 1.3)">−</button>
+      <button type="button" title="Ver todo el plano" aria-label="Ver todo el plano" @pointerdown.stop @click="reset">⤢</button>
     </div>
   </div>
 </template>
@@ -236,8 +241,14 @@ defineExpose({ focusOn, reset, zoomAt });
   position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 4px;
 }
 .controls button {
-  width: 38px; height: 38px; border-radius: 8px; border: 1px solid var(--border);
-  background: #fff; font-size: 1.1rem; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  width: 38px; height: 38px; border-radius: 8px; border: 1px solid #cbd5e1;
+  background: #fff; color: #0f172a; font: 700 1.15rem/1 system-ui, sans-serif; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  cursor: pointer; display: grid; place-items: center;
+}
+.controls button:hover { background: #eef2ff; border-color: #6366f1; color: #3730a3; }
+.nivel {
+  font: 700 0.68rem/1 system-ui, sans-serif; color: #0f172a; background: rgba(255, 255, 255, 0.92);
+  border-radius: 6px; padding: 3px 0; text-align: center; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 @media (max-width: 820px) {

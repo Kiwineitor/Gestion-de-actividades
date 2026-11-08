@@ -18,11 +18,8 @@ watch(actividadElegida, (v) => {
 
 export const actividades = ref([]);
 export const ediciones = computed(() => actividades.value.filter((a) => a.tipo === 'FERIA'));
-export const eventos = computed(() => actividades.value.filter((a) => a.tipo === 'MESAS'));
 
 export const edicionElegida = computed(() => (/^f-\d+$/.test(actividadElegida.value) ? actividadElegida.value.slice(2) : ''));
-export const eventoElegido = computed(() => (/^e-\d+$/.test(actividadElegida.value) ? actividadElegida.value.slice(2) : ''));
-export const esEventoElegido = computed(() => Boolean(eventoElegido.value));
 
 export const actividadActual = computed(() => {
   const clave = actividadElegida.value || ediciones.value.find((e) => e.activa)?.clave;

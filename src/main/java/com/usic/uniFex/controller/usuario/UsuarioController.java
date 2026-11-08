@@ -120,6 +120,7 @@ public class UsuarioController {
         Usuario nuevo = new Usuario();
         nuevo.setUsername(usernameNorm);
         nuevo.setPassword(passwordEncoder.encode(rawPassword));
+        nuevo.setDebeCambiarClave(true);
         nuevo.setPersona(persona);
         nuevo.setRol(rol);
         nuevo.setEstado("ACTIVO");
@@ -166,6 +167,8 @@ public class UsuarioController {
         if (u == null) return ResponseEntity.badRequest().body("Usuario no encontrado.");
 
         u.setPassword(passwordEncoder.encode(nueva));
+        u.setDebeCambiarClave(true);
+        u.cerrarSesiones();
 
         usuarioService.save(u);
         return ResponseEntity.ok("Contraseña actualizada.");

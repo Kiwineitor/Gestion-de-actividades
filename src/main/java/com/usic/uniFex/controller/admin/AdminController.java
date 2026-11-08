@@ -18,7 +18,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.interceptor.TransactionAspectSupport;
@@ -79,7 +78,7 @@ public class AdminController {
     private final ICategoriaService categoriaService;
     private final IPuestoService puestoService;
     private final IUsuarioService IusuarioService;
-    private final PasswordEncoder passwordEncoder;
+    private final com.usic.uniFex.security.AccesoSeguro accesoSeguro;
     private final ReciboPdfService reciboPdfService;
     private static final Logger logger = LoggerFactory.getLogger(AdminController.class);
 
@@ -404,13 +403,15 @@ public class AdminController {
             @RequestParam String contrasena,
             HttpServletRequest request, RedirectAttributes flash) {
 
-        Usuario usuario_ = IusuarioService.findByUsername(usuario).orElse(null);
-        if (usuario_ == null || !passwordEncoder.matches(contrasena, usuario_.getPassword())) {
-            return ResponseEntity.ok("Usuario o contraseña incorrectos!");
+        String reenviado = request.getHeader("X-Forwarded-For");
+        String ip = reenviado != null && !reenviado.isBlank() ? reenviado.split(",")[0].trim() : request.getRemoteAddr();
+        com.usic.uniFex.security.AccesoSeguro.Ingreso ingreso = accesoSeguro.ingresar(usuario, contrasena, ip);
+        if (!ingreso.ok()) {
+            return ResponseEntity.ok(ingreso.estado() == 401 ? "Usuario o contraseña incorrectos!" : ingreso.mensaje());
         }
-
-        if ("INACTIVO".equals(usuario_.getEstado())) {
-            return ResponseEntity.ok("Este usuario esta en estado inactivo!");
+        Usuario usuario_ = ingreso.usuario();
+        if (!accesoSeguro.pendientes(usuario_).isEmpty()) {
+            return ResponseEntity.ok("Antes de usar el sistema entra por el panel nuevo (/admin) para aceptar los términos y cambiar tu contraseña.");
         }
 
         HttpSession session = request.getSession(true);

@@ -28,6 +28,7 @@ public final class ControlVentasDTO {
 
         private Long vendedorId;
         private String vendedor;
+        private String canal;
         private String vendedorUsuario;
 
         private String codigoExpositor;

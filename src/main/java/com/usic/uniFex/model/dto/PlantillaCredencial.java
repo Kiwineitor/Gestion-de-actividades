@@ -125,6 +125,7 @@ public record PlantillaCredencial(
     private static volatile String idPorDefecto = POR_DEFECTO.id();
 
     public static void registrar(List<PlantillaCredencial> plantillas, String porDefecto) {
+        conocidas = List.of();
         if (plantillas == null || plantillas.isEmpty()) {
             vigentes = CATALOGO;
             idPorDefecto = POR_DEFECTO.id();
@@ -133,6 +134,12 @@ public record PlantillaCredencial(
         vigentes = List.copyOf(plantillas);
         idPorDefecto = plantillas.stream().anyMatch(p -> p.id().equals(porDefecto))
                 ? porDefecto : plantillas.get(0).id();
+    }
+
+    private static volatile List<PlantillaCredencial> conocidas = List.of();
+
+    public static void registrarConocidas(List<PlantillaCredencial> plantillas) {
+        conocidas = plantillas == null ? List.of() : List.copyOf(plantillas);
     }
 
     public static List<PlantillaCredencial> catalogo() {
@@ -149,7 +156,8 @@ public record PlantillaCredencial(
 
     public static Optional<PlantillaCredencial> de(String id) {
         String n = id == null ? "" : id.trim().toUpperCase();
-        return vigentes.stream().filter(p -> p.id().equals(n)).findFirst();
+        return vigentes.stream().filter(p -> p.id().equals(n)).findFirst()
+                .or(() -> conocidas.stream().filter(p -> p.id().equals(n)).findFirst());
     }
 
     public static PlantillaCredencial oPorDefecto(String id) {

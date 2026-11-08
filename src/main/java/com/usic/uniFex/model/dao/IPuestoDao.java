@@ -35,7 +35,7 @@ List<Puesto> findLibresPorCategoriaOrdenados(@Param("estadoPuesto") String estad
            "reserva_expira = now() + (:ttlSegundos * interval '1 second'), " +
            "version = version + 1 " +
            "WHERE id = :id AND estado_puesto = 'L' " +
-           "AND id_categoria IN " + Edicion.SQL_CATEGORIAS_ACTIVAS, nativeQuery = true)
+           "AND id_categoria IN " + Edicion.SQL_CATEGORIAS_EN_VENTA, nativeQuery = true)
     int reservarSiLibre(@Param("id") Long id,
                         @Param("usuarioId") Long usuarioId,
                         @Param("ttlSegundos") long ttlSegundos);
@@ -47,7 +47,7 @@ List<Puesto> findLibresPorCategoriaOrdenados(@Param("estadoPuesto") String estad
            "version = version + 1 " +
            "WHERE id = :id AND (estado_puesto = 'L' " +
            "  OR (estado_puesto = 'T' AND reservado_por_id_usuario = :usuarioId)) " +
-           "AND id_categoria IN " + Edicion.SQL_CATEGORIAS_ACTIVAS,
+           "AND id_categoria IN " + Edicion.SQL_CATEGORIAS_EN_VENTA,
            nativeQuery = true)
     int reservarSiLibreOMia(@Param("id") Long id,
                             @Param("usuarioId") Long usuarioId,
@@ -74,19 +74,65 @@ List<Puesto> findLibresPorCategoriaOrdenados(@Param("estadoPuesto") String estad
 
     @Modifying(clearAutomatically = true)
     @Query(value = "UPDATE puesto SET estado_puesto = 'O', " +
-           "reservado_por_id_usuario = NULL, reserva_expira = NULL, version = version + 1, " +
+           "reservado_por_id_usuario = NULL, reserva_expira = NULL, reserva_token = NULL, reserva_origen = NULL, version = version + 1, " +
            "\"_fecha_modificacion\" = now(), \"_modificacion_id_usuario\" = :usuarioId " +
            "WHERE id = :id AND (estado_puesto = 'L' " +
            "  OR (estado_puesto = 'T' AND reservado_por_id_usuario = :usuarioId)) " +
-           "AND id_categoria IN " + Edicion.SQL_CATEGORIAS_ACTIVAS,
+           "AND id_categoria IN " + Edicion.SQL_CATEGORIAS_EN_VENTA,
            nativeQuery = true)
     int ocuparSiDisponible(@Param("id") Long id, @Param("usuarioId") Long usuarioId);
 
     @Modifying(clearAutomatically = true)
     @Query(value = "UPDATE puesto SET estado_puesto = 'L', " +
-           "reservado_por_id_usuario = NULL, reserva_expira = NULL, version = version + 1 " +
+           "reservado_por_id_usuario = NULL, reserva_expira = NULL, reserva_token = NULL, reserva_origen = NULL, " +
+           "version = version + 1 " +
            "WHERE estado_puesto = 'T' AND reserva_expira < now()", nativeQuery = true)
     int liberarReservasVencidas();
+
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE puesto SET estado_puesto = 'T', reservado_por_id_usuario = NULL, " +
+           "reserva_token = :token, reserva_origen = :origen, " +
+           "reserva_expira = now() + (:minutos * interval '1 minute'), version = version + 1 " +
+           "WHERE id = :id AND estado_puesto = 'L' AND (\"_estado\" IS NULL OR \"_estado\" <> 'X') " +
+           "AND mapa_x IS NOT NULL AND id_categoria IN " + Edicion.SQL_CATEGORIAS_VENTA_PUBLICA, nativeQuery = true)
+    int apartarPublico(@Param("id") Long id, @Param("token") String token,
+                       @Param("origen") String origen, @Param("minutos") int minutos);
+
+    @Query(value = "SELECT count(*) FROM puesto WHERE estado_puesto = 'T' AND reserva_origen = :origen " +
+           "AND reserva_expira > now()", nativeQuery = true)
+    int apartadosVigentesDe(@Param("origen") String origen);
+
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE puesto SET estado_puesto = 'L', reserva_token = NULL, reserva_origen = NULL, " +
+           "reserva_expira = NULL, version = version + 1 " +
+           "WHERE id = :id AND estado_puesto = 'T' AND reserva_token = :token AND reserva_expira IS NOT NULL",
+           nativeQuery = true)
+    int soltarApartado(@Param("id") Long id, @Param("token") String token);
+
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE puesto SET reserva_expira = NULL, version = version + 1 " +
+           "WHERE id = :id AND estado_puesto = 'T' AND reserva_token = :token AND reserva_expira > now()",
+           nativeQuery = true)
+    int fijarApartado(@Param("id") Long id, @Param("token") String token);
+
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE puesto SET reservado_por_id_usuario = :usuarioId, reserva_token = NULL, " +
+           "reserva_origen = NULL, reserva_expira = NULL, version = version + 1 " +
+           "WHERE id = :id AND estado_puesto = 'T' AND reserva_token = :token", nativeQuery = true)
+    int tomarApartado(@Param("id") Long id, @Param("token") String token, @Param("usuarioId") Long usuarioId);
+
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE puesto SET estado_puesto = 'L', reserva_token = NULL, reserva_origen = NULL, " +
+           "reserva_expira = NULL, version = version + 1 " +
+           "WHERE id = :id AND estado_puesto = 'T' AND reserva_token = :token", nativeQuery = true)
+    int liberarApartado(@Param("id") Long id, @Param("token") String token);
+
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE puesto SET estado_puesto = 'T', reservado_por_id_usuario = NULL, reserva_token = :token, " +
+           "reserva_expira = NULL, version = version + 1 " +
+           "WHERE id = :id AND estado_puesto = 'L' AND (\"_estado\" IS NULL OR \"_estado\" <> 'X')",
+           nativeQuery = true)
+    int reapartarParaSolicitud(@Param("id") Long id, @Param("token") String token);
 
     @Query(value = "SELECT id FROM puesto WHERE estado_puesto = 'T' AND reserva_expira < now()",
            nativeQuery = true)

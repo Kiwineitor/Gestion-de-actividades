@@ -13,19 +13,19 @@ const TODOS = [
     desc: 'Casetas disponibles en el plano, reserva en tiempo real.', color: 'var(--libre)' },
   { p: 'mis-ventas', a: '/mis-ventas', icono: '🧾', titulo: 'Mis ventas',
     desc: 'Tus inscripciones registradas y el total vendido.', color: 'var(--acento)' },
-  { p: 'credenciales', a: '/credenciales', icono: '🪪', titulo: 'Credenciales',
+  { p: 'credenciales', a: '/credenciales', icono: '🪪', titulo: 'Credenciales e impresión',
     desc: 'Preparar y entregar las credenciales de los expositores.', color: '#0d9488' },
   { p: 'credenciales-apoyo', a: '/credenciales-apoyo', icono: '🎫', titulo: 'Credenciales personal apoyo',
     desc: 'Credenciales con QR del personal de apoyo, por dependencia.', color: '#7c3aed' },
-  { p: 'escaner', a: '/escaner', icono: '📷', titulo: 'Escanear credencial',
-    desc: 'Control de entradas y salidas en la puerta.', color: '#ea580c' },
-  { p: 'inscripciones', a: '/inscripciones', icono: '📋', titulo: 'Inscripciones',
+  { p: 'escaner', a: '/ingreso', icono: '🛎️', titulo: 'Recepción e ingreso',
+    desc: 'Confirmar quién llegó a su lugar y controlar la puerta.', color: '#ea580c' },
+  { p: 'inscripciones', a: '/inscripciones', icono: '📋', titulo: 'Detalle de ventas',
     desc: 'Todas las ventas de la actividad, con su detalle y lo adjuntado.', color: '#4f46e5' },
-  { p: 'reportes', a: '/reportes', icono: '📊', titulo: 'Reportes',
+  { p: 'reportes', a: '/reportes', icono: '📊', titulo: 'Reportes y descargas',
     desc: 'Recaudación y ventas por categoría, entidad y vendedor.', color: '#0891b2' },
   { p: 'editor', a: '/editor', icono: '✏️', titulo: 'Editor del plano',
     desc: 'Casetas, colores y distribución sobre el plano.', color: '#7c3aed' },
-  { p: 'categorias', a: '/categorias', icono: '🏷️', titulo: 'Categorías',
+  { p: 'categorias', a: '/categorias', icono: '🏷️', titulo: 'Categorías y precios',
     desc: 'Nombre, color, tamaño y las opciones de precio de cada categoría.', color: '#c026d3' },
   { p: 'usuarios', a: '/usuarios', icono: '👥', titulo: 'Usuarios',
     desc: 'Crear y gestionar los usuarios del sistema.', color: '#db2777' },
@@ -92,10 +92,10 @@ const subtitulo = computed(() => {
   .hola .muted { font-size: 1rem; }
   .grid { grid-template-columns: 1fr; gap: 0.9rem; }
   .acceso {
-    display: flex; align-items: center; gap: 1rem; padding: 1.25rem 1.3rem;
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 1rem; padding: 1.1rem 1.2rem;
     border-top: none; border-left: 5px solid var(--c); min-height: 84px;
   }
-  .icono { font-size: 2.3rem; flex: none; }
+  .icono { font-size: 2.1rem; grid-row: 1 / span 2; }
   .acceso h3 { margin: 0 0 0.2rem; font-size: 1.15rem; }
   .acceso p { font-size: 0.88rem; }
 }

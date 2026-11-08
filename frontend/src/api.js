@@ -26,6 +26,10 @@ export async function apiFetch(ruta, options = {}) {
     auth.logout();
     throw new Error('Sesion expirada');
   }
+  if (res.status === 403) {
+    const data = await res.clone().json().catch(() => ({}));
+    if (data.codigo === 'PRIMER_INGRESO' && !auth.pendientes.length) auth.aplicarPendientes(['TERMINOS']);
+  }
   if (res.status === 423) {
     const data = await res.clone().json().catch(() => ({}));
     if (data.codigo === 'MANTENIMIENTO') {

@@ -7,11 +7,12 @@ import { usePuestosStore } from '../stores/puestos.js';
 import { useAuthStore } from '../stores/auth';
 import UiModal from '../components/UiModal.vue';
 
+const props = defineProps({ soloSolicitudes: { type: Boolean, default: false } });
 const tienda = usePuestosStore();
 const auth = useAuthStore();
 const esAdmin = computed(() => auth.puedeEditarPlano);
 const soloMias = computed(() => !auth.veTodasLasInscripciones);
-const pestaña = ref('activas');
+const pestaña = ref(props.soloSolicitudes ? 'solicitudes' : 'activas');
 const conteos = ref({ activas: 0, canceladas: 0 });
 const inscripciones = ref([]);
 const errorCarga = ref('');
@@ -213,13 +214,14 @@ let quitarOyente = null;
 onMounted(() => {
   tienda.asegurar();
   quitarOyente = tienda.registrarNotificaciones(onNotificacion);
-  cargar();
+  if (props.soloSolicitudes) cargarSolicitudes();
+  else cargar();
 });
 onUnmounted(() => { if (quitarOyente) quitarOyente(); });
 </script>
 
 <template>
-  <div class="pestanas" role="tablist">
+  <div v-if="!soloSolicitudes" class="pestanas desliza-h" role="tablist">
     <button class="pestana" :class="{ activa: pestaña === 'activas' }" role="tab"
             @click="cambiarPestaña('activas')">
       Activas <span class="cuenta">{{ conteos.activas }}</span>
@@ -507,11 +509,12 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
   border-radius: var(--radio-sm); border: 1px solid var(--border); background: var(--panel);
 }
 
-.pestanas { display: flex; gap: 0.4rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); }
+.pestanas { display: flex; gap: 0.4rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+.pestanas::-webkit-scrollbar { display: none; }
 .pestana {
   background: transparent; border: none; border-bottom: 2px solid transparent;
   padding: 0.55rem 0.9rem; font-size: 0.95rem; color: var(--muted); cursor: pointer;
-  display: inline-flex; align-items: center; gap: 0.45rem;
+  display: inline-flex; align-items: center; gap: 0.45rem; flex: none; white-space: nowrap;
 }
 .pestana:hover { color: var(--texto); }
 .pestana.activa { color: var(--acento); border-bottom-color: var(--acento); font-weight: 700; }

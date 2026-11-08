@@ -10,6 +10,9 @@ import RotuloPlano from '../components/RotuloPlano.vue';
 import ModalFondo from '../components/ModalFondo.vue';
 import ModalForma from '../components/ModalForma.vue';
 import CambiarPlano from '../components/CambiarPlano.vue';
+import CategoriaRapida from '../components/CategoriaRapida.vue';
+import NumeroPaso from '../components/NumeroPaso.vue';
+import { nombreEspacio } from '../ui/espacios';
 import { useActividadStore } from '../stores/actividad';
 import { imagenPlanoFeria } from '../ui/imagenPlano';
 import { guardarBlob } from '../ui/descargas';
@@ -28,7 +31,8 @@ import {
 const ESCALA_MIN = 0.2;
 const ESCALA_MAX = 6;
 const CLIC_MAXIMO = 0.008;
-const PASO_REJILLA = 0.02;
+const PASO_REJILLA = 0.01;
+const UMBRAL_GUIA_PX = 5;
 const GIRO_PASO = 15;
 const ESTADOS = [
   { id: 'L', clase: 'libre' },
@@ -65,6 +69,12 @@ const enDiseno = computed(() => modo.value === 'diseno' && puedeDisenar.value);
 
 const rejilla = ref(leerPreferencia('editor.rejilla') === '1');
 watch(rejilla, (v) => guardarPreferencia('editor.rejilla', v ? '1' : '0'));
+const iman = ref(leerPreferencia('editor.iman') === '1');
+watch(iman, (v) => guardarPreferencia('editor.iman', v ? '1' : '0'));
+const guiasActivas = ref(leerPreferencia('editor.guias') !== '0');
+watch(guiasActivas, (v) => guardarPreferencia('editor.guias', v ? '1' : '0'));
+const textoSigueZona = ref(leerPreferencia('editor.textoZona') !== '0');
+watch(textoSigueZona, (v) => guardarPreferencia('editor.textoZona', v ? '1' : '0'));
 const panelCategorias = ref(leerPreferencia('editor.categorias') !== '0');
 watch(panelCategorias, (v) => guardarPreferencia('editor.categorias', v ? '1' : '0'));
 
@@ -98,7 +108,132 @@ const geom = (p) => ({
   id: p.id, mapaX: p.mapaX, mapaY: p.mapaY,
   mapaEscala: p.mapaEscala ?? 1, mapaRotacion: p.mapaRotacion ?? 0,
 });
-const aRejilla = (v) => (rejilla.value ? Math.round(v / PASO_REJILLA) * PASO_REJILLA : v);
+const aRejilla = (v) => (iman.value ? Math.round(v / PASO_REJILLA) * PASO_REJILLA : v);
+const guiasV = ref([]);
+const guiasH = ref([]);
+
+function umbralesGuia() {
+  const r = lienzo.value?.getBoundingClientRect();
+  return r?.width ? { ux: UMBRAL_GUIA_PX / r.width, uy: UMBRAL_GUIA_PX / r.height } : { ux: 0.004, uy: 0.004 };
+}
+
+function candidatosGuia(pinesFuera = new Set(), textoFuera = null) {
+  const xs = [0.5];
+  const ys = [0.5];
+  for (const p of puestos.value) {
+    if (p.mapaX == null || pinesFuera.has(p.id)) continue;
+    xs.push(p.mapaX);
+    ys.push(p.mapaY);
+  }
+  for (const t of textosTienda.textos) {
+    if (t.id === textoFuera) continue;
+    const cx = t.mapaX ?? 0.5;
+    const cy = t.mapaY ?? 0.5;
+    xs.push(cx);
+    ys.push(cy);
+    if (t.fondo && !t.rotacion) {
+      const w = (t.ancho ?? 0.16) / 2;
+      const h = (t.alto ?? 0.08) / 2;
+      xs.push(cx - w, cx + w);
+      ys.push(cy - h, cy + h);
+    }
+  }
+  return { xs, ys };
+}
+
+function mejorAjuste(valores, candidatos, umbral) {
+  let mejor = null;
+  for (const v of valores) {
+    for (const c of candidatos) {
+      const d = c - v;
+      if (Math.abs(d) <= umbral && (!mejor || Math.abs(d) < Math.abs(mejor.delta))) mejor = { delta: d, linea: c };
+    }
+  }
+  return mejor;
+}
+
+function limpiarGuias() {
+  if (guiasV.value.length) guiasV.value = [];
+  if (guiasH.value.length) guiasH.value = [];
+  if (medidor.value) medidor.value = null;
+}
+
+const medidor = ref(null);
+const desplazamiento = ref(null);
+
+function posDe(p) {
+  const base = conPrevia(p);
+  const d = desplazamiento.value;
+  if (!d || !d.ids.has(p.id)) return base;
+  return { ...base, mapaX: acotar(aRejilla(p.mapaX + d.dx)), mapaY: acotar(aRejilla(p.mapaY + d.dy)) };
+}
+const arrastrandoPin = computed(() => Boolean(medidor.value));
+const referencias = computed(() => new Set(medidor.value?.referencias || []));
+const enPct = (d) => `${(Math.abs(d) * 100).toFixed(1).replace('.', ',')} %`;
+
+function ajustarPin(a, xBruto, yBruto) {
+  let x = xBruto;
+  let y = yBruto;
+  const sx = a.fijoX != null && Math.abs(x - a.fijoX) <= a.ux * 1.8 ? { delta: a.fijoX - x, linea: a.fijoX } : mejorAjuste([x], a.cand.xs, a.ux);
+  const sy = a.fijoY != null && Math.abs(y - a.fijoY) <= a.uy * 1.8 ? { delta: a.fijoY - y, linea: a.fijoY } : mejorAjuste([y], a.cand.ys, a.uy);
+  if (sx) x += sx.delta;
+  if (sy) y += sy.delta;
+  a.fijoX = sx?.linea ?? null;
+  a.fijoY = sy?.linea ?? null;
+
+  const enFila = a.otros.filter((o) => Math.abs(o.y - y) <= a.uy * 0.8).sort((p, q) => p.x - q.x);
+  const enColumna = a.otros.filter((o) => Math.abs(o.x - x) <= a.ux * 0.8).sort((p, q) => p.y - q.y);
+  const izquierda = enFila.filter((o) => o.x < x);
+  const derecha = enFila.filter((o) => o.x > x);
+  const arriba = enColumna.filter((o) => o.y < y);
+  const abajo = enColumna.filter((o) => o.y > y);
+
+  let igualX = null;
+  let igualY = null;
+  if (!sx && izquierda.length >= 2) {
+    const [b, c] = izquierda.slice(-2);
+    const objetivo = c.x + (c.x - b.x);
+    if (Math.abs(objetivo - x) <= a.ux) { x = objetivo; igualX = [b, c]; }
+  }
+  if (!sx && !igualX && derecha.length >= 2) {
+    const [c, b] = derecha.slice(0, 2);
+    const objetivo = c.x - (b.x - c.x);
+    if (Math.abs(objetivo - x) <= a.ux) { x = objetivo; igualX = [c, b]; }
+  }
+  if (!sy && arriba.length >= 2) {
+    const [b, c] = arriba.slice(-2);
+    const objetivo = c.y + (c.y - b.y);
+    if (Math.abs(objetivo - y) <= a.uy) { y = objetivo; igualY = [b, c]; }
+  }
+  if (!sy && !igualY && abajo.length >= 2) {
+    const [c, b] = abajo.slice(0, 2);
+    const objetivo = c.y - (b.y - c.y);
+    if (Math.abs(objetivo - y) <= a.uy) { y = objetivo; igualY = [c, b]; }
+  }
+
+  const textos = [];
+  const refs = [];
+  const mismaAltura = sy ? a.otros.find((o) => Math.abs(o.y - y) < 1e-6) : null;
+  const mismaColumna = sx ? a.otros.find((o) => Math.abs(o.x - x) < 1e-6) : null;
+  if (mismaAltura) { textos.push(`↔ Misma altura que ${mismaAltura.etq}`); refs.push(mismaAltura.id); }
+  else if (sy) textos.push('↔ Alineado en horizontal');
+  if (mismaColumna) { textos.push(`↕ Misma columna que ${mismaColumna.etq}`); refs.push(mismaColumna.id); }
+  else if (sx) textos.push('↕ Alineado en vertical');
+  if (igualX) { textos.push(`⇔ Igual separación que ${igualX[0].etq} y ${igualX[1].etq}`); refs.push(igualX[0].id, igualX[1].id); }
+  if (igualY) { textos.push(`⇕ Igual separación que ${igualY[0].etq} y ${igualY[1].etq}`); refs.push(igualY[0].id, igualY[1].id); }
+  const vi = enFila.filter((o) => o.x < x).pop();
+  const vd = enFila.find((o) => o.x > x);
+  if (vi) { textos.push(`← ${enPct(x - vi.x)} de ${vi.etq}`); refs.push(vi.id); }
+  if (vd) { textos.push(`→ ${enPct(vd.x - x)} de ${vd.etq}`); refs.push(vd.id); }
+  if (!textos.length) textos.push(`Libre · X ${enPct(x)} · Y ${enPct(y)}`);
+
+  return {
+    x, y,
+    v: sx ? [sx.linea] : igualX ? [x] : [],
+    h: sy ? [sy.linea] : igualY ? [y] : [],
+    medidor: { x, y, textos, referencias: refs, alineado: Boolean(sx || sy || igualX || igualY) },
+  };
+}
 const acotar = (v) => Math.min(1, Math.max(0, v));
 
 const historial = ref([]);
@@ -221,6 +356,59 @@ async function cambiarCategoria(evento) {
 }
 
 const Categorias = defineAsyncComponent(() => import('./Categorias.vue'));
+const catRapida = ref(null);
+const previa = ref(null);
+const avisoColocar = ref(null);
+const unoEspacio = computed(() => (feria.value?.tipoEspacio ? nombreEspacio(feria.value) : 'puesto'));
+const variosEspacio = computed(() => (feria.value?.tipoEspacio ? nombreEspacio(feria.value, true) : 'puestos'));
+
+function conPrevia(p) {
+  const v = previa.value;
+  if (!v || v.categoriaId == null || v.categoriaId !== p.categoriaId) return p;
+  return { ...p, color: v.color, forma: v.forma, tamanoMapa: v.tamanoMapa, mapaProporcion: v.mapaProporcion };
+}
+
+const fantasmas = computed(() => {
+  const v = previa.value;
+  if (!v || v.categoriaId != null) return [];
+  const n = 4;
+  const separacion = v.tamanoMapa * 1.7;
+  return Array.from({ length: n }, (_, i) => ({
+    id: `fantasma-${i}`, mapaX: 0.5 + (i - (n - 1) / 2) * separacion, mapaY: 0.5, tamanoMapa: v.tamanoMapa,
+    mapaProporcion: v.mapaProporcion, mapaEscala: 1, mapaRotacion: 0, forma: v.forma, color: v.color, codigo: String(i + 1),
+  }));
+});
+
+const faltanColocar = computed(() => (avisoColocar.value && catSel.value === avisoColocar.value.id ? porColocar.value.length : 0));
+
+function abrirCategoria(id = null) {
+  limpiarSeleccion();
+  catRapida.value = { id };
+}
+
+function cerrarCategoriaRapida() {
+  catRapida.value = null;
+  previa.value = null;
+}
+
+async function categoriaGuardada(c) {
+  catRapida.value = null;
+  previa.value = null;
+  await tienda.recargar?.();
+  if (c.nueva) {
+    catSel.value = c.id;
+    herramienta.value = 'colocar';
+    panelCategorias.value = true;
+    avisoColocar.value = { id: c.id, nombre: c.nombre };
+  } else {
+    toast(`«${c.nombre}» actualizada ✓`, 'ok', 1800);
+  }
+}
+
+function elegirCategoria(id) {
+  catSel.value = id;
+  herramienta.value = 'colocar';
+}
 const modalFondo = ref(false);
 const cajonCategorias = ref(false);
 const puedeCategorias = computed(() => auth.puedeEditarPlano || permisos.puedeVer('categorias'));
@@ -241,15 +429,15 @@ const ayuda = computed(() => {
   if (!enDiseno.value) return 'Arrastra el mapa para moverte · clic en un puesto para ver sus datos';
   if (herramienta.value === 'texto') return 'Haz clic en el mapa para agregar texto';
   if (herramienta.value === 'zona') return 'Haz clic en el mapa para agregar una zona con recuadro (ej. Escenario, Patio de comidas)';
-  if (textoSel.value?.fondo) return 'Arrastra la zona para moverla · la esquina blanca cambia su tamaño · se guarda sola y el público la ve al instante';
-  if (textoSel.value) return 'Arrastra el texto para moverlo · se guarda solo y el público lo ve al instante';
+  if (textoSel.value?.fondo) return 'Arrastra para mover · esquina blanca: tamaño (Shift mantiene la proporción) · círculo de arriba: girar · flechas: mover fino · Ctrl+D duplica';
+  if (textoSel.value) return 'Arrastra para mover · círculo de arriba: girar · flechas: mover fino · Ctrl+D duplica';
   if (herramienta.value === 'colocar') {
     return activa.value
       ? `Clic coloca un puesto de ${activa.value.nombre}; arrastra para colocar una fila`
       : 'Elige una categoría para colocar puestos';
   }
   if (herramienta.value === 'seleccionar') return 'Arrastra para seleccionar varios puestos';
-  return 'Arrastra un puesto para moverlo · Shift + arrastre selecciona varios';
+  return 'Arrastra para mover: aparecen guías al alinear (Alt = sin guías) · Shift + arrastre selecciona varios · flechas: mover fino';
 });
 
 watch(modo, () => {
@@ -371,7 +559,12 @@ function onPinDown(e, p) {
   else if (!seleccion.value.has(p.id)) seleccion.value = new Set([p.id]);
   principalId.value = p.id;
   const q = norm(e);
-  arrastre = { antes: seleccionadas.value.map(geom), x0: q.x, y0: q.y, movido: false, dx: 0, dy: 0 };
+  arrastre = {
+    antes: seleccionadas.value.map(geom), x0: q.x, y0: q.y, movido: false, dx: 0, dy: 0,
+    ids: new Set(seleccion.value), ref: geom(p), cand: candidatosGuia(new Set(seleccion.value)), ...umbralesGuia(),
+    otros: puestos.value.filter((o) => o.mapaX != null && !seleccion.value.has(o.id)).map((o) => ({ id: o.id, x: o.mapaX, y: o.mapaY, codigo: o.codigo, etq: `${o.categoria || ''} ${o.codigo}`.trim() })),
+    fijoX: null, fijoY: null,
+  };
 }
 
 function onAsaDown(e) {
@@ -393,7 +586,11 @@ function onTextoDown(e, t) {
   principalId.value = null;
   textoSelId.value = t.id;
   const q = norm(e);
-  arrastreTexto = { id: t.id, x0: q.x, y0: q.y, base: { x: t.mapaX ?? 0.5, y: t.mapaY ?? 0.5 }, movido: false };
+  arrastreTexto = {
+    id: t.id, x0: q.x, y0: q.y, base: { x: t.mapaX ?? 0.5, y: t.mapaY ?? 0.5 }, movido: false,
+    medio: t.fondo && !t.rotacion ? { w: (t.ancho ?? 0.16) / 2, h: (t.alto ?? 0.08) / 2 } : { w: 0, h: 0 },
+    cand: candidatosGuia(new Set(), t.id), ...umbralesGuia(),
+  };
 }
 
 function onAsaZonaDown(e) {
@@ -401,16 +598,62 @@ function onAsaZonaDown(e) {
   if (!t?.fondo) return;
   e.stopPropagation();
   capturar(e);
-  redimZona = { id: t.id, cx: t.mapaX ?? 0.5, cy: t.mapaY ?? 0.5 };
+  redimZona = {
+    id: t.id, cx: t.mapaX ?? 0.5, cy: t.mapaY ?? 0.5, rot: Number(t.rotacion || 0), aspecto: planoTienda.aspecto || 1,
+    ancho0: t.ancho ?? 0.16, alto0: t.alto ?? 0.08, tamano0: t.tamano ?? 0.02,
+  };
+}
+
+let giroTexto = null;
+
+function onAsaGiroDown(e) {
+  const t = textoSel.value;
+  if (!t) return;
+  e.stopPropagation();
+  capturar(e);
+  giroTexto = { id: t.id, cx: t.mapaX ?? 0.5, cy: t.mapaY ?? 0.5, aspecto: planoTienda.aspecto || 1 };
 }
 
 function onMove(e) {
+  if (giroTexto) {
+    const q = norm(e);
+    const t = textosTienda.textos.find((x) => x.id === giroTexto.id);
+    if (t) {
+      const vx = q.x - giroTexto.cx;
+      const vy = (q.y - giroTexto.cy) * giroTexto.aspecto;
+      let grados = (Math.atan2(vx, -vy) * 180) / Math.PI;
+      if (e.shiftKey) grados = Math.round(grados / GIRO_PASO) * GIRO_PASO;
+      else if (!e.altKey) {
+        const cercano = Math.round(grados / GIRO_PASO) * GIRO_PASO;
+        if (Math.abs(cercano - grados) < 4) grados = cercano;
+      }
+      t.rotacion = Math.round(((grados + 540) % 360) - 180);
+    }
+    return;
+  }
   if (redimZona) {
     const q = norm(e);
     const t = textosTienda.textos.find((x) => x.id === redimZona.id);
     if (t) {
-      t.ancho = Math.min(1, Math.max(0.02, aRejilla(Math.abs(q.x - redimZona.cx) * 2)));
-      t.alto = Math.min(1, Math.max(0.02, aRejilla(Math.abs(q.y - redimZona.cy) * 2)));
+      const r = redimZona;
+      const vx = q.x - r.cx;
+      const vy = (q.y - r.cy) * r.aspecto;
+      const a = (-r.rot * Math.PI) / 180;
+      const lx = vx * Math.cos(a) - vy * Math.sin(a);
+      const ly = vx * Math.sin(a) + vy * Math.cos(a);
+      let ancho = Math.abs(lx) * 2;
+      let alto = (Math.abs(ly) * 2) / r.aspecto;
+      if (e.shiftKey) {
+        const f = Math.max(ancho / r.ancho0, alto / r.alto0);
+        ancho = r.ancho0 * f;
+        alto = r.alto0 * f;
+      }
+      t.ancho = Math.min(1, Math.max(0.02, aRejilla(ancho)));
+      t.alto = Math.min(1, Math.max(0.02, aRejilla(alto)));
+      if (textoSigueZona.value) {
+        const f = Math.min(t.ancho / r.ancho0, t.alto / r.alto0);
+        t.tamano = Math.min(0.2, Math.max(0.004, r.tamano0 * f));
+      }
     }
     return;
   }
@@ -421,8 +664,19 @@ function onMove(e) {
     if (Math.abs(dx) + Math.abs(dy) > 0.0005) arrastreTexto.movido = true;
     const t = textosTienda.textos.find((x) => x.id === arrastreTexto.id);
     if (t) {
-      t.mapaX = acotar(aRejilla(arrastreTexto.base.x + dx));
-      t.mapaY = acotar(aRejilla(arrastreTexto.base.y + dy));
+      let nx = arrastreTexto.base.x + dx;
+      let ny = arrastreTexto.base.y + dy;
+      if (guiasActivas.value && !iman.value && !e.altKey) {
+        const { w, h } = arrastreTexto.medio;
+        const sx = mejorAjuste([nx, nx - w, nx + w], arrastreTexto.cand.xs, arrastreTexto.ux);
+        const sy = mejorAjuste([ny, ny - h, ny + h], arrastreTexto.cand.ys, arrastreTexto.uy);
+        if (sx) nx += sx.delta;
+        if (sy) ny += sy.delta;
+        guiasV.value = sx ? [sx.linea] : [];
+        guiasH.value = sy ? [sy.linea] : [];
+      } else limpiarGuias();
+      t.mapaX = acotar(aRejilla(nx));
+      t.mapaY = acotar(aRejilla(ny));
     }
     return;
   }
@@ -453,26 +707,45 @@ function onMove(e) {
   }
   if (arrastre) {
     const q = norm(e);
-    const dx = q.x - arrastre.x0;
-    const dy = q.y - arrastre.y0;
+    let dx = q.x - arrastre.x0;
+    let dy = q.y - arrastre.y0;
     if (Math.abs(dx) + Math.abs(dy) > 0.0005) arrastre.movido = true;
+    if (arrastre.ref?.mapaX != null && arrastre.movido) {
+      if (guiasActivas.value && !iman.value && !e.altKey) {
+        const ajuste = ajustarPin(arrastre, arrastre.ref.mapaX + dx, arrastre.ref.mapaY + dy);
+        dx = ajuste.x - arrastre.ref.mapaX;
+        dy = ajuste.y - arrastre.ref.mapaY;
+        guiasV.value = ajuste.v;
+        guiasH.value = ajuste.h;
+        medidor.value = ajuste.medidor;
+      } else {
+        if (guiasV.value.length) guiasV.value = [];
+        if (guiasH.value.length) guiasH.value = [];
+        const x = acotar(aRejilla(arrastre.ref.mapaX + dx));
+        const y = acotar(aRejilla(arrastre.ref.mapaY + dy));
+        medidor.value = { x, y, textos: [`${iman.value ? '🧲 Imán · ' : 'Libre · '}X ${enPct(x)} · Y ${enPct(y)}`], referencias: [], alineado: false };
+      }
+    }
     arrastre.dx = dx;
     arrastre.dy = dy;
-    for (const g of arrastre.antes) {
-      const el = pinEls.get(g.id);
-      if (!el) continue;
-      el.style.left = `${acotar(aRejilla(g.mapaX + dx)) * 100}%`;
-      el.style.top = `${acotar(aRejilla(g.mapaY + dy)) * 100}%`;
-    }
+    if (arrastre.movido) desplazamiento.value = { ids: arrastre.ids, dx, dy };
   }
 }
 
 function onUp() {
+  limpiarGuias();
+  if (giroTexto) {
+    const { id } = giroTexto;
+    giroTexto = null;
+    const t = textosTienda.textos.find((x) => x.id === id);
+    if (t) editarTexto({ rotacion: t.rotacion }, id);
+    return;
+  }
   if (redimZona) {
     const { id } = redimZona;
     redimZona = null;
     const t = textosTienda.textos.find((x) => x.id === id);
-    if (t) editarTexto({ ancho: t.ancho, alto: t.alto }, id);
+    if (t) editarTexto({ ancho: t.ancho, alto: t.alto, tamano: t.tamano }, id);
     return;
   }
   if (arrastreTexto) {
@@ -509,6 +782,7 @@ function onUp() {
       registrar(arrastre.antes);
     }
     arrastre = null;
+    desplazamiento.value = null;
     return;
   }
   if (caja.activo) {
@@ -577,18 +851,105 @@ const asaEstilo = computed(() => {
   };
 });
 
+function puntoRotado(t, dx, dy) {
+  const aspecto = planoTienda.aspecto || 1;
+  const a = ((t.rotacion || 0) * Math.PI) / 180;
+  const ox = dx * Math.cos(a) - dy * Math.sin(a);
+  const oy = dx * Math.sin(a) + dy * Math.cos(a);
+  return { left: `${((t.mapaX ?? 0.5) + ox) * 100}%`, top: `${((t.mapaY ?? 0.5) + oy / aspecto) * 100}%` };
+}
+
 const asaZona = computed(() => {
   const t = textoSel.value;
-  if (!enDiseno.value || !t?.fondo || t.rotacion) return null;
-  return {
-    left: `${((t.mapaX ?? 0.5) + (t.ancho ?? 0.16) / 2) * 100}%`,
-    top: `${((t.mapaY ?? 0.5) + (t.alto ?? 0.08) / 2) * 100}%`,
-    '--asa': 'calc(var(--mundo, 1200) * 0.012)',
-  };
+  if (!enDiseno.value || !t?.fondo) return null;
+  const aspecto = planoTienda.aspecto || 1;
+  return puntoRotado(t, (t.ancho ?? 0.16) / 2, ((t.alto ?? 0.08) / 2) * aspecto);
 });
 
+const asaGiro = computed(() => {
+  const t = textoSel.value;
+  if (!enDiseno.value || !t) return null;
+  const aspecto = planoTienda.aspecto || 1;
+  const medio = t.fondo ? ((t.alto ?? 0.08) / 2) * aspecto : (t.tamano ?? 0.02) * 0.8;
+  return puntoRotado(t, 0, -(medio + 0.022));
+});
+
+const portaTexto = ref(null);
+let ultimoCopiado = 'puestos';
+let vecesPegadoTexto = 0;
+
+function copiarTexto(silencioso = false) {
+  const t = textoSel.value;
+  if (!t) return;
+  portaTexto.value = {
+    contenido: t.contenido, mapaX: t.mapaX ?? 0.5, mapaY: t.mapaY ?? 0.5, tamano: t.tamano, color: t.color,
+    colorBorde: t.colorBorde, grosorBorde: t.grosorBorde, rotacion: t.rotacion || 0,
+    fondo: t.fondo || '', ancho: t.ancho, alto: t.alto,
+  };
+  ultimoCopiado = 'texto';
+  vecesPegadoTexto = 0;
+  if (!silencioso) toast(t.fondo ? 'Zona copiada · Ctrl+V para pegar' : 'Texto copiado · Ctrl+V para pegar', 'info', 1600);
+}
+
+async function pegarTexto() {
+  const c = portaTexto.value;
+  if (!c) return;
+  vecesPegadoTexto++;
+  const desplazamiento = 0.025 * vecesPegadoTexto;
+  try {
+    const cuerpo = { ...c, mapaX: acotar(c.mapaX + desplazamiento), mapaY: acotar(c.mapaY + desplazamiento) };
+    const r = await consultarPlano('/api/app/plano-textos', { method: 'POST', body: JSON.stringify(cuerpo) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(d.mensaje || 'No se pudo pegar', 'error'); return; }
+    textosTienda.aplicar(d);
+    seleccion.value = new Set();
+    textoSelId.value = d.id;
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function duplicarTexto() {
+  copiarTexto(true);
+  await pegarTexto();
+}
+
+function moverTexto(dx, dy) {
+  const t = textoSel.value;
+  if (!t) return;
+  editarTexto({ mapaX: acotar((t.mapaX ?? 0.5) + dx), mapaY: acotar((t.mapaY ?? 0.5) + dy) });
+}
+
+function girarTexto(delta) {
+  const t = textoSel.value;
+  if (!t) return;
+  editarTexto({ rotacion: Math.round((((Number(t.rotacion || 0) + delta) + 540) % 360) - 180) });
+}
+
+const pct = (v, def) => Number(((v ?? def) * 100).toFixed(2));
+
 const escalaSeleccion = computed(() => principal.value?.mapaEscala ?? 1);
+const giroSeleccion = computed(() => principal.value?.mapaRotacion ?? 0);
 let antesEscala = null;
+let temporizadorEscala = null;
+
+function escalaNumerica(porcentaje) {
+  if (!antesEscala) iniciarEscala();
+  fijarEscala(porcentaje / 100);
+  clearTimeout(temporizadorEscala);
+  temporizadorEscala = setTimeout(terminarEscala, 700);
+}
+
+function giroNumerico(grados) {
+  const ids = [...seleccion.value];
+  if (!ids.length) return;
+  conHistoria(ids, () => {
+    for (const p of seleccionadas.value) {
+      p.mapaRotacion = normalizarGiro(grados);
+      marcarSucio(p.id);
+    }
+  });
+}
 
 function iniciarEscala() {
   antesEscala = seleccionadas.value.map(geom);
@@ -1222,8 +1583,18 @@ function onTecla(e) {
   if (e.ctrlKey && tecla === 'z') { e.preventDefault(); if (e.shiftKey) rehacer(); else deshacer(); }
   else if (e.ctrlKey && tecla === 'y') { e.preventDefault(); rehacer(); }
   else if (e.ctrlKey && tecla === 's') { e.preventDefault(); guardar(); }
-  else if (e.ctrlKey && tecla === 'c') { e.preventDefault(); copiarSeleccion(); }
-  else if (e.ctrlKey && tecla === 'v') { e.preventDefault(); pegar(); }
+  else if (e.ctrlKey && tecla === 'c') { e.preventDefault(); if (textoSel.value && !seleccion.value.size) copiarTexto(); else { copiarSeleccion(); ultimoCopiado = 'puestos'; } }
+  else if (e.ctrlKey && tecla === 'v') { e.preventDefault(); if (ultimoCopiado === 'texto' && portaTexto.value) pegarTexto(); else pegar(); }
+  else if (e.ctrlKey && tecla === 'd') { e.preventDefault(); if (textoSel.value && !seleccion.value.size) duplicarTexto(); else if (seleccion.value.size) { copiarSeleccion(); ultimoCopiado = 'puestos'; pegar(); } }
+  else if (textoSel.value && !seleccion.value.size && e.key.startsWith('Arrow')) {
+    e.preventDefault();
+    if (e.key === 'ArrowLeft') moverTexto(-paso, 0);
+    else if (e.key === 'ArrowRight') moverTexto(paso, 0);
+    else if (e.key === 'ArrowUp') moverTexto(0, -paso);
+    else moverTexto(0, paso);
+  }
+  else if (textoSel.value && !seleccion.value.size && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); borrarTexto(); }
+  else if (textoSel.value && !seleccion.value.size && !e.ctrlKey && tecla === 'r') { e.preventDefault(); girarTexto(e.shiftKey ? -GIRO_PASO : GIRO_PASO); }
   else if (!e.ctrlKey && !e.altKey && tecla === 'r' && seleccion.value.size) {
     e.preventDefault();
     girar(e.shiftKey ? -GIRO_PASO : GIRO_PASO);
@@ -1269,6 +1640,7 @@ onUnmounted(() => {
   window.removeEventListener('beforeunload', avisarSinGuardar);
   clearTimeout(temporizadorTexto);
   clearTimeout(temporizadorPagados);
+  clearTimeout(temporizadorEscala);
   if (pendientesTexto.size) enviarTextos();
   soltarProteccionTextos();
   if (quitarGuardia) quitarGuardia();
@@ -1306,8 +1678,12 @@ onUnmounted(() => {
       </div>
 
       <div class="grupo">
+        <button class="herr" :class="{ on: guiasActivas }" :aria-pressed="guiasActivas" @click="guiasActivas = !guiasActivas"
+                title="Al mover, aparecen líneas cuando algo queda alineado con otro elemento o con el centro, y se ajusta solo. Mantén Alt para mover sin ajuste">📐 Guías</button>
         <button class="herr" :class="{ on: rejilla }" :aria-pressed="rejilla" @click="rejilla = !rejilla"
-                title="Muestra una cuadrícula y hace que puestos, textos y zonas se acomoden a ella al moverlos">⊞ Rejilla e imán</button>
+                title="Muestra una cuadrícula de referencia (no obliga a nada)">⊞ Cuadrícula</button>
+        <button class="herr" :class="{ on: iman }" :aria-pressed="iman" @click="iman = !iman"
+                title="Obliga a que todo caiga sobre la cuadrícula al moverlo (pasos de 1%)">🧲 Imán</button>
         <button class="herr" :class="{ on: numerosVisibles }" :aria-pressed="numerosVisibles"
                 @click="numerosVisibles = !numerosVisibles" title="Mostrar el número de cada puesto"># Números</button>
       </div>
@@ -1355,51 +1731,80 @@ onUnmounted(() => {
 
           <div v-for="p in colocadas" :key="p.id"
                :ref="(el) => (el ? pinEls.set(p.id, el) : pinEls.delete(p.id))"
-               class="pin" :class="[`forma-${p.forma || 'cuadrado'}`, `est-${p.estado}`, { sel: seleccion.has(p.id), pagado: p.estado === 'O' && pagados.has(p.id) }]"
-               :style="{ ...estiloPin(p), background: p.color || '#94a3b8' }"
+               class="pin" :class="[`forma-${conPrevia(p).forma || 'cuadrado'}`, `est-${p.estado}`, { sel: seleccion.has(p.id), pagado: p.estado === 'O' && pagados.has(p.id), previa: previa && previa.categoriaId === p.categoriaId, referencia: referencias.has(p.id) }]"
+               :style="{ ...estiloPin(posDe(p)), background: conPrevia(p).color || '#94a3b8' }"
                :title="`${p.categoria} ${p.codigo} · ${ETIQUETA_ESTADO[p.estado] || ''}`"
                @pointerdown="onPinDown($event, p)">
             <span class="num-caseta">{{ p.codigo }}</span>
             <span v-if="p.estado !== 'L'" class="marca-estado"></span>
           </div>
 
+          <div v-for="g in fantasmas" :key="g.id" class="pin fantasma" :class="`forma-${g.forma || 'cuadrado'}`"
+               :style="{ ...estiloPin(g), background: g.color }"><span class="num-caseta">{{ g.codigo }}</span></div>
+          <span v-if="fantasmas.length" class="etiqueta-previa" :style="{ left: '50%', top: `calc(50% + ${(fantasmas[0].tamanoMapa * (fantasmas[0].mapaProporcion || 1) / (planoTienda.aspecto || 1)) * 60 + 2}%)` }">Así se verán</span>
+
           <RotuloPlano v-for="t in textosTienda.textos" :key="t.id" :texto="t"
                        :seleccionado="textoSelId === t.id"
                        :class="{ tocable: enDiseno && herramienta !== 'colocar' }"
                        @pointerdown="onTextoDown($event, t)" />
 
-          <div v-if="asaEstilo" class="asa" :style="asaEstilo" title="Arrastra para cambiar el tamaño"
+          <div v-if="asaEstilo && !arrastrandoPin" class="asa" :style="asaEstilo" title="Arrastra para cambiar el tamaño"
                @pointerdown="onAsaDown"></div>
-          <div v-if="asaZona" class="asa" :style="asaZona" title="Arrastra para cambiar el tamaño de la zona"
+          <div v-if="asaZona" class="asa asa-fija" :style="asaZona" title="Arrastra para cambiar el tamaño (Shift mantiene la proporción)"
                @pointerdown="onAsaZonaDown"></div>
+          <div v-if="asaGiro" class="asa-giro" :style="asaGiro" title="Arrastra para girar (se ajusta cada 15°; Alt = libre)"
+               @pointerdown="onAsaGiroDown">⟳</div>
+          <div v-if="medidor" class="medidor" :class="{ alineado: medidor.alineado, izquierda: medidor.x > 0.68, abajo: medidor.y < 0.12 }" :style="{ left: `${medidor.x * 100}%`, top: `${medidor.y * 100}%` }">
+            <span v-for="t in medidor.textos" :key="t">{{ t }}</span>
+          </div>
+          <div v-for="x in guiasV" :key="`v${x}`" class="guia-alineacion vertical" :style="{ left: `${x * 100}%` }"></div>
+          <div v-for="y in guiasH" :key="`h${y}`" class="guia-alineacion horizontal" :style="{ top: `${y * 100}%` }"></div>
           <div v-if="lineaActiva" ref="guiaEl" class="guia"></div>
           <div v-if="cajaActiva" ref="cajaEl" class="caja"></div>
         </div>
       </PanZoom>
 
-      <p class="ayuda">{{ ayuda }}</p>
+      <p v-if="!(faltanColocar && herramienta === 'colocar')" class="ayuda">{{ ayuda }}</p>
+      <div v-else class="aviso-colocar flotante" role="status">
+        <span class="muestra grande" :class="`forma-${activa?.forma || 'cuadrado'}`" :style="{ background: activa?.color || '#94a3b8' }"></span>
+        <div>
+          <strong>«{{ avisoColocar.nombre }}» lista · faltan {{ faltanColocar }} {{ faltanColocar === 1 ? unoEspacio : variosEspacio }} por colocar</strong>
+          <span>Toca el plano para poner {{ unoEspacio.endsWith('a') ? 'una' : 'uno' }}, o arrastra una línea para poner una fila de {{ Math.min(porLinea, faltanColocar) }}.</span>
+        </div>
+        <button type="button" class="cerrar" aria-label="Entendido" @click="avisoColocar = null">✕</button>
+      </div>
 
-      <section v-if="enDiseno && herramienta === 'colocar'" class="flotante panel-categorias" :class="{ plegado: !panelCategorias }">
-        <button class="cabecera" @click="panelCategorias = !panelCategorias">
-          <span>Categorías</span><span class="chevron">{{ panelCategorias ? '▾' : '▸' }}</span>
-        </button>
+      <section v-if="enDiseno && !catRapida" class="flotante panel-categorias" :class="{ plegado: !panelCategorias }">
+        <div class="cabecera">
+          <button type="button" class="plegar" @click="panelCategorias = !panelCategorias">
+            <span>Categorías</span><span class="chevron">{{ panelCategorias ? '▾' : '▸' }}</span>
+          </button>
+          <button v-if="puedeCategorias" type="button" class="btn btn-sm btn-primario nueva" title="Crear una categoría nueva" @click="abrirCategoria()">＋ Nueva</button>
+        </div>
         <template v-if="panelCategorias">
-          <ul class="lista-cat">
-            <li v-for="c in categorias" :key="c.id">
-              <button :class="{ on: catSel === c.id }" @click="catSel = c.id">
+          <p v-if="!categorias.length" class="vacia">Aún no hay categorías. Crea la primera (ej.: Mesa VIP, Mesa general) y luego colócalas en el plano.</p>
+          <ul v-else class="lista-cat desliza">
+            <li v-for="c in categorias" :key="c.id" :class="{ on: catSel === c.id && herramienta === 'colocar' }">
+              <button class="elegir" :title="`Colocar ${c.nombre} en el plano`" @click="elegirCategoria(c.id)">
                 <span class="muestra" :class="`forma-${c.forma}`" :style="{ background: c.color || '#94a3b8' }"></span>
                 <span class="nom">{{ c.nombre }}</span>
-                <span class="cuenta">{{ c.puestas }}/{{ c.total }}</span>
+                <span class="cuenta" :class="{ completa: c.puestas === c.total }" :title="`${c.puestas} de ${c.total} colocados`">{{ c.puestas }}/{{ c.total }}</span>
               </button>
+              <button v-if="puedeCategorias" class="editar" :title="`Editar ${c.nombre}: precio, tamaño, color…`" :aria-label="`Editar ${c.nombre}`" @click="abrirCategoria(c.id)">✏️</button>
             </li>
           </ul>
-          <div class="pie-cat">
+          <div v-if="herramienta === 'colocar' && activa" class="pie-cat">
             <label class="mini">Por fila <input type="number" min="1" max="60" v-model.number="porLinea" /></label>
-            <button class="btn btn-sm" :disabled="ocupado || !activa" @click="agregarCaseta">＋ 1 puesto</button>
+            <button class="btn btn-sm" :disabled="ocupado" @click="agregarCaseta">＋ 1 {{ unoEspacio }}</button>
           </div>
-          <button v-if="puedeCategorias" type="button" class="enlace" @click="cajonCategorias = true">Categorías y precios →</button>
+          <button v-if="puedeCategorias" type="button" class="enlace" @click="cajonCategorias = true">Todas las categorías y precios →</button>
         </template>
       </section>
+
+      <CategoriaRapida v-if="catRapida" :key="catRapida.id ?? 'nueva'" :edicion="edicion" :categoria-id="catRapida.id"
+                       :uno="unoEspacio" :varios="variosEspacio" :registra-personas="feria ? feria.registraPersonas !== false : true"
+                       @previa="previa = $event" @guardada="categoriaGuardada" @cerrar="cerrarCategoriaRapida"
+                       @avanzado="cerrarCategoriaRapida(); cajonCategorias = true" />
 
       <div class="leyenda flotante">
         <span v-for="e in ESTADOS" :key="e.id" class="item">
@@ -1410,13 +1815,15 @@ onUnmounted(() => {
 
       <div v-if="enDiseno && seleccion.size" class="flotante barra-seleccion">
         <span class="cuenta-sel">{{ seleccion.size }} sel.</span>
-        <label class="deslizador" title="Escala visual respecto al tamaño de su categoría">
-          <input type="range" :min="ESCALA_MIN" :max="ESCALA_MAX" step="0.05" :value="escalaSeleccion"
-                 @pointerdown="iniciarEscala" @input="fijarEscala($event.target.value)" @change="terminarEscala" />
-          <span>{{ Math.round(escalaSeleccion * 100) }}%</span>
+        <label class="numero-etiquetado" title="Tamaño respecto al de su categoría">
+          <span>Tamaño</span>
+          <NumeroPaso compacto :model-value="Math.round(escalaSeleccion * 100)" :min="ESCALA_MIN * 100" :max="ESCALA_MAX * 100" :paso="5" unidad="%"
+                      etiqueta="Tamaño" @update:model-value="escalaNumerica" />
         </label>
-        <button class="herr icono" @click="girar(-GIRO_PASO)" title="Girar a la izquierda (Shift+R)">⟲</button>
-        <button class="herr icono" @click="girar(GIRO_PASO)" title="Girar a la derecha (R)">⟳</button>
+        <label class="numero-etiquetado" title="Giro en grados (R / Shift+R gira 15°)">
+          <span>Giro</span>
+          <NumeroPaso compacto :model-value="giroSeleccion" :min="0" :max="359" :paso="15" unidad="°" etiqueta="Giro" @update:model-value="giroNumerico" />
+        </label>
         <button class="herr icono" @click="enderezar" title="Enderezar">⊾</button>
         <div class="menu-contenedor">
           <button class="herr icono" :class="{ on: menuMas }" @click="menuMas = !menuMas" title="Más acciones">⋮</button>
@@ -1449,25 +1856,27 @@ onUnmounted(() => {
         </div>
         <input ref="entradaTexto" class="control" :value="contenidoEdit" maxlength="200" placeholder="Escribe el texto"
                @input="escribirTexto($event.target.value)" @blur="terminarTexto" />
-        <label class="fila-control">
-          <span>Tamaño</span>
-          <input type="range" min="5" max="120" :value="aMilesimas(textoSel.tamano)"
-                 @input="editarTexto({ tamano: Number($event.target.value) / 1000 })" />
-        </label>
-        <label class="fila-control">
+        <div class="fila-control">
+          <span>Letra</span>
+          <NumeroPaso compacto :model-value="pct(textoSel.tamano, 0.02)" :min="0.4" :max="20" :paso="0.1" :decimales="2" unidad="%"
+                      etiqueta="Tamaño de letra" @update:model-value="editarTexto({ tamano: $event / 100 })" />
+        </div>
+        <div class="fila-control">
           <span>Giro</span>
-          <input type="range" min="-180" max="180" :value="textoSel.rotacion || 0"
-                 @input="editarTexto({ rotacion: Number($event.target.value) })" />
-        </label>
+          <NumeroPaso compacto :model-value="textoSel.rotacion || 0" :min="-180" :max="180" :paso="1" unidad="°"
+                      etiqueta="Giro" @update:model-value="editarTexto({ rotacion: $event })" />
+          <button type="button" class="herr icono" title="Girar 15° a la izquierda (Shift+R)" @click="girarTexto(-GIRO_PASO)">⟲</button>
+          <button type="button" class="herr icono" title="Girar 15° a la derecha (R)" @click="girarTexto(GIRO_PASO)">⟳</button>
+        </div>
         <div class="fila-control colores">
           <label>Color <input type="color" :value="textoSel.color || '#111827'" @input="editarTexto({ color: $event.target.value })" /></label>
           <label>Borde <input type="color" :value="textoSel.colorBorde || '#ffffff'" @input="editarTexto({ colorBorde: $event.target.value })" /></label>
         </div>
-        <label class="fila-control">
-          <span>Grosor</span>
-          <input type="range" min="0" max="400" :value="aMilesimas(textoSel.grosorBorde)"
-                 @input="editarTexto({ grosorBorde: Number($event.target.value) / 1000 })" />
-        </label>
+        <div v-if="!textoSel.fondo" class="fila-control">
+          <span>Borde</span>
+          <NumeroPaso compacto :model-value="Math.round((textoSel.grosorBorde ?? 0.15) * 100)" :min="0" :max="40" :paso="1"
+                      etiqueta="Grosor del borde" @update:model-value="editarTexto({ grosorBorde: $event / 100 })" />
+        </div>
         <label class="check">
           <input type="checkbox" :checked="Boolean(textoSel.fondo)"
                  @change="editarTexto($event.target.checked ? { fondo: '#7c5cff', ancho: textoSel.ancho || 0.16, alto: textoSel.alto || 0.08 } : { fondo: '' })" />
@@ -1477,16 +1886,22 @@ onUnmounted(() => {
           <div class="fila-control colores">
             <label>Recuadro <input type="color" :value="textoSel.fondo" @input="editarTexto({ fondo: $event.target.value })" /></label>
           </div>
-          <label class="fila-control">
+          <div class="fila-control">
             <span>Ancho</span>
-            <input type="range" min="20" max="1000" :value="aMilesimas(textoSel.ancho)" @input="editarTexto({ ancho: Number($event.target.value) / 1000 })" />
-          </label>
-          <label class="fila-control">
+            <NumeroPaso compacto :model-value="pct(textoSel.ancho, 0.16)" :min="2" :max="100" :paso="0.5" :decimales="1" unidad="%"
+                        etiqueta="Ancho de la zona" @update:model-value="editarTexto({ ancho: $event / 100 })" />
+          </div>
+          <div class="fila-control">
             <span>Alto</span>
-            <input type="range" min="20" max="1000" :value="aMilesimas(textoSel.alto)" @input="editarTexto({ alto: Number($event.target.value) / 1000 })" />
-          </label>
+            <NumeroPaso compacto :model-value="pct(textoSel.alto, 0.08)" :min="2" :max="100" :paso="0.5" :decimales="1" unidad="%"
+                        etiqueta="Alto de la zona" @update:model-value="editarTexto({ alto: $event / 100 })" />
+          </div>
+          <label class="check"><input v-model="textoSigueZona" type="checkbox" /> La letra crece y se achica con la zona</label>
         </template>
-        <button class="btn btn-sm btn-peligro" @click="borrarTexto">{{ textoSel.fondo ? 'Eliminar zona' : 'Eliminar texto' }}</button>
+        <div class="acciones-texto">
+          <button class="btn btn-sm" title="Duplicar (Ctrl+D) · también puedes copiar con Ctrl+C y pegar con Ctrl+V" @click="duplicarTexto">⧉ Duplicar</button>
+          <button class="btn btn-sm btn-peligro" @click="borrarTexto">{{ textoSel.fondo ? 'Eliminar zona' : 'Eliminar texto' }}</button>
+        </div>
       </aside>
 
       <ModalForma v-if="modalForma" :aspecto="planoTienda.aspecto || 1" :con-fondo="conFondoPropio" :ocupado="ocupado"
@@ -1498,7 +1913,7 @@ onUnmounted(() => {
             <div><strong>🏷️ Categorías y precios</strong><p>Lo que cambies aquí se ve en el plano al cerrar este panel.</p></div>
             <button type="button" class="btn btn-fantasma btn-icono" aria-label="Cerrar" @click="cerrarCategorias">✕</button>
           </header>
-          <div class="cajon-cuerpo"><Categorias :edicion="edicion" :aspecto="planoTienda.aspecto" /></div>
+          <div class="cajon-cuerpo desliza"><Categorias :edicion="edicion" :aspecto="planoTienda.aspecto" /></div>
         </aside>
       </div>
       <ModalFondo v-if="modalFondo" :fondo-url="planoTienda.src" acepta="image/png,image/jpeg,application/pdf"
@@ -1514,7 +1929,10 @@ onUnmounted(() => {
             <li><b>T Texto y ▭ Zona:</b> rotula el plano (Ingreso, Baños…) o marca áreas con recuadro de color (Escenario, Patio de comidas). Arrastra para mover; la esquina blanca cambia el tamaño de la zona.</li>
             <li><b>🖼 Fondo:</b> pon una imagen o PDF del lugar debajo del plano, cámbiala o quítala para trabajar sobre un lienzo liso.</li>
             <li><b>📐 Forma:</b> elige si el plano es horizontal, cuadrado o vertical, o escribe las medidas del lugar en metros.</li>
-            <li><b>Rejilla e imán:</b> muestra una cuadrícula y acomoda todo a ella para que las filas queden rectas.</li>
+            <li><b>📐 Guías:</b> al mover algo aparecen líneas cuando queda alineado con otro elemento o con el centro, y se ajusta solo. Mantén <kbd>Alt</kbd> para moverlo libre. <b>⊞ Cuadrícula</b> solo dibuja referencias; <b>🧲 Imán</b> obliga a caer en ella.</li>
+            <li><b>Precisión:</b> con algo seleccionado, las <kbd>flechas</kbd> lo mueven fino (con <kbd>Shift</kbd>, más rápido). Tamaño y giro se escriben con números o con los botones − / +.</li>
+            <li><b>Zonas:</b> la esquina blanca cambia el tamaño (la letra la acompaña), el círculo de arriba gira. <kbd>Ctrl+C</kbd> / <kbd>Ctrl+V</kbd> copian y pegan; <kbd>Ctrl+D</kbd> duplica.</li>
+            <li><b>Categorías:</b> «＋ Nueva» en el panel de la izquierda; el lápiz ✏️ la edita y ves el cambio de tamaño y color en el plano al instante.</li>
             <li><b>Guardar:</b> los puestos que mueves o cambias de tamaño se guardan con «Guardar» o Ctrl + S. Los textos, las zonas, el fondo y la forma se guardan solos al instante (verás «Guardando…» y «Guardado ✓»). Todo llega a la página pública sin recargar.</li>
             <li><b>Vista pública e Imagen:</b> mira cómo lo ve el público o descarga el plano como imagen para compartirlo.</li>
           </ol>
@@ -1522,7 +1940,7 @@ onUnmounted(() => {
         </section>
       </div>
 
-      <aside v-if="fichaPuesto" class="flotante panel-ficha">
+      <aside v-if="fichaPuesto" class="flotante panel-ficha" :class="{ atenuado: arrastrandoPin }">
         <div class="panel-cab">
           <div>
             <strong>Puesto #{{ fichaPuesto.codigo }}</strong>
@@ -1532,7 +1950,7 @@ onUnmounted(() => {
           <button class="cerrar" @click="limpiarSeleccion" title="Cerrar (Esc)">✕</button>
         </div>
 
-        <div class="cuerpo-ficha">
+        <div class="cuerpo-ficha desliza">
           <div class="dato-categoria">
             <span class="muestra" :class="`forma-${fichaPuesto.forma || 'cuadrado'}`" :style="{ background: fichaPuesto.color || '#94a3b8' }"></span>
             <select v-if="enDiseno && (fichaPuesto.estado === 'L' || fichaPuesto.estado === 'X')" class="control control-cat"
@@ -1540,6 +1958,7 @@ onUnmounted(() => {
               <option v-for="c in categorias" :key="c.id" :value="c.id">{{ c.nombre }}</option>
             </select>
             <span v-else>{{ fichaPuesto.categoria }}</span>
+            <button v-if="puedeCategorias" type="button" class="btn btn-sm btn-fantasma" title="Editar la categoría: precio, tamaño, color…" @click="abrirCategoria(fichaPuesto.categoriaId)">✏️ Categoría</button>
           </div>
 
           <div v-if="fichaPuesto.estado === 'O' || fichaPuesto.estado === 'T'" class="bloque-venta">
@@ -1560,10 +1979,15 @@ onUnmounted(() => {
               <label class="campo"><span>Medida</span><input class="control" v-model="ficha.tamano" maxlength="40" placeholder="3x3" /></label>
             </div>
             <p class="medida">{{ medidaLegible(ficha.tamano) }} · escala visual {{ Math.round((fichaPuesto.mapaEscala ?? 1) * 100) }}%</p>
-            <label v-if="enDiseno" class="deslizador ancho" title="Tamaño en el plano respecto a su categoría">
-              <input type="range" :min="ESCALA_MIN" :max="ESCALA_MAX" step="0.05" :value="escalaSeleccion"
-                     @pointerdown="iniciarEscala" @input="fijarEscala($event.target.value)" @change="terminarEscala" />
-            </label>
+            <div v-if="enDiseno" class="dos">
+              <label class="campo"><span>Tamaño</span>
+                <NumeroPaso :model-value="Math.round(escalaSeleccion * 100)" :min="ESCALA_MIN * 100" :max="ESCALA_MAX * 100" :paso="5" unidad="%"
+                            etiqueta="Tamaño respecto a su categoría" @update:model-value="escalaNumerica" />
+              </label>
+              <label class="campo"><span>Giro</span>
+                <NumeroPaso :model-value="giroSeleccion" :min="0" :max="359" :paso="15" unidad="°" etiqueta="Giro" @update:model-value="giroNumerico" />
+              </label>
+            </div>
 
             <div class="campo">
               <span>Precio (Bs)</span>
@@ -1653,20 +2077,28 @@ onUnmounted(() => {
   max-width: calc(100% - 2rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-.panel-categorias { top: 0.6rem; left: 0.6rem; width: 230px; max-height: calc(100% - 4.5rem); display: flex; flex-direction: column; overflow: hidden; }
-.panel-categorias .cabecera {
-  display: flex; justify-content: space-between; align-items: center; width: 100%;
+.panel-categorias { top: 0.6rem; left: 0.6rem; width: 250px; max-height: calc(100% - 4.5rem); display: flex; flex-direction: column; overflow: hidden; }
+.panel-categorias .cabecera { display: flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.4rem 0.35rem 0.2rem; }
+.panel-categorias .plegar {
+  flex: 1; display: flex; justify-content: space-between; align-items: center;
   border: none; background: none; color: var(--text); font: inherit; font-weight: 700; font-size: 0.85rem;
-  padding: 0.55rem 0.7rem; cursor: pointer;
+  padding: 0.3rem 0.5rem; cursor: pointer;
 }
+.panel-categorias .nueva { padding: 0.25rem 0.55rem; font-size: 0.78rem; }
+.panel-categorias .vacia { margin: 0; padding: 0.4rem 0.8rem 0.7rem; font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+.lista-cat li { display: flex; align-items: center; gap: 0.15rem; border-radius: 6px; }
+.lista-cat li.on { background: var(--acento-suave); box-shadow: inset 0 0 0 1px var(--acento); }
+.lista-cat .elegir { flex: 1; min-width: 0; }
+.lista-cat .editar { width: auto; flex: none; border: 0; background: none; cursor: pointer; padding: 0.25rem 0.35rem; border-radius: 6px; font-size: 0.85rem; opacity: 0.65; }
+.lista-cat .editar:hover { opacity: 1; background: var(--bg); }
+.lista-cat .cuenta.completa { color: var(--ok); font-weight: 700; }
 .lista-cat { list-style: none; margin: 0; padding: 0 0.35rem; overflow-y: auto; flex: 1; }
 .lista-cat button {
   width: 100%; display: flex; align-items: center; gap: 0.5rem; text-align: left;
   border: 1px solid transparent; background: none; color: var(--text); border-radius: 6px;
   padding: 0.35rem 0.45rem; font: inherit; font-size: 0.83rem; cursor: pointer;
 }
-.lista-cat button:hover { background: var(--bg); }
-.lista-cat button.on { background: var(--acento-suave); border-color: var(--acento); }
+.lista-cat .elegir:hover { background: var(--bg); }
 .lista-cat .nom { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lista-cat .cuenta { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.78rem; }
 .pie-cat { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; padding: 0.5rem 0.7rem 0.2rem; border-top: 1px solid var(--border); }
@@ -1735,7 +2167,7 @@ onUnmounted(() => {
 .cerrar:hover { color: var(--text); }
 
 .panel-texto {
-  top: 0.6rem; right: 0.6rem; width: 240px; padding: 0.7rem;
+  top: 0.6rem; right: 0.6rem; width: 290px; padding: 0.7rem;
   display: flex; flex-direction: column; gap: 0.55rem;
 }
 .fila-control { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; }
@@ -1841,6 +2273,58 @@ onUnmounted(() => {
   background: #fff; border: calc(var(--asa) * 0.14px) solid var(--acento); border-radius: 25%;
   cursor: nwse-resize; touch-action: none;
 }
+.asa.asa-fija, .asa-giro {
+  width: calc(18px / var(--zoom, 1)); height: calc(18px / var(--zoom, 1));
+  border-width: calc(3px / var(--zoom, 1)); box-shadow: 0 calc(1px / var(--zoom, 1)) calc(4px / var(--zoom, 1)) rgba(0, 0, 0, 0.35);
+}
+.asa.asa-fija::before, .asa-giro::before { content: ''; position: absolute; inset: calc(-8px / var(--zoom, 1)); }
+.asa-giro {
+  position: absolute; z-index: 7; transform: translate(-50%, -50%); border-radius: 50%; border-style: solid; border-color: var(--acento);
+  background: #fff; color: var(--acento); display: grid; place-items: center; cursor: grab; touch-action: none;
+  font-size: calc(12px / var(--zoom, 1)); line-height: 1; font-weight: 800;
+}
+.asa-giro:active { cursor: grabbing; }
+.guia-alineacion { position: absolute; z-index: 8; pointer-events: none; background: #ec4899; }
+.medidor {
+  position: absolute; z-index: 9; pointer-events: none; display: flex; flex-direction: column; gap: calc(2px / var(--zoom, 1));
+  transform: translate(calc(22px / var(--zoom, 1)), calc(-100% - 14px / var(--zoom, 1)));
+  padding: calc(5px / var(--zoom, 1)) calc(8px / var(--zoom, 1)); border-radius: calc(8px / var(--zoom, 1));
+  background: rgba(15, 23, 42, 0.92); color: #fff; font: 700 calc(12px / var(--zoom, 1)) / 1.35 system-ui, sans-serif; white-space: nowrap;
+  box-shadow: 0 calc(4px / var(--zoom, 1)) calc(14px / var(--zoom, 1)) rgba(0, 0, 0, 0.3);
+}
+.medidor.alineado { background: #be185d; }
+.medidor.izquierda { transform: translate(calc(-100% - 22px / var(--zoom, 1)), calc(-100% - 14px / var(--zoom, 1))); }
+.medidor.abajo { transform: translate(calc(22px / var(--zoom, 1)), calc(14px / var(--zoom, 1))); }
+.medidor.izquierda.abajo { transform: translate(calc(-100% - 22px / var(--zoom, 1)), calc(14px / var(--zoom, 1))); }
+.panel-ficha, .barra-seleccion { transition: opacity 0.15s ease; }
+.panel-ficha.atenuado { opacity: 0.12; pointer-events: none; }
+.pin.referencia { outline: 8px dashed #ec4899; outline-offset: 6px; z-index: 3; }
+.guia-alineacion.vertical { top: 0; bottom: 0; width: calc(1px / var(--zoom, 1)); transform: translateX(-50%); }
+.guia-alineacion.horizontal { left: 0; right: 0; height: calc(1px / var(--zoom, 1)); transform: translateY(-50%); }
+.pin.fantasma { opacity: 0.85; pointer-events: none; outline: 10px dashed var(--acento); outline-offset: 8px; box-shadow: none; z-index: 5; }
+.con-numeros .pin.fantasma .num-caseta, .pin.fantasma .num-caseta { display: flex; }
+.pin.previa { outline: 8px dashed var(--acento); outline-offset: 6px; }
+.etiqueta-previa {
+  position: absolute; z-index: 6; transform: translateX(-50%); pointer-events: none; white-space: nowrap;
+  font: 800 calc(13px / var(--zoom, 1)) system-ui, sans-serif; color: #fff; background: var(--acento);
+  padding: calc(3px / var(--zoom, 1)) calc(8px / var(--zoom, 1)); border-radius: 999px;
+}
+.aviso-colocar {
+  top: 0.6rem; left: 50%; transform: translateX(-50%); z-index: 25; display: flex; align-items: center; gap: 0.7rem;
+  padding: 0.55rem 0.7rem 0.55rem 0.8rem; max-width: min(560px, calc(100% - 2rem)); border-color: var(--acento);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--acento) 25%, transparent), var(--sombra-md);
+}
+.aviso-colocar > div { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.82rem; }
+.aviso-colocar strong { font-size: 0.9rem; }
+.aviso-colocar span:not(.muestra) { color: var(--muted); }
+.muestra.grande { width: 22px; height: 22px; }
+.numero-etiquetado { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.75rem; color: var(--muted); font-weight: 600; }
+.numero-etiquetado .numero-paso { width: 118px; }
+.fila-control .numero-paso { flex: 1; min-width: 112px; }
+.acciones-texto { display: flex; gap: 0.4rem; }
+.acciones-texto .btn { flex: 1; justify-content: center; }
+.panel-texto .check { font-size: 0.8rem; }
+.dato-categoria { flex-wrap: wrap; }
 .guia {
   position: absolute; height: calc(var(--mundo, 1200) * 0.002px);
   background: var(--acento); transform-origin: 0 50%; opacity: 0.75; pointer-events: none;

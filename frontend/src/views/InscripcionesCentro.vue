@@ -13,15 +13,15 @@ const ve = (p) => permisos.puedeVer(p);
 
 const pestanas = computed(() => [
   {
-    k: 'todas', t: 'Todas', icono: '📋',
+    k: 'todas', t: 'Todas las ventas', icono: '📋',
     visible: auth.puedeEditarPlano || ['inscripciones', 'control-ventas', 'reportes', 'direccion'].some(ve),
-    ayuda: 'Todas las inscripciones de ferias y las reservas de mesas en un solo listado. Filtra por actividad, categoría, vendedor o estado, y vuelve a descargar o enviar el recibo y las credenciales.',
+    ayuda: 'Cada venta en un solo listado: en línea (aprobadas) y en persona. Filtra por actividad, categoría, quién atendió o estado; vuelve a enviar el recibo y las credenciales, o anula una venta indicando el motivo.',
     vista: defineAsyncComponent(() => import('./InscripcionesGeneral.vue')),
   },
   {
     k: 'ventas', t: 'Rendición de cuentas', icono: '🧾',
     visible: auth.puedeEditarPlano || ve('control-ventas') || ve('reportes') || ve('direccion'),
-    ayuda: 'Solo ferias: cada venta con los datos del cliente, de la compra y del cobro, lo vendido, lo cobrado y lo que falta rendir. Toca una fila para ver la ficha o adjuntar el comprobante.',
+    ayuda: 'Lo vendido, lo cobrado y lo que falta cobrar de la actividad elegida arriba. En línea: el cliente adjunta su comprobante. En persona: el personal confirma que recibió el dinero (efectivo) o adjunta el comprobante. Toca una fila para ver la ficha.',
     vista: defineAsyncComponent(() => import('./ControlVentas.vue')),
   },
   {
@@ -30,8 +30,9 @@ const pestanas = computed(() => [
     vista: defineAsyncComponent(() => import('./ResponsablesExtra.vue')),
   },
   {
-    k: 'anulaciones', t: 'Anulaciones', icono: '🗂️', visible: ve('inscripciones'),
-    vista: defineAsyncComponent(() => import('./Inscripciones.vue')),
+    k: 'anulaciones', t: 'Anulaciones', icono: '🗂️', visible: auth.puedeEditarPlano || ve('inscripciones'),
+    ayuda: 'Ventas anuladas y solicitudes o compras rechazadas, con quién lo hizo, cuándo y el motivo.',
+    vista: defineAsyncComponent(() => import('./Anulaciones.vue')),
   },
 ]);
 
@@ -39,7 +40,7 @@ const pestanaActual = computed(() => {
   const visibles = pestanas.value.filter((p) => p.visible !== false);
   return (visibles.find((p) => p.k === route.query.tab) || visibles[0])?.k;
 });
-const conSelector = computed(() => pestanaActual.value === 'ventas' || pestanaActual.value === 'extras');
+const conSelector = computed(() => ['ventas', 'extras', 'anulaciones'].includes(pestanaActual.value));
 </script>
 
 <template>

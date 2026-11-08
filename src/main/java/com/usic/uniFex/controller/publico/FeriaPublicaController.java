@@ -7,7 +7,10 @@ import java.util.stream.Collectors;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,7 +22,10 @@ import com.usic.uniFex.model.entity.Categoria;
 import com.usic.uniFex.model.entity.Edicion;
 import com.usic.uniFex.model.entity.Puesto;
 import com.usic.uniFex.model.dto.PlanoDTO;
+import com.usic.uniFex.model.service.ApartadoPublicoService;
 import com.usic.uniFex.model.service.PlanoTextoService;
+
+import jakarta.servlet.http.HttpServletRequest;
 import com.usic.uniFex.model.service.VisitasPaginaService;
 
 import lombok.RequiredArgsConstructor;
@@ -36,11 +42,44 @@ public class FeriaPublicaController {
     private final VisitasPaginaService visitasService;
     private final PlanoTextoService planoTextos;
     private final JdbcTemplate jdbc;
+    private final ApartadoPublicoService apartados;
+
+    public record Soltar(String token) {
+    }
+
+    @PostMapping("/puestos/{id}/apartar")
+    public ResponseEntity<Map<String, Object>> apartar(@PathVariable Long id, HttpServletRequest http) {
+        ApartadoPublicoService.Apartado a = apartados.apartar(id, origen(http));
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("ok", a.ok());
+        cuerpo.put("mensaje", a.mensaje());
+        cuerpo.put("token", a.token());
+        cuerpo.put("expira", a.expira() == null ? null : a.expira().toString());
+        cuerpo.put("minutos", a.minutos());
+        return ResponseEntity.status(a.ok() ? 200 : 409).body(cuerpo);
+    }
+
+    @PostMapping("/puestos/{id}/soltar")
+    public Map<String, Object> soltar(@PathVariable Long id, @RequestBody(required = false) Soltar req) {
+        return Map.of("ok", apartados.soltar(id, req == null ? null : req.token()));
+    }
+
+    private static String origen(HttpServletRequest http) {
+        String reenviado = http.getHeader("X-Forwarded-For");
+        if (reenviado != null && !reenviado.isBlank()) return reenviado.split(",")[0].trim();
+        return http.getRemoteAddr();
+    }
 
     @GetMapping("/ediciones")
     public List<Map<String, Object>> edicionesPublicas() {
         return jdbc.query("""
                 SELECT e.id, e.nombre, e.anio, e.activa, e.lugar, e.fechas_texto, e.portada_archivo,
+                       e.tipo_espacio, e.etiqueta_espacio, e.comprador, e.vende_espacios, e.vende_entradas, e.finalizada,
+                       e.venta_desde, (e.venta_desde IS NOT NULL AND e.venta_desde > now()) AS antes_de_abrir,
+                       CASE WHEN e.estado_publico THEN e.estado_evento ELSE 'NORMAL' END AS estado_evento,
+                       CASE WHEN e.estado_publico THEN e.estado_nueva_fecha END AS estado_nueva_fecha,
+                       (SELECT min(t.precio) FROM entrada_tipo t WHERE t.id_edicion = e.id AND t."_estado" <> 'X') AS entrada_desde,
+                       min(COALESCE(p.precio, c.precio_base)) FILTER (WHERE p.estado_puesto = 'L') AS espacio_desde,
                        count(p.id) AS total, count(p.id) FILTER (WHERE p.estado_puesto = 'L') AS libres
                   FROM edicion e
                   LEFT JOIN categoria c ON c.id_edicion = e.id AND c."_estado" IS DISTINCT FROM 'X'
@@ -58,6 +97,19 @@ public class FeriaPublicaController {
             m.put("portadaUrl", portada == null ? null : "/files/" + portada);
             m.put("total", rs.getLong("total"));
             m.put("libres", rs.getLong("libres"));
+            m.put("tipoEspacio", rs.getString("tipo_espacio"));
+            m.put("etiquetaEspacio", rs.getString("etiqueta_espacio"));
+            m.put("comprador", rs.getString("comprador"));
+            m.put("vendeEspacios", rs.getBoolean("vende_espacios"));
+            m.put("vendeEntradas", rs.getBoolean("vende_entradas"));
+            m.put("finalizada", rs.getBoolean("finalizada"));
+            m.put("entradaDesde", rs.getBigDecimal("entrada_desde"));
+            m.put("espacioDesde", rs.getBigDecimal("espacio_desde"));
+            java.sql.Timestamp desde = rs.getTimestamp("venta_desde");
+            m.put("ventaDesde", desde == null ? null : desde.toLocalDateTime().toString());
+            m.put("antesDeAbrir", rs.getBoolean("antes_de_abrir"));
+            m.put("estadoEvento", rs.getString("estado_evento"));
+            m.put("estadoNuevaFecha", rs.getString("estado_nueva_fecha"));
             return m;
         });
     }
@@ -96,7 +148,7 @@ public class FeriaPublicaController {
                     ? "/files/" + edicionActiva.getPlanoArchivo() + "?v=" + edicionActiva.getPlanoVersion()
                     : "/files/mapa.pdf");
             edicionInfo.putAll(publico);
-            edicionInfo.put("recibeInteresados", Boolean.TRUE.equals(edicionActiva.getActiva()) && Boolean.TRUE.equals(publico.get("recibeInteresados")));
+            edicionInfo.put("recibeInteresados", Boolean.TRUE.equals(publico.get("ventaAbierta")));
             cuerpo.put("edicion", edicionInfo);
         } else {
             cuerpo.put("edicion", null);
@@ -178,9 +230,13 @@ public class FeriaPublicaController {
     }
 
     private Map<String, Object> datosPublicos(Long id) {
-        return jdbc.queryForObject("""
+        Map<String, Object> datos = jdbc.queryForObject("""
                 SELECT lugar, fechas_texto, descripcion_publica, contacto, portada_archivo, publica, recibe_interesados,
-                       (activa OR publicacion_independiente) AS publicable, pago_qr_archivo, pago_banco, pago_cuenta, pago_titular, pago_instrucciones, pago_oficina
+                       (activa OR publicacion_independiente) AS publicable, pago_qr_archivo, pago_banco, pago_cuenta, pago_titular, pago_instrucciones, pago_oficina,
+                       tipo_espacio, etiqueta_espacio, comprador, vende_espacios, vende_entradas, condiciones, minutos_bloqueo,
+                       finalizada, venta_hasta, (venta_hasta IS NOT NULL AND venta_hasta <= now()) AS venta_vencida,
+                       venta_desde, (venta_desde IS NOT NULL AND venta_desde > now()) AS antes_de_abrir,
+                       estado_evento, estado_motivo, estado_nueva_fecha, estado_publico
                   FROM edicion WHERE id = ?
                 """, (rs, i) -> {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -201,8 +257,51 @@ public class FeriaPublicaController {
             pago.put("instrucciones", rs.getString("pago_instrucciones"));
             pago.put("oficina", rs.getString("pago_oficina"));
             m.put("pago", pago);
+            m.put("tipoEspacio", rs.getString("tipo_espacio"));
+            m.put("etiquetaEspacio", rs.getString("etiqueta_espacio"));
+            m.put("comprador", rs.getString("comprador"));
+            m.put("vendeEspacios", rs.getBoolean("vende_espacios"));
+            m.put("vendeEntradas", rs.getBoolean("vende_entradas"));
+            m.put("condiciones", rs.getString("condiciones"));
+            m.put("minutosBloqueo", rs.getInt("minutos_bloqueo"));
+            m.put("finalizada", rs.getBoolean("finalizada"));
+            java.sql.Timestamp hasta = rs.getTimestamp("venta_hasta");
+            m.put("ventaHasta", hasta == null ? null : hasta.toLocalDateTime().toString());
+            java.sql.Timestamp desde = rs.getTimestamp("venta_desde");
+            m.put("ventaDesde", desde == null ? null : desde.toLocalDateTime().toString());
+            m.put("antesDeAbrir", rs.getBoolean("antes_de_abrir"));
+            boolean avisar = rs.getBoolean("estado_publico") && !"NORMAL".equals(rs.getString("estado_evento"));
+            m.put("estadoEvento", avisar ? rs.getString("estado_evento") : "NORMAL");
+            m.put("estadoMotivo", avisar ? rs.getString("estado_motivo") : null);
+            m.put("estadoNuevaFecha", avisar ? rs.getString("estado_nueva_fecha") : null);
+            m.put("ventaAbierta", rs.getBoolean("publica") && rs.getBoolean("publicable") && rs.getBoolean("recibe_interesados")
+                    && !rs.getBoolean("finalizada") && !rs.getBoolean("venta_vencida") && !rs.getBoolean("antes_de_abrir"));
             return m;
         }, id);
+        Map<String, Object> resultado = datos;
+        resultado.put("dias", jdbc.query("""
+                SELECT fecha, to_char(hora_inicio, 'HH24:MI') AS inicio, to_char(hora_fin, 'HH24:MI') AS fin
+                  FROM edicion_dia WHERE id_edicion = ? ORDER BY fecha
+                """, (rs, i) -> {
+            Map<String, Object> d = new LinkedHashMap<>();
+            d.put("fecha", rs.getString("fecha"));
+            d.put("horaInicio", rs.getString("inicio"));
+            d.put("horaFin", rs.getString("fin"));
+            return d;
+        }, id));
+        resultado.put("entradas", Boolean.TRUE.equals(datos.get("vendeEntradas")) ? jdbc.query("""
+                SELECT id, nombre, descripcion, precio, cupo FROM entrada_tipo
+                 WHERE id_edicion = ? AND "_estado" <> 'X' ORDER BY orden, id
+                """, (rs, i) -> {
+            Map<String, Object> e = new LinkedHashMap<>();
+            e.put("id", rs.getLong("id"));
+            e.put("nombre", rs.getString("nombre"));
+            e.put("descripcion", rs.getString("descripcion"));
+            e.put("precio", rs.getBigDecimal("precio"));
+            e.put("cupo", rs.getObject("cupo"));
+            return e;
+        }, id) : List.of());
+        return resultado;
     }
 
     @GetMapping("/plano")
@@ -226,7 +325,8 @@ public class FeriaPublicaController {
         cuerpo.put("puestos", jdbc.query("""
                 SELECT p.id, p.codigo, p.tamano, p.estado_puesto, p.mapa_x, p.mapa_y, p.mapa_escala, p.mapa_rotacion,
                        p.referencia, COALESCE(p.precio, c.precio_base, 0) AS precio,
-                       c.id AS categoria_id, c.nombre AS categoria, c.color, c.forma, c.tamano_mapa, c.mapa_proporcion,
+                       c.id AS categoria_id, c.nombre AS categoria, c.descripcion AS incluye, c.color, c.forma, c.tamano_mapa, c.mapa_proporcion,
+                       COALESCE(c.personas_por_puesto, 2) AS personas,
                        (SELECT max(CASE WHEN i.estado = 'ATENDIDO' AND i.id_inscripcion IS NULL THEN 2 WHEN i.estado = 'NUEVO' THEN 1 ELSE 0 END)
                           FROM interesado_stand i WHERE i.id_puesto = p.id) AS solicitud
                   FROM puesto p JOIN categoria c ON c.id = p.id_categoria
@@ -237,8 +337,9 @@ public class FeriaPublicaController {
             Map<String, Object> m = new LinkedHashMap<>();
             String estado = rs.getString("estado_puesto");
             int solicitud = rs.getInt("solicitud");
-            if (Puesto.LIBRE.equals(estado) && solicitud == 2) estado = "R";
-            else if (Puesto.LIBRE.equals(estado) && solicitud == 1) estado = "S";
+            boolean apartable = Puesto.LIBRE.equals(estado) || Puesto.EN_TRAMITE.equals(estado);
+            if (apartable && solicitud == 2) estado = "R";
+            else if (apartable && solicitud == 1) estado = "S";
             m.put("id", rs.getLong("id"));
             m.put("codigo", rs.getString("codigo"));
             m.put("tamano", rs.getString("tamano"));
@@ -251,6 +352,8 @@ public class FeriaPublicaController {
             m.put("precio", rs.getBigDecimal("precio"));
             m.put("categoriaId", rs.getLong("categoria_id"));
             m.put("categoria", rs.getString("categoria"));
+            m.put("incluye", rs.getString("incluye"));
+            m.put("personas", rs.getInt("personas"));
             m.put("color", rs.getString("color"));
             m.put("forma", rs.getString("forma"));
             m.put("tamanoMapa", rs.getObject("tamano_mapa") == null ? 0.012 : rs.getDouble("tamano_mapa"));

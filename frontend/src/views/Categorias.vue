@@ -1,6 +1,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue';
 import UiModal from '../components/UiModal.vue';
+import PersonasPorEspacio from '../components/PersonasPorEspacio.vue';
 import { apiFetch } from '../api';
 import { apiDeFeria } from '../ui/editorFeria';
 import { toast } from '../ui/toast';
@@ -32,7 +33,7 @@ const aFraccion = (v) => (Number(v) || 0) / 1000;
 const modal = reactive({
   abierto: false, editando: null,
   precioBase: 0, nombre: '', color: '#3b82f6', forma: 'cuadrado', tamanoMilesimas: 12, cantidad: 10,
-  proporcion: 1, tamano: '3x3', cantidadOriginal: 0, tamanoOriginal: '', personas: 2, costoExtra: 15,
+  proporcion: 1, tamano: '3x3', cantidadOriginal: 0, tamanoOriginal: '', personas: 2, costoExtra: 0, descripcion: '', conPersonas: false,
 });
 
 watch(() => modal.forma, (f, previa) => {
@@ -65,6 +66,15 @@ const filtradas = computed(() => {
 
 const bs = (n) => Number(n || 0).toLocaleString('es-BO');
 
+const actividad = ref(null);
+const unoEspacio = computed(() => (actividad.value?.etiquetaEspacio || actividad.value?.tipoEspacio || 'espacio').toLowerCase());
+
+async function cargarActividad() {
+  const r = await apiFetch('/api/app/ediciones/resumen');
+  const lista = r.ok ? await r.json() : [];
+  actividad.value = lista.find((a) => (props.edicion ? a.id === Number(props.edicion) : a.activa)) || null;
+}
+
 async function cargar() {
   cargando.value = true;
   try {
@@ -79,13 +89,15 @@ async function cargar() {
 onMounted(() => {
   planoTienda.asegurar();
   cargar();
+  cargarActividad();
 });
+watch(() => props.edicion, cargarActividad);
 
 function abrirCrear() {
   Object.assign(modal, {
     abierto: true, editando: null, precioBase: 0,
     nombre: '', color: '#3b82f6', forma: 'cuadrado', tamanoMilesimas: 12, cantidad: 10,
-    proporcion: 1, tamano: '3x3', cantidadOriginal: 0, tamanoOriginal: '', personas: 2, costoExtra: 15,
+    proporcion: 1, tamano: '3x3', cantidadOriginal: 0, tamanoOriginal: '', personas: 2, costoExtra: 0, descripcion: '', conPersonas: false,
   });
 }
 
@@ -101,8 +113,10 @@ function abrirEditar(c) {
     cantidadOriginal: c.cantidad ?? 0,
     tamano: c.tamano || '',
     tamanoOriginal: c.tamano || '',
-    personas: c.personasPorPuesto ?? 2,
-    costoExtra: c.costoPersonaExtra ?? 15,
+    conPersonas: Number(c.personasPorPuesto ?? 1) > 1 || Number(c.costoPersonaExtra ?? 0) > 0,
+    personas: Math.max(1, Number(c.personasPorPuesto ?? 2)),
+    costoExtra: Number(c.costoPersonaExtra ?? 0),
+    descripcion: c.descripcion || '',
   });
 }
 
@@ -130,8 +144,9 @@ async function guardarCategoria() {
       forma: modal.forma,
       tamanoMapa: aFraccion(modal.tamanoMilesimas),
       mapaProporcion: modal.proporcion,
-      personasPorPuesto: Math.max(1, Math.min(50, Number(modal.personas) || 1)),
-      costoPersonaExtra: Math.max(0, Number(modal.costoExtra) || 0),
+      personasPorPuesto: modal.conPersonas ? Math.max(1, Math.min(50, Number(modal.personas) || 1)) : 1,
+      costoPersonaExtra: modal.conPersonas ? Math.max(0, Number(modal.costoExtra) || 0) : 0,
+      descripcion: modal.descripcion.trim(),
     };
     const tamano = modal.tamano.trim();
     if (!modal.editando) cuerpo.tamano = tamano || '3x3';
@@ -271,7 +286,8 @@ async function eliminarOpcion(c, o) {
         <div class="titulo">
           <strong>{{ c.nombre }}</strong>
           <span class="muted chico">{{ medidaLegible(c.tamano) }} · {{ c.cantidad ?? 0 }} puestos · {{ etiquetaForma(c.forma) }}</span>
-          <span class="muted chico">👥 {{ c.personasPorPuesto ?? 2 }} credencial(es) por puesto · extra Bs {{ Number(c.costoPersonaExtra ?? 15).toLocaleString('es-BO') }}</span>
+          <span v-if="c.descripcion" class="muted chico">✨ {{ c.descripcion }}</span>
+          <span v-if="Number(c.personasPorPuesto ?? 1) > 1 || Number(c.costoPersonaExtra ?? 0) > 0" class="muted chico">👥 {{ c.personasPorPuesto }} persona(s) incluidas<template v-if="Number(c.costoPersonaExtra) > 0"> · adicional Bs {{ Number(c.costoPersonaExtra).toLocaleString('es-BO') }}</template></span>
         </div>
         <span class="crecer"></span>
         <button class="btn btn-sm btn-fantasma" @click="abrirEditar(c)">Editar</button>
@@ -357,16 +373,12 @@ async function eliminarOpcion(c, o) {
         <span v-if="modal.editando" class="muted chico">Subir crea puestos nuevos; bajar quita los libres de número más alto.</span>
       </label>
 
-      <div class="fila-personas">
-        <label>Personas por puesto
-          <input v-model.number="modal.personas" type="number" min="1" max="50" class="control" />
-          <span class="muted chico">Credenciales que incluye cada puesto vendido.</span>
-        </label>
-        <label>Costo por persona extra (Bs)
-          <input v-model.number="modal.costoExtra" type="number" min="0" step="1" class="control" />
-          <span class="muted chico">Si el expositor quiere más ayudantes, paga esto por cada credencial adicional.</span>
-        </label>
-      </div>
+      <label>Qué incluye (lo ve el cliente)
+        <textarea v-model="modal.descripcion" class="control" rows="2" maxlength="255" placeholder="Ej. Mesa para 6, una botella y atención preferencial"></textarea>
+      </label>
+
+      <PersonasPorEspacio v-model:con-personas="modal.conPersonas" v-model:personas="modal.personas" v-model:costo-extra="modal.costoExtra"
+                          :uno="unoEspacio" :registra-personas="actividad ? actividad.registraPersonas !== false : true" />
 
       <label v-if="!modal.editando" class="campo"><span>Precio base (Bs)</span><input v-model.number="modal.precioBase" class="control" type="number" min="0" step="0.01" /></label>
       <p v-if="!modal.editando" class="muted chico">
@@ -413,7 +425,6 @@ async function eliminarOpcion(c, o) {
 
 <style scoped>
 .encabezado { gap: 0.75rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
-.fila-personas { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 0.75rem; }
 .busca { flex: 1; min-width: 220px; }
 .nota { margin: 0 0 1rem; line-height: 1.5; }
 .crecer { flex: 1; }

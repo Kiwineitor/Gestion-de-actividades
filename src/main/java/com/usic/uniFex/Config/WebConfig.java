@@ -20,9 +20,13 @@ public class WebConfig implements WebMvcConfigurer{
     @Autowired
     private AutenticacionInterceptor autenticacionInterceptor;
 
+    @Autowired
+    private HistorialInterceptor historialInterceptor;
+
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(autenticacionInterceptor);
+        registry.addInterceptor(historialInterceptor).addPathPatterns("/api/app/**");
     }
 
     @Bean

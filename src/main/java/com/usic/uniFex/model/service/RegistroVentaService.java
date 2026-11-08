@@ -80,6 +80,7 @@ public class RegistroVentaService {
     private final IPuestoService puestoService;
     private final ITipoEntidadService tipoEntidadService;
     private final IEdicionDao edicionDao;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
     private final IInscripcionDao inscripcionDao;
     private final FuncionesInscripcion funciones;
     private final PuestoReservaService reservaService;
@@ -91,6 +92,7 @@ public class RegistroVentaService {
     private final CredencialImagenService credencialImagen;
     private final CredencialService credencialService;
     private final PlantillaCredencialService plantillas;
+    private final ResponsableExtraService personasExtra;
     @Value("${app.base-url:http://localhost:7676}")
     private String baseUrl;
 
@@ -218,6 +220,7 @@ public class RegistroVentaService {
 
         Entidad entidad = crearEntidad(req, tipo, ahora, usuarioId);
         crearResponsables(req.responsables(), entidad, ahora, usuarioId);
+        crearAcompanantesSinDatos(req, entidad, ahora, usuarioId);
         Inscripcion inscripcion = crearInscripcion(req, entidad, ahora, usuarioId);
 
         List<Long> ocupados = new ArrayList<>();
@@ -273,6 +276,10 @@ public class RegistroVentaService {
         if (req.puestos().stream().distinct().count() != req.puestos().size()) {
             return "Hay casetas repetidas en la seleccion";
         }
+        Long ediciones = jdbc.queryForObject(
+                "SELECT count(DISTINCT c.id_edicion) FROM puesto p JOIN categoria c ON c.id = p.id_categoria WHERE p.id = ANY (?)",
+                Long.class, (Object) req.puestos().toArray(new Long[0]));
+        if (ediciones != null && ediciones > 1) return "Una venta solo puede tener espacios de una misma actividad";
         if (req.responsables() == null || req.responsables().isEmpty()) {
             return "Hace falta al menos el Responsable 1";
         }
@@ -328,6 +335,40 @@ public class RegistroVentaService {
         }
     }
 
+    private void crearAcompanantesSinDatos(NuevaVenta req, Entidad entidad, Date ahora, Long usuarioId) {
+        Boolean conPases = jdbc.query("""
+                SELECT e.usa_credenciales AND e.credencial_representante AND e.credencial_acompanantes
+                  FROM puesto p JOIN categoria c ON c.id = p.id_categoria JOIN edicion e ON e.id = c.id_edicion
+                 WHERE p.id = ?
+                """, rs -> rs.next() && rs.getBoolean(1), req.puestos().get(0));
+        if (!Boolean.TRUE.equals(conPases)) return;
+        int faltan = personasIncluidas(req.puestos()) - req.responsables().size();
+        if (faltan <= 0) return;
+        DatosPersona t = req.responsables().get(0);
+        String titular = java.util.stream.Stream.of(t.nombre(), t.paterno(), t.materno())
+                .filter(x -> x != null && !x.isBlank()).map(String::trim)
+                .collect(java.util.stream.Collectors.joining(" ")).toUpperCase(java.util.Locale.ROOT);
+        String de = ("DE " + titular).length() > 100 ? ("DE " + titular).substring(0, 100) : "DE " + titular;
+        for (int k = 0; k < faltan; k++) {
+            Persona persona = new Persona();
+            persona.setNombre("ACOMPAÑANTE " + (req.responsables().size() + k + 1));
+            persona.setPaterno(de);
+            persona.setMaterno("");
+            persona.setEstado(RESPONSABLE);
+            sellar(persona, ahora, usuarioId);
+            personaService.save(persona);
+
+            Responsable r = new Responsable();
+            r.setEntidad(entidad);
+            r.setPersona(persona);
+            r.setEsTitular(false);
+            r.setEstado(RESPONSABLE);
+            sellar(r, ahora, usuarioId);
+            responsableService.save(r);
+            jdbc.update("UPDATE responsable SET sin_datos = TRUE WHERE id = ?", r.getId());
+        }
+    }
+
     private Inscripcion crearInscripcion(NuevaVenta req, Entidad entidad, Date ahora, Long usuarioId) {
         Inscripcion i = new Inscripcion();
         i.setEntidad(entidad);
@@ -340,12 +381,20 @@ public class RegistroVentaService {
         i.setNumComprobante(req.numComprobante());
         i.setPagoContado(Boolean.TRUE.equals(req.pagoContado()));
 
-        Edicion edicion = edicionDao.findFirstByActivaTrueOrderByAnioDesc().orElse(null);
+        Edicion edicion = edicionDeLosPuestos(req.puestos());
+        if (edicion == null) edicion = edicionDao.findFirstByActivaTrueOrderByAnioDesc().orElse(null);
         if (edicion == null) log.warn("No hay edicion activa: la inscripcion se registra sin edicion");
         i.setEdicion(edicion);
 
         sellar(i, ahora, usuarioId);
         return inscripcionService.save(i);
+    }
+
+    private Edicion edicionDeLosPuestos(List<Long> puestos) {
+        if (puestos == null || puestos.isEmpty()) return null;
+        Puesto primero = puestoService.findById(puestos.get(0));
+        Long id = primero == null || primero.getCategoria() == null ? null : primero.getCategoria().getIdEdicion();
+        return id == null ? null : edicionDao.findById(id).orElse(null);
     }
 
     private BigDecimal guardarDetalle(Long puestoId, Inscripcion inscripcion, TipoEntidad tipo,
@@ -434,8 +483,9 @@ public class RegistroVentaService {
             log.info("[WHATSAPP-VENTA] Recibo generado inscripcion={} bytes={}",
                     inscripcionId, salidaRecibo.size());
 
-            PlantillaCredencial plantilla = plantillas.paraInscripcion(inscripcionId);
-            var datosCredenciales = credencialService.porInscripcion(inscripcionId);
+            boolean conCredenciales = personasExtra.registraPersonas(inscripcionId);
+            PlantillaCredencial plantilla = conCredenciales ? plantillas.paraInscripcion(inscripcionId) : null;
+            var datosCredenciales = conCredenciales ? credencialService.porInscripcion(inscripcionId) : List.<com.usic.uniFex.model.dto.CredencialDTO>of();
             log.info("[WHATSAPP-VENTA] Credenciales encontradas inscripcion={} cantidad={}",
                     inscripcionId, datosCredenciales.size());
             List<byte[]> credenciales = datosCredenciales.stream()

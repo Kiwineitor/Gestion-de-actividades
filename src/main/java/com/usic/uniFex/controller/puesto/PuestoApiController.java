@@ -53,7 +53,7 @@ public class PuestoApiController {
     private final PuestoOcupacionService ocupacionService;
 
     @GetMapping
-    @PreAuthorize("#edicion == null or (" + Roles.EDITA_PLANO_O_PANTALLA + ")")
+    @PreAuthorize("#edicion == null or (" + Roles.EDITA_PLANO_O_PANTALLA + ") or (" + Roles.VENDE_MESAS + ")")
     public List<PuestoEstadoDTO> listar(@RequestParam(value = "categoriaId", required = false) Long categoriaId, @RequestParam(required = false) Long edicion) {
         if (usuarioActual() == null) return List.of();
         return (edicion == null ? puestoDao.listarActivos() : puestoDao.listarActivosDe(edicion)).stream()

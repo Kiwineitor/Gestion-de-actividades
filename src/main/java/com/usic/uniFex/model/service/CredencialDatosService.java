@@ -55,6 +55,7 @@ public class CredencialDatosService {
             return new Resultado(false, "El C.I. solo admite números, letras y guiones", null);
         }
 
+        jdbc.update("UPDATE responsable SET sin_datos = FALSE WHERE id = ? AND sin_datos", responsableId);
         List<Object[]> cambios = new ArrayList<>();
         anotar(cambios, "nombre", p.getNombre(), nombre);
         anotar(cambios, "paterno", p.getPaterno(), limpio(c.paterno(), 60));

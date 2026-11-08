@@ -3,9 +3,11 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
-import { ediciones, eventos, cargarActividades } from '../ui/actividadElegida';
+import { ediciones, cargarActividades } from '../ui/actividadElegida';
 import ModalEntrega from '../components/ModalEntrega.vue';
-import ModalEntregaReserva from '../components/ModalEntregaReserva.vue';
+import { pedirTexto } from '../ui/alerta';
+import { useAuthStore } from '../stores/auth';
+import { canalDe } from '../ui/canal';
 
 const ESTADOS = [
   { v: '', t: 'Vigentes y por validar' },
@@ -95,7 +97,6 @@ const totales = computed(() => {
   return {
     cantidad: visibles.value.length,
     ferias: visibles.value.filter((f) => f.tipo === 'FERIA').length,
-    mesas: visibles.value.filter((f) => f.tipo === 'MESAS').length,
     vendido, cobrado, porCobrar: vendido - cobrado,
   };
 });
@@ -107,6 +108,26 @@ function claseEstado(f) {
 }
 
 const puedeEntregar = (f) => (f.tipo === 'FERIA' ? f.estadoGeneral !== 'ANULADA' : f.estadoGeneral === 'VIGENTE');
+const auth = useAuthStore();
+const anulando = ref(null);
+
+async function anular(f) {
+  const motivo = await pedirTexto(`Se anulará la venta de «${f.cliente}» (${f.espacios || 'sin espacios'}) y sus espacios vuelven a quedar libres. Quedará en Anulaciones con este motivo.`, {
+    titulo: 'Anular la venta', aceptar: 'Anular venta', marcador: 'Ej. El cliente desistió y se le devolvió el dinero',
+  });
+  if (motivo == null) return;
+  if (motivo.trim().length < 4) { toast('Escribe el motivo de la anulación', 'advertencia'); return; }
+  anulando.value = f.id;
+  try {
+    const r = await apiFetch(`/api/app/inscripciones/${f.id}/cancelar`, { method: 'POST', body: JSON.stringify({ motivo: motivo.trim() }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.ok === false) { toast(d.mensaje || 'No se pudo anular la venta', 'error'); return; }
+    toast(d.mensaje || 'Venta anulada', 'ok');
+    await cargar();
+  } finally {
+    anulando.value = null;
+  }
+}
 
 function limpiar() {
   actividad.value = '';
@@ -137,13 +158,8 @@ onMounted(async () => {
         <span>Actividad</span>
         <select v-model="actividad" class="control">
           <option value="">Todas las actividades</option>
-          <option v-if="ediciones.length" value="ferias">Todas las ferias</option>
-          <option v-if="eventos.length" value="eventos">Todos los eventos con mesas</option>
-          <optgroup v-if="ediciones.length" label="Ferias (puestos)">
+          <optgroup v-if="ediciones.length" label="Actividades">
             <option v-for="a in ediciones" :key="a.clave" :value="a.clave">{{ a.nombre }}{{ a.activa ? ' (en curso)' : '' }}</option>
-          </optgroup>
-          <optgroup v-if="eventos.length" label="Eventos con mesas">
-            <option v-for="a in eventos" :key="a.clave" :value="a.clave">{{ a.nombre }}</option>
           </optgroup>
         </select>
       </label>
@@ -156,7 +172,7 @@ onMounted(async () => {
         </select>
       </label>
       <label class="campo">
-        <span>Vendedor / aprobó</span>
+        <span>Atendió</span>
         <select v-model="vendedor" class="control">
           <option value="">Todos</option>
           <option v-for="v in opciones.vendedores" :key="v.id" :value="String(v.id)">{{ v.nombre }}</option>
@@ -170,13 +186,13 @@ onMounted(async () => {
       </label>
       <label class="campo ancho busca">
         <span>Buscar</span>
-        <input v-model="busqueda" class="control" type="search" placeholder="Cliente, C.I., celular, código, puesto o mesa…" />
+        <input v-model="busqueda" class="control" type="search" placeholder="Cliente, C.I., celular, código o espacio…" />
       </label>
       <button type="button" class="btn btn-fantasma btn-sm limpiar" @click="limpiar">Limpiar filtros</button>
     </section>
 
     <div class="resumen">
-      <div class="card kpi"><strong>{{ totales.cantidad }}</strong><span>inscripciones<template v-if="totales.ferias && totales.mesas"> · {{ totales.ferias }} feria · {{ totales.mesas }} mesas</template></span></div>
+      <div class="card kpi"><strong>{{ totales.cantidad }}</strong><span>ventas</span></div>
       <div class="card kpi"><strong>{{ bs(totales.vendido) }}</strong><span>vendido (vigentes y por validar)</span></div>
       <div class="card kpi"><strong>{{ bs(totales.cobrado) }}</strong><span>cobrado</span></div>
       <div class="card kpi" :class="{ ojo: totales.porCobrar > 0 }"><strong>{{ bs(totales.porCobrar) }}</strong><span>por cobrar o validar</span></div>
@@ -194,7 +210,7 @@ onMounted(async () => {
             <th>Espacio</th>
             <th class="num">Monto</th>
             <th>Estado</th>
-            <th>Vendió / aprobó</th>
+            <th title="En línea: quién aprobó · En persona: quién registró">Atendió</th>
             <th></th>
           </tr>
         </thead>
@@ -202,7 +218,6 @@ onMounted(async () => {
           <tr v-for="f in visibles" :key="`${f.tipo}-${f.id}`">
             <td data-t="Fecha" class="nowrap">{{ cuando(f.fecha) }}<small class="muted bloque">{{ f.codigo }}</small></td>
             <td data-t="Actividad">
-              <span class="tipo" :class="f.tipo === 'MESAS' ? 'mesas' : 'feria'">{{ f.tipo === 'MESAS' ? '🍸' : '🏪' }}</span>
               {{ f.actividad || '—' }}
             </td>
             <td data-t="Cliente">
@@ -222,17 +237,17 @@ onMounted(async () => {
               <small class="bloque" :class="f.pagado ? 'pagado' : 'muted'">{{ f.pagado ? (f.formaPago || 'cobrado') : (f.formaPago || 'sin comprobante') }}</small>
             </td>
             <td data-t="Estado"><span class="badge" :class="claseEstado(f)">{{ f.estado }}</span></td>
-            <td data-t="Vendió / aprobó">{{ f.vendedor || '—' }}</td>
+            <td data-t="Atendió" class="atendio"><span class="canal" :class="canalDe(f.canal).clase">{{ canalDe(f.canal).icono }} {{ canalDe(f.canal).texto }}</span><small class="bloque">{{ canalDe(f.canal).rol }}: {{ f.vendedor || '—' }}</small></td>
             <td class="acciones">
-              <button v-if="puedeEntregar(f)" type="button" class="btn btn-sm" @click="abierta = f">📲 Recibo y credenciales</button>
+              <button v-if="puedeEntregar(f)" type="button" class="btn btn-sm" @click="abierta = f">📲 Entregar al cliente</button>
+              <button v-if="auth.puedeEditarPlano && f.tipo === 'FERIA' && f.estadoGeneral !== 'ANULADA'" type="button" class="btn btn-sm btn-fantasma peligro" :disabled="anulando === f.id" title="Anular la venta indicando el motivo" @click="anular(f)">Anular…</button>
             </td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <ModalEntrega v-if="abierta && abierta.tipo === 'FERIA'" :inscripcion-id="abierta.id" @cerrar="abierta = null" />
-    <ModalEntregaReserva v-if="abierta && abierta.tipo === 'MESAS'" :reserva-id="abierta.id" @cerrar="abierta = null" @cambio="cargar" />
+    <ModalEntrega v-if="abierta" :inscripcion-id="abierta.id" @cerrar="abierta = null" />
   </div>
 </template>
 
@@ -255,6 +270,9 @@ onMounted(async () => {
 .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .nowrap { white-space: nowrap; }
 .bloque { display: block; font-size: 0.78rem; margin-top: 0.1rem; }
+.peligro { color: var(--danger); }
+td.acciones { white-space: nowrap; }
+td.acciones .btn + .btn { margin-left: 0.3rem; }
 .pagado { color: var(--ok); font-weight: 600; }
 .tipo { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; margin-right: 0.25rem; background: var(--panel-2); }
 

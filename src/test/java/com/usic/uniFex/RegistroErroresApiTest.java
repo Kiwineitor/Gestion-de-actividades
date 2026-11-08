@@ -24,13 +24,15 @@ import com.usic.uniFex.security.JwtUser;
 class RegistroErroresApiTest {
     @Autowired MockMvc mvc;
     @MockitoBean JwtService jwt;
+    @MockitoBean com.usic.uniFex.security.AccesoSeguro acceso;
     @MockitoBean MantenimientoService mantenimiento;
 
     @BeforeEach void preparar() {
         org.slf4j.MDC.clear();
-        when(jwt.validar("administrador")).thenReturn(new JwtUser(1L, "admin", "SUPER USUARIO"));
-        when(jwt.validar("vendedor")).thenReturn(new JwtUser(2L, "vendedor", "ADMINISTRATIVO"));
-        when(jwt.validar("gerente")).thenReturn(new JwtUser(3L, "gerente", "ADMINISTRADOR"));
+        when(acceso.sesionValida(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(true);
+        when(jwt.leer("administrador")).thenReturn(new JwtService.Datos(new JwtUser(1L, "admin", "SUPER USUARIO"), 0, java.util.List.of()));
+        when(jwt.leer("vendedor")).thenReturn(new JwtService.Datos(new JwtUser(2L, "vendedor", "ADMINISTRATIVO"), 0, java.util.List.of()));
+        when(jwt.leer("gerente")).thenReturn(new JwtService.Datos(new JwtUser(3L, "gerente", "ADMINISTRADOR"), 0, java.util.List.of()));
         when(mantenimiento.estado()).thenReturn(mock(com.usic.uniFex.model.dto.MantenimientoDTO.class));
     }
 

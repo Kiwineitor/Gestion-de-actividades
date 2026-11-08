@@ -30,12 +30,30 @@ public class CategoriaMapaService {
 
     public record NuevaCategoria(String nombre, Integer cantidad, String color, String forma,
                                  Double tamanoMapa, BigDecimal precioBase, String tamano,
-                                 Double mapaProporcion, Integer personasPorPuesto, BigDecimal costoPersonaExtra) {
+                                 Double mapaProporcion, Integer personasPorPuesto, BigDecimal costoPersonaExtra, String descripcion) {
     }
 
     public record CambioCategoria(String nombre, String color, String forma, Double tamanoMapa,
                                   BigDecimal precioBase, Double mapaProporcion, String tamano,
-                                  Integer personasPorPuesto, BigDecimal costoPersonaExtra) {
+                                  Integer personasPorPuesto, BigDecimal costoPersonaExtra, String descripcion) {
+    }
+
+    private static java.util.Map<String, Object> foto(Categoria c) {
+        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("Nombre", c.getNombre());
+        m.put("Precio", c.getPrecioBase());
+        m.put("Qué incluye", c.getDescripcion());
+        m.put("Forma", c.getForma());
+        m.put("Color", c.getColor());
+        m.put("Personas incluidas", c.getPersonasPorPuesto());
+        m.put("Costo por persona extra", c.getCostoPersonaExtra());
+        return m;
+    }
+
+    private static String descripcionValida(String s) {
+        if (s == null || s.isBlank()) return null;
+        String t = s.strip();
+        return t.length() > 255 ? t.substring(0, 255) : t;
     }
 
     private static Integer personasValidas(Integer n) {
@@ -69,6 +87,7 @@ public class CategoriaMapaService {
         c.setIdEdicion(edicion == null
                 ? edicionDao.findFirstByActivaTrueOrderByAnioDesc().map(e -> e.getId()).orElse(null) : edicion);
         c.setColor(req.color());
+        c.setDescripcion(descripcionValida(req.descripcion()));
         c.setForma(formaValida(req.forma()));
         c.setTamanoMapa(req.tamanoMapa() != null ? req.tamanoMapa() : Categoria.TAMANO_MAPA_POR_DEFECTO);
         c.setMapaProporcion(proporcionValida(req.mapaProporcion()));
@@ -92,8 +111,10 @@ public class CategoriaMapaService {
     public Categoria actualizar(Long id, CambioCategoria cambio) {
         Categoria c = categoriaService.findById(id);
         if (c == null) return null;
+        java.util.Map<String, Object> antes = foto(c);
         if (cambio.nombre() != null) c.setNombre(cambio.nombre());
         if (cambio.color() != null) c.setColor(cambio.color());
+        if (cambio.descripcion() != null) c.setDescripcion(descripcionValida(cambio.descripcion()));
         if (cambio.forma() != null) c.setForma(formaValida(cambio.forma()));
         if (cambio.tamanoMapa() != null) c.setTamanoMapa(cambio.tamanoMapa());
         if (cambio.mapaProporcion() != null) c.setMapaProporcion(proporcionValida(cambio.mapaProporcion()));
@@ -104,7 +125,10 @@ public class CategoriaMapaService {
         if (cambio.personasPorPuesto() != null) c.setPersonasPorPuesto(personasValidas(cambio.personasPorPuesto()));
         if (cambio.costoPersonaExtra() != null) c.setCostoPersonaExtra(costoValido(cambio.costoPersonaExtra()));
         c.setModificacion(new Date());
-        return categoriaService.save(c);
+        Categoria guardada = categoriaService.save(c);
+        HistorialService.anotarResumen(guardada.getNombre());
+        HistorialService.anotarCambios(antes, foto(guardada));
+        return guardada;
     }
 
     @Transactional

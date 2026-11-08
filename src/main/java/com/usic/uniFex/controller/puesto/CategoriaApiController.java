@@ -52,6 +52,7 @@ public class CategoriaApiController {
                     m.put("id", c.getId());
                     m.put("nombre", c.getNombre());
                     m.put("color", c.getColor());
+                    m.put("descripcion", c.getDescripcion());
                     m.put("forma", c.getForma());
                     m.put("tamanoMapa", c.getTamanoMapa());
                     m.put("mapaProporcion", c.getMapaProporcion() != null ? c.getMapaProporcion() : 1.0);

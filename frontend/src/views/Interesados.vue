@@ -3,7 +3,7 @@ import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
 import UiModal from '../components/UiModal.vue';
 import AprobarSolicitud from '../components/AprobarSolicitud.vue';
 import { apiFetch } from '../api';
-import { aviso, confirmar } from '../ui/alerta';
+import { aviso, confirmar, pedirTexto } from '../ui/alerta';
 import { url as urlApi } from '../config.js';
 import { vFiltro } from '../ui/filtroEntrada.js';
 import { escucharTopic } from '../ws.js';
@@ -137,15 +137,17 @@ function whatsapp(i) {
 const esImagen = (url) => /\.(png|jpe?g|webp)(\?|$)/i.test(url || '');
 
 async function cambiarEstado(i, estado) {
+  let motivo = null;
   if (estado === 'DESCARTADO') {
-    const si = await confirmar(i.puestoCodigo
-      ? `La solicitud de ${i.nombreCompleto} se rechaza y el espacio ${i.puestoCodigo} vuelve a estar libre en la página pública.`
-      : `La solicitud de ${i.nombreCompleto} se marcará como rechazada.`, { titulo: '¿Rechazar la solicitud?', aceptar: 'Sí, rechazar' });
-    if (!si) return;
+    motivo = await pedirTexto(i.puestoCodigo
+      ? `Escribe por qué se rechaza la solicitud de ${i.nombreCompleto}. El espacio ${i.puestoCodigo} vuelve a estar libre y la solicitud pasa a Anulaciones con este motivo.`
+      : `Escribe por qué se rechaza la solicitud de ${i.nombreCompleto}.`, { titulo: 'Rechazar la solicitud', aceptar: 'Rechazar', marcador: 'Ej. El comprobante no corresponde al monto' });
+    if (motivo == null) return;
+    if (motivo.trim().length < 4) { toast('Escribe el motivo del rechazo', 'advertencia'); return; }
   }
   cambiando.value = i.id;
   try {
-    const r = await apiFetch(`/api/app/interesados-stand/${i.id}/estado`, { method: 'PATCH', body: JSON.stringify({ estado }) });
+    const r = await apiFetch(`/api/app/interesados-stand/${i.id}/estado`, { method: 'PATCH', body: JSON.stringify({ estado, motivo: motivo?.trim() || null }) });
     const d = await r.json().catch(() => null);
     if (!d?.ok) { aviso(d?.mensaje || 'No se pudo cambiar el estado.', 'error', 2500); return; }
     quedanVisibles.value = new Set(quedanVisibles.value).add(i.id);
@@ -199,8 +201,7 @@ async function guardar() {
     const r = await apiFetch(`/api/app/interesados-stand/${edicion.id}`, {
       method: 'PATCH',
       body: JSON.stringify({
-        nombreCompleto: edicion.nombreCompleto, celular: edicion.celular, empresa: edicion.empresa,
-        rubro: edicion.rubro, categoriaId: edicion.categoriaId,
+        categoriaId: edicion.categoriaId,
       }),
     });
     const d = await r.json().catch(() => null);
@@ -378,13 +379,13 @@ onUnmounted(() => dejarDeEscuchar?.());
     </div>
     <template #pie>
       <a class="btn btn-whatsapp" :href="whatsapp(detalle)" target="_blank" rel="noopener">WhatsApp</a>
-      <button class="btn btn-fantasma" @click="abrirEditar(detalle)">✏️ Editar datos</button>
+      <button v-if="!detalle.inscripcionId" class="btn btn-fantasma" @click="abrirEditar(detalle)">🏷️ Cambiar categoría</button>
       <span class="crecer"></span>
       <template v-if="estadoDe(detalle) === 'NUEVO'">
         <button class="btn" :disabled="cambiando === detalle.id" @click="cambiarEstado(detalle, 'DESCARTADO')">Rechazar</button>
         <button class="btn btn-aprobar" :disabled="cambiando === detalle.id" @click="abrirAprobacion(detalle)">✓ Aprobar</button>
       </template>
-      <button v-else-if="detalle.inscripcionId" class="btn btn-primario" @click="abrirAprobacion(detalle)">📲 Recibo y credenciales</button>
+      <button v-else-if="detalle.inscripcionId" class="btn btn-primario" @click="abrirAprobacion(detalle)">📲 Entregar al cliente</button>
       <template v-else>
         <button v-if="estadoDe(detalle) === 'ATENDIDO'" class="btn btn-primario" @click="abrirAprobacion(detalle)">Registrar venta</button>
         <button class="btn" :disabled="cambiando === detalle.id" @click="cambiarEstado(detalle, 'NUEVO')">Volver a revisión</button>
@@ -393,16 +394,14 @@ onUnmounted(() => dejarDeEscuchar?.());
   </UiModal>
 
   <AprobarSolicitud v-if="aprobando" :solicitud="aprobando" :actividad="feria?.nombre || ''"
-                    @aprobada="alAprobar" @cerrar="aprobando = null" />
+                    @aprobada="alAprobar" @cerrar="aprobando = null"
+                    @rechazada="(i) => { aprobando = null; if (i) aplicarEnVivo(i, { resaltar: false }); }"
+                    @actualizada="(i) => i && aplicarEnVivo(i, { resaltar: false })" />
 
-  <UiModal v-if="edicion.abierto" titulo="Editar datos de la solicitud" ancho="560px" @cerrar="cerrarEdicion">
+  <UiModal v-if="edicion.abierto" titulo="Cambiar la categoría de la solicitud" ancho="560px" @cerrar="cerrarEdicion">
+    <p class="muted chico-aviso">🔒 Los datos que envió el cliente (nombre, celular, negocio y rubro) no se pueden modificar. Solo puedes moverla a otra categoría si se equivocó al elegir.</p>
     <div class="grid2">
-      <label class="campo campo-ancho"><span>Nombre completo *</span>
-        <input v-model="edicion.nombreCompleto" v-filtro="'nombre'" autocapitalize="characters" class="control" maxlength="200" autocomplete="off" />
-      </label>
-      <label class="campo"><span>Número de celular *</span>
-        <input v-model="edicion.celular" v-filtro="'telefono'" type="tel" inputmode="tel" class="control" maxlength="16" autocomplete="off" />
-      </label>
+      <div class="campo campo-ancho"><span>Cliente</span><strong>{{ edicion.nombreCompleto }} · {{ edicion.celular }}</strong><small class="muted">{{ edicion.empresa }}{{ edicion.rubro ? ` · ${edicion.rubro}` : '' }}</small></div>
       <label class="campo"><span>Categoría *</span>
         <select v-model="edicion.categoriaId" class="control">
           <option v-if="!categoriaDelRegistroExiste" :value="edicion.categoriaId" disabled>
@@ -410,12 +409,6 @@ onUnmounted(() => dejarDeEscuchar?.());
           </option>
           <option v-for="c in categorias" :key="c.id" :value="c.id">{{ c.nombre }}</option>
         </select>
-      </label>
-      <label class="campo campo-ancho"><span>Negocio o emprendimiento *</span>
-        <input v-model="edicion.empresa" v-filtro="'letras'" autocapitalize="characters" class="control" maxlength="200" autocomplete="off" />
-      </label>
-      <label class="campo campo-ancho"><span>Rubro *</span>
-        <input v-model="edicion.rubro" v-filtro="'letras'" autocapitalize="characters" class="control" maxlength="200" autocomplete="off" />
       </label>
     </div>
     <template #pie>
@@ -498,6 +491,7 @@ onUnmounted(() => dejarDeEscuchar?.());
 .pdf { display: block; padding: 0.8rem; text-align: center; border: 1px dashed var(--border); border-radius: var(--radio-sm); font-weight: 600; }
 .crecer { flex: 1; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+.chico-aviso { margin: 0 0 0.8rem; font-size: 0.85rem; line-height: 1.45; }
 .campo-ancho { grid-column: 1 / -1; }
 
 @media (max-width: 760px) {

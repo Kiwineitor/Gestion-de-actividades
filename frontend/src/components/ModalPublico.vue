@@ -32,7 +32,7 @@ onUnmounted(() => {
           <slot name="cabecera"><h2>{{ titulo }}</h2></slot>
           <button v-if="cerrable" type="button" class="cerrar" aria-label="Cerrar" @click="emit('cerrar')">✕</button>
         </header>
-        <div class="cuerpo"><slot /></div>
+        <div class="cuerpo desliza"><slot /></div>
         <footer v-if="$slots.pie" class="pie"><slot name="pie" /></footer>
       </section>
     </div>

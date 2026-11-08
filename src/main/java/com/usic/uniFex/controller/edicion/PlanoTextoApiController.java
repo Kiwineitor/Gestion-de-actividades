@@ -32,7 +32,7 @@ public class PlanoTextoApiController {
     private final PlanoTextoService service;
 
     @GetMapping
-    @PreAuthorize("#edicion == null or (" + Roles.EDITA_PLANO_O_PANTALLA + ")")
+    @PreAuthorize("#edicion == null or (" + Roles.EDITA_PLANO_O_PANTALLA + ") or (" + Roles.VENDE_MESAS + ")")
     public List<PlanoTextoDTO> listar(@RequestParam(required = false) Long edicion) {
         return service.listar(edicion);
     }

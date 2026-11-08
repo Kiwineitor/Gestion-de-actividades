@@ -27,7 +27,6 @@ import com.usic.uniFex.model.IService.IPersonalApoyoService;
 import com.usic.uniFex.model.service.ApoyoCodigoService;
 import com.usic.uniFex.model.service.CredencialCodigoService;
 import com.usic.uniFex.model.service.CredencialService;
-import com.usic.uniFex.model.service.IngresoEventoService;
 import com.usic.uniFex.security.JwtUser;
 import com.usic.uniFex.security.Roles;
 
@@ -49,7 +48,6 @@ public class AccesoApiController {
     private final IPersonalApoyoService apoyo;
     private final ApoyoAccesoDao accesosApoyo;
     private final SimpMessagingTemplate messaging;
-    private final IngresoEventoService ingresosEvento;
 
     public record Movimiento(String codigo, String sentido) {}
 
@@ -196,16 +194,6 @@ public class AccesoApiController {
     @PreAuthorize(Roles.CONTROLA_ACCESO)
     public List<Map<String, Object>> quienesEstanDentro(@RequestParam(required = false) Long edicion) {
         return accesos.quienesEstanDentro(edicion);
-    }
-
-    @GetMapping("/evento/{eventoId}")
-    @PreAuthorize(Roles.CONTROLA_ACCESO + " or " + Roles.REGISTRA_INGRESO + " or @acceso.puede('control-acceso')")
-    public Map<String, Object> ingresosDeEvento(@PathVariable Long eventoId,
-            @RequestParam(required = false) String desde,
-            @RequestParam(required = false) String hasta) {
-        LocalDateTime d = (desde != null && !desde.isBlank()) ? LocalDateTime.parse(desde) : null;
-        LocalDateTime h = (hasta != null && !hasta.isBlank()) ? LocalDateTime.parse(hasta) : null;
-        return ingresosEvento.resumen(eventoId, d, h);
     }
 
     private List<Map<String, Object>> historial(Long responsableId) {

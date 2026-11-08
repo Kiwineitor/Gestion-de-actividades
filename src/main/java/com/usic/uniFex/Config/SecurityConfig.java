@@ -66,7 +66,8 @@ public class SecurityConfig {
     @Bean
     @Order(1)
     public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http, JwtService jwtService,
-                                                      MantenimientoService mantenimientoService) throws Exception {
+                                                      MantenimientoService mantenimientoService,
+                                                      com.usic.uniFex.security.AccesoSeguro acceso) throws Exception {
         http
                 .securityMatcher(new OrRequestMatcher(
                         AntPathRequestMatcher.antMatcher("/api/auth/**"),
@@ -90,7 +91,7 @@ public class SecurityConfig {
                             res.setContentType("application/json;charset=UTF-8");
                             res.getWriter().write("{\"ok\":false,\"mensaje\":\"Sin permiso\"}");
                         }))
-                .addFilterBefore(new JwtAuthFilter(jwtService), UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(new JwtAuthFilter(jwtService, acceso), UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(new MantenimientoApiFilter(mantenimientoService), JwtAuthFilter.class);
         return http.build();
     }

@@ -44,6 +44,15 @@ public class UniFexApplication {
 	@Value("${unifex.admin.admin2-password}")
 	private String admin2Password;
 
+	@Value("${unifex.seguridad.resellar:false}")
+	private boolean resellar;
+
+	@Value("${unifex.seguridad.restablecer-usuario:}")
+	private String restablecerUsuario;
+
+	@Value("${unifex.seguridad.restablecer-clave:}")
+	private String restablecerClave;
+
 	private static final Logger logger = LoggerFactory.getLogger(UniFexApplication.class);
 	
 	public static void main(String[] args) {
@@ -51,7 +60,7 @@ public class UniFexApplication {
 	}
 
 	@Bean
-	ApplicationRunner init(IUsuarioService usuarioService, IPersonaService personaService, GestionRolService gestionRol, UtilidadesService utilidadesService, DataSource dataSource) {
+	ApplicationRunner init(IUsuarioService usuarioService, IPersonaService personaService, GestionRolService gestionRol, UtilidadesService utilidadesService, DataSource dataSource, com.usic.uniFex.security.AccesoSeguro acceso) {
 
 		return args -> {
 
@@ -88,10 +97,27 @@ public class UniFexApplication {
 					usuario = new Usuario();
 					usuario.setUsername(usuarios[i]);
 					usuario.setPassword(passwordEncoder.encode(password[i]));
+					usuario.setDebeCambiarClave(true);
 					usuario.setPersona(persona);
 					usuario.setRol(rolObjects[i % rolObjects.length]);
 					usuario.setEstado("ACTIVO");
 					usuarioService.save(usuario);
+				} else if (!usuario.isDebeCambiarClave() && passwordEncoder.matches(password[i], usuario.getPassword())) {
+					usuario.setDebeCambiarClave(true);
+					usuarioService.save(usuario);
+					logger.warn("{} sigue con la contrasena inicial: debera cambiarla al ingresar", usuarios[i]);
+				}
+			}
+
+			int sellados = acceso.sellarFaltantes(resellar);
+			if (sellados > 0) logger.info("Sello de integridad aplicado a {} usuario(s)", sellados);
+			if (restablecerUsuario != null && !restablecerUsuario.isBlank()) {
+				if (restablecerClave == null || restablecerClave.length() < 10) {
+					logger.error("UNIFEX_RESTABLECER_CLAVE debe tener al menos 10 caracteres: no se restablecio {}", restablecerUsuario);
+				} else if (acceso.restablecer(restablecerUsuario, restablecerClave)) {
+					logger.warn("Se restablecio la contrasena de {}: debera cambiarla al ingresar. Quita UNIFEX_RESTABLECER_USUARIO y UNIFEX_RESTABLECER_CLAVE y reinicia.", restablecerUsuario);
+				} else {
+					logger.error("No existe el usuario {} para restablecer", restablecerUsuario);
 				}
 			}
 		};

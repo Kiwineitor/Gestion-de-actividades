@@ -37,6 +37,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private static final List<String> TOPICS_ADMINISTRACION = List.of("/topic/interesados");
 
     private final JwtService jwtService;
+    private final com.usic.uniFex.security.AccesoSeguro acceso;
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
@@ -89,7 +90,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             throw new MessagingException("Cabecera Authorization mal formada en el CONNECT");
         }
         try {
-            JwtUser usuario = jwtService.validar(cabecera.substring(7));
+            JwtService.Datos datos = jwtService.leer(cabecera.substring(7));
+            JwtUser usuario = datos.usuario();
+            if (!acceso.sesionValida(usuario.id(), datos.version())) throw new MessagingException("Sesión cerrada");
             acc.setUser(new UsernamePasswordAuthenticationToken(
                     usuario, null,
                     List.of(new SimpleGrantedAuthority("ROLE_" + usuario.rolNormalizado()))));

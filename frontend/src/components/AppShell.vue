@@ -18,6 +18,11 @@ import BarraPestanas from './BarraPestanas.vue';
 import { usePestanasStore } from '../stores/pestanas';
 import { useSolicitudesStore } from '../stores/solicitudes';
 import CampanaNotificaciones from './CampanaNotificaciones.vue';
+import AvisoSolicitud from './AvisoSolicitud.vue';
+import FormCambioClave from './FormCambioClave.vue';
+import TextoLegal from './TextoLegal.vue';
+import UiModalCuenta from './UiModal.vue';
+import { terminosDeUso } from '../ui/legal';
 
 const auth = useAuthStore();
 const permisos = usePermisosStore();
@@ -91,39 +96,43 @@ const GRUPOS = [
 ];
 
 const TODOS = [
-  { m: 'inicio', g: 'Mi trabajo', icono: '🏠', txt: 'Inicio' },
+  { m: 'inicio', g: 'Mi trabajo', icono: '🏠' },
 
-  { m: 'actividades', g: 'Actividades', icono: '🗓️', txt: 'Mis actividades' },
-  { m: 'editor', siNo: 'actividades', g: 'Actividades', icono: '🗺️', txt: 'Plano' },
-  { m: 'categorias', siNo: 'actividades', g: 'Actividades', icono: '🏷️', txt: 'Categorías y precios' },
+  { m: 'actividades', g: 'Actividades', icono: '🗓️' },
+  { m: 'editor', siNo: 'actividades', g: 'Actividades', icono: '🗺️' },
+  { m: 'categorias', siNo: 'actividades', g: 'Actividades', icono: '🏷️' },
 
-  { m: 'solicitudes', g: 'Ventas y cobros', icono: '📥', txt: 'Pagos por validar' },
-  { m: 'inscripciones', g: 'Ventas y cobros', icono: '📋', txt: 'Ventas registradas' },
-  { m: 'reportes', g: 'Ventas y cobros', icono: '📊', txt: 'Recaudación y reportes' },
+  { m: 'cobros', g: 'Ventas y cobros', icono: '💰' },
+  { m: 'inscripciones', g: 'Ventas y cobros', icono: '📋' },
+  { m: 'reportes', g: 'Ventas y cobros', icono: '📊' },
 
-  { m: 'mapa', g: 'Punto de venta', icono: '🧾', txt: 'Vender' },
-  { m: 'mis-ventas', g: 'Punto de venta', icono: '🗂️', txt: 'Mis ventas' },
-  { m: 'credenciales', g: 'Punto de venta', icono: '🪪', txt: 'Credenciales e impresión' },
-  { m: 'catalogo', siNo: 'actividades', g: 'Punto de venta', icono: '📚', txt: 'Catálogo de precios' },
+  { m: 'punto-venta', g: 'Punto de venta', icono: '🧾' },
+  { m: 'mapa', g: 'Punto de venta', icono: '🗺️' },
+  { m: 'mis-ventas', g: 'Punto de venta', icono: '🗂️' },
+  { m: 'credenciales', g: 'Punto de venta', icono: '🪪' },
+  { m: 'catalogo', siNo: 'actividades', g: 'Punto de venta', icono: '📚' },
 
-  { m: 'ingreso', g: 'Ingreso', icono: '🎟️', txt: 'Control de ingreso' },
+  { m: 'ingreso', g: 'Ingreso', icono: '🎟️' },
 
-  { m: 'anuncios', g: 'Comunicación', icono: '📣', txt: 'Anuncios y promociones' },
+  { m: 'anuncios', g: 'Comunicación', icono: '📣' },
 
-  { m: 'usuarios', g: 'Usuarios y permisos', icono: '👤', txt: 'Usuarios' },
-  { m: 'roles', g: 'Usuarios y permisos', icono: '🛡️', txt: 'Roles y permisos' },
-  { m: 'permisos', siNo: 'roles', g: 'Usuarios y permisos', icono: '🔐', txt: 'Roles y permisos' },
+  { m: 'usuarios', g: 'Usuarios y permisos', icono: '👤' },
+  { m: 'roles', g: 'Usuarios y permisos', icono: '🛡️' },
+  { m: 'permisos', siNo: 'roles', g: 'Usuarios y permisos', icono: '🔐' },
+  { m: 'historial', g: 'Usuarios y permisos', icono: '🕘' },
 
-  { m: 'sistema', g: 'Sistema', icono: '🏷️', txt: 'Datos del sistema' },
-  { m: 'whatsapp', g: 'Sistema', icono: '💬', txt: 'WhatsApp' },
-  { m: 'mantenimiento', g: 'Sistema', icono: '⚙️', txt: 'Mantenimiento' },
-  { m: 'errores', g: 'Sistema', icono: '⚠️', txt: 'Registro de errores' },
-];
+  { m: 'sistema', g: 'Sistema', icono: '🏷️' },
+  { m: 'whatsapp', g: 'Sistema', icono: '💬' },
+  { m: 'mantenimiento', g: 'Sistema', icono: '⚙️' },
+  { m: 'errores', g: 'Sistema', icono: '⚠️' },
+].map((e) => ({ ...e, txt: MODULOS[e.m]?.titulo || e.m }));
 
-const PREFERIDOS = ['inicio', 'actividades', 'solicitudes', 'mapa', 'ingreso', 'reportes'];
+const PREFERIDOS = ['inicio', 'actividades', 'cobros', 'punto-venta', 'ingreso', 'reportes'];
+const CORTOS = { actividades: 'Actividades', cobros: 'Cobros', ingreso: 'Recepción', reportes: 'Reportes' };
 const CLAVE_GRUPOS = 'menu.grupos.v4';
 
 const busqueda = ref('');
+const cuenta = ref(null);
 const buscador = ref(null);
 const abiertos = ref(new Set(leerGrupos()));
 
@@ -155,17 +164,16 @@ const enlaces = computed(() => TODOS.filter(puedeVerEnlace));
 
 const pestanas = usePestanasStore();
 const solicitudes = useSolicitudesStore();
-const iconos = { ...Object.fromEntries(TODOS.map((e) => [e.m, e.icono])), mesas: '🍸', interesados: '🙋' };
-const veSolicitudesMesas = computed(() => auth.puedeEditarPlano || permisos.puedeVer('mesas'));
-const veSolicitudesFeria = computed(() => auth.puedeEditarPlano || permisos.puedeVer('interesados'));
-const contadores = computed(() => ({ solicitudes: solicitudes.porValidar.length + solicitudes.nuevosFeria }));
-watch(() => [veSolicitudesMesas.value, veSolicitudesFeria.value], ([mesas, ferias]) => {
-  if (mesas || ferias) solicitudes.iniciar({ mesas, ferias }); else solicitudes.detener();
+const iconos = { ...Object.fromEntries(TODOS.map((e) => [e.m, e.icono])), interesados: '🙋' };
+const veSolicitudes = computed(() => auth.puedeEditarPlano || permisos.puedeVer('interesados') || permisos.puedeVer('mesas'));
+const contadores = computed(() => ({ cobros: solicitudes.nuevosFeria + solicitudes.nuevasEntradas }));
+watch(veSolicitudes, (ve) => {
+  if (ve) solicitudes.iniciar(); else solicitudes.detener();
 }, { immediate: true });
 
 const pendientesCampana = computed(() => [
-  { clave: 'mesas', icono: '🍸', texto: 'Pagos de mesas por validar', cantidad: solicitudes.porValidar.length, modulo: 'solicitudes', query: { tab: 'mesas' } },
-  { clave: 'ferias', icono: '🙋', texto: 'Solicitudes de participación por revisar', cantidad: solicitudes.nuevosFeria, modulo: 'solicitudes', query: { tab: 'ferias' } },
+  { clave: 'ferias', icono: '🗺️', texto: 'Solicitudes de espacios por validar', cantidad: solicitudes.nuevosFeria, modulo: 'cobros', query: { tab: 'validar' } },
+  { clave: 'entradas', icono: '🎟️', texto: 'Compras de entradas por validar', cantidad: solicitudes.nuevasEntradas, modulo: 'cobros', query: { tab: 'validar' } },
 ]);
 
 const cabecera = ref(null);
@@ -298,7 +306,7 @@ function salir() {
         <input ref="buscador" v-model="busqueda" type="search" placeholder="Buscar opción…  ( / )" aria-label="Buscar en el menú"
                @keydown.enter.prevent="irPrimero" @keydown.esc="busqueda = ''" />
       </div>
-      <nav>
+      <nav class="desliza">
         <p v-if="sinResultados" class="sin-resultados txt-menu">Nada coincide con «{{ busqueda }}».</p>
         <div v-for="g in grupos" :key="g.clave" class="grupo" :class="{ cerrado: !g.abierto }">
           <button type="button" class="grupo-titulo" :aria-expanded="g.abierto" @click="alternarGrupo(g.clave)">
@@ -320,7 +328,11 @@ function salir() {
             <span class="r">{{ etiquetaRol(auth.rol) }}</span>
           </div>
         </div>
-        <button class="btn btn-fantasma btn-sm txt-menu" @click="salir">Salir</button>
+        <div class="cuenta txt-menu">
+          <button class="btn btn-fantasma btn-sm" title="Cambiar mi contraseña" @click="cuenta = 'clave'">🔑 Contraseña</button>
+          <button class="btn btn-fantasma btn-sm" title="Términos de uso del sistema" @click="cuenta = 'terminos'">📜 Términos</button>
+          <button class="btn btn-fantasma btn-sm" @click="salir">Salir</button>
+        </div>
       </div>
     </aside>
 
@@ -342,12 +354,21 @@ function salir() {
       <main class="contenido" :class="{ inmersivo, completo: esCompleto(modulo, route.query) }">
         <slot />
       </main>
+      <span class="mas-abajo" aria-hidden="true">⌄</span>
     </div>
 
+    <AvisoSolicitud v-if="veSolicitudes" />
+    <UiModalCuenta v-if="cuenta === 'clave'" titulo="🔑 Cambiar mi contraseña" ancho="520px" @cerrar="cuenta = null">
+      <p class="muted" style="margin-top: 0">Al cambiarla se cierran tus sesiones abiertas en otros equipos.</p>
+      <FormCambioClave @listo="cuenta = null" />
+    </UiModalCuenta>
+    <UiModalCuenta v-if="cuenta === 'terminos'" titulo="📜 Términos de uso del sistema" ancho="720px" @cerrar="cuenta = null">
+      <TextoLegal :documento="terminosDeUso({ institucion: marca.nombre, contacto: marca.contacto })" compacto />
+    </UiModalCuenta>
     <nav class="tabbar">
       <router-link v-for="e in enlacesPrincipales" :key="e.m" :to="aModulo(e.m)" class="tab" :class="{ activo: e.m === clave }" @click="abierto = false">
         <span class="ico">{{ e.icono }}</span>
-        <span class="txt">{{ e.txt }}</span>
+        <span class="txt">{{ CORTOS[e.m] || e.txt }}</span>
       </router-link>
       <button type="button" class="tab tab-mas" :class="{ activo: abierto }" @click="abierto = !abierto">
         <span class="ico">☰</span>
@@ -404,7 +425,11 @@ nav { display: flex; flex-direction: column; gap: 2px; padding: 0.4rem 0.6rem; f
 .enlace.activo { background: var(--acento-suave); color: var(--acento); }
 .ico { width: 1.3rem; text-align: center; }
 
-.pie-side { border-top: 1px solid var(--border); padding: 0.8rem; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.pie-side { border-top: 1px solid var(--border); padding: 0.8rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.cuenta { display: flex; width: 100%; gap: 0.2rem; justify-content: space-between; }
+.cuenta .btn { padding: 0.3rem 0.45rem; font-size: 0.78rem; }
+.sidebar.plegado .cuenta { display: none; }
+.sidebar.plegado.asomado .cuenta { display: flex; }
 .quien { display: flex; align-items: center; gap: 0.55rem; min-width: 0; }
 .avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--acento-suave); color: var(--acento); font-weight: 700; flex: none; }
 .datos { display: flex; flex-direction: column; min-width: 0; }

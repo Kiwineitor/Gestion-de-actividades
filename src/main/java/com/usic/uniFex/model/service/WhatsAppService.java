@@ -148,7 +148,8 @@ public class WhatsAppService {
             return;
         }
 
-        String mensaje = mensajesVenta.siguiente(nombreEntidad);
+        boolean conCredenciales = credencialesPng != null && credencialesPng.stream().anyMatch(c -> c != null && c.length > 0);
+        String mensaje = mensajesVenta.paraVenta(inscripcionId, nombreEntidad, conCredenciales);
 
         log.info("[WHATSAPP] Inicio paquete venta inscripcion={} celular={} reciboBytes={} credenciales={} baseUrl={}",
                 inscripcionId, celular, reciboPdf == null ? 0 : reciboPdf.length,

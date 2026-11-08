@@ -35,6 +35,9 @@ public class InteresadoStand {
     @Column(name = "celular", nullable = false, length = 30)
     private String celular;
 
+    @Column(name = "celular_extra", length = 30)
+    private String celularExtra;
+
     @Column(name = "empresa", nullable = false, length = 200)
     private String empresa;
 
@@ -60,6 +63,9 @@ public class InteresadoStand {
 
     @Column(name = "ci", length = 20)
     private String ci;
+
+    @Column(name = "reserva_token", length = 40)
+    private String reservaToken;
 
     @Column(name = "id_inscripcion")
     private Long inscripcionId;

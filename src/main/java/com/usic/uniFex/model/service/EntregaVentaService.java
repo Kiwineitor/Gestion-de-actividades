@@ -25,6 +25,8 @@ public class EntregaVentaService {
     private final IInscripcionService inscripciones;
     private final IResponsableDao responsables;
     private final CredencialCodigoService codigos;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+    private final ResponsableExtraService personasExtra;
 
     @Transactional(readOnly = true)
     public Map<String, Object> deInscripcion(Long inscripcionId) {
@@ -40,6 +42,8 @@ public class EntregaVentaService {
             if (p != null) espacios.add((p.getCategoria() != null ? p.getCategoria().getNombre() + " · " : "") + p.getCodigo());
         }
         List<Map<String, Object>> personas = new ArrayList<>();
+        java.util.Set<Long> sinDatos = ins.getEntidad() == null ? java.util.Set.of() : new java.util.HashSet<>(jdbc.queryForList(
+                "SELECT id FROM responsable WHERE id_entidad = ? AND sin_datos", Long.class, ins.getEntidad().getId()));
         if (ins.getEntidad() != null) {
             for (Responsable r : responsables.vivosDeEntidad(ins.getEntidad().getId())) {
                 Map<String, Object> m = new LinkedHashMap<>();
@@ -50,6 +54,7 @@ public class EntregaVentaService {
                 m.put("extra", r.isEsExtra());
                 m.put("tieneFoto", r.getPersona() != null && r.getPersona().getFoto() != null && !r.getPersona().getFoto().isBlank());
                 m.put("codigo", codigos.codigoDe(r.getId()));
+                m.put("sinDatos", sinDatos.contains(r.getId()));
                 personas.add(m);
             }
         }
@@ -63,6 +68,8 @@ public class EntregaVentaService {
         m.put("total", total);
         m.put("espacios", espacios);
         m.put("conComprobante", ins.getImgComprobante() != null && !ins.getImgComprobante().isBlank());
+        m.put("cobroEfectivo", ins.isCobroEfectivo());
+        m.put("registraPersonas", personasExtra.registraPersonas(ins.getId()));
         m.put("personas", personas);
         return m;
     }

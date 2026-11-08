@@ -22,7 +22,10 @@ public record InteresadoStandDTO(
         String comprobanteUrl,
         String ci,
         Long inscripcionId,
-        Integer personasPorPuesto) {
+        Integer personasPorPuesto,
+        Long edicionId,
+        java.math.BigDecimal precio,
+        String celularExtra) {
 
     public static InteresadoStandDTO de(InteresadoStand i) {
         Categoria c = i.getCategoria();
@@ -37,6 +40,10 @@ public record InteresadoStandDTO(
                 i.getModoPago(),
                 i.getComprobanteArchivo() != null ? "/files/" + i.getComprobanteArchivo() : null,
                 i.getCi(), i.getInscripcionId(),
-                c != null ? c.personasIncluidas() : 2);
+                c != null ? c.personasIncluidas() : 2,
+                c != null ? c.getIdEdicion() : null,
+                i.getPuesto() != null && i.getPuesto().getPrecio() != null ? i.getPuesto().getPrecio()
+                        : c != null ? c.getPrecioBase() : null,
+                i.getCelularExtra());
     }
 }

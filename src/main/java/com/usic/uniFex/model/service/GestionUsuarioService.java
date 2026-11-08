@@ -99,6 +99,7 @@ public class GestionUsuarioService {
         Usuario u = new Usuario();
         u.setUsername(user);
         u.setPassword(passwordEncoder.encode(password));
+        u.setDebeCambiarClave(true);
         u.setPersona(persona);
         u.setRol(rol);
         u.setEstado(ACTIVO);
@@ -122,6 +123,8 @@ public class GestionUsuarioService {
         String user = username == null ? null : username.trim();
         problema = validarUsername(user, id);
         if (problema != null) return Resultado.error(problema);
+        String rolAntes = u.getRol() == null ? null : u.getRol().getNombre();
+        String usuarioAntes = u.getUsername();
 
         if (personaId != null && !personaId.equals(u.getPersona() == null ? null : u.getPersona().getId())) {
             if (usuarioDao.contarPorPersona(personaId, id) > 0) return Resultado.error("Esa persona ya tiene un usuario.");
@@ -146,6 +149,9 @@ public class GestionUsuarioService {
         u.setUsername(user);
         u.setModificacion(new Date());
         u.setModificacionIdUsuario(actor.id());
+        HistorialService.anotarResumen(user);
+        HistorialService.anotarCambio("Usuario", usuarioAntes, user);
+        HistorialService.anotarCambio("Rol", rolAntes, u.getRol() == null ? null : u.getRol().getNombre());
         return Resultado.exito("Usuario actualizado.", usuarioDao.save(u));
     }
 
@@ -160,6 +166,8 @@ public class GestionUsuarioService {
         if (problema != null) return Resultado.error(problema);
 
         u.setPassword(passwordEncoder.encode(nueva));
+        u.setDebeCambiarClave(true);
+        u.cerrarSesiones();
         u.setModificacion(new Date());
         u.setModificacionIdUsuario(actor.id());
         Usuario guardado = usuarioDao.save(u);
@@ -217,7 +225,10 @@ public class GestionUsuarioService {
             return Resultado.error("Es el unico SUPER USUARIO activo: nombra otro antes de desactivarlo.");
         }
 
+        HistorialService.anotarResumen(u.getUsername());
+        HistorialService.anotarCambio("Estado", u.getEstado(), activo ? ACTIVO : INACTIVO);
         u.setEstado(activo ? ACTIVO : INACTIVO);
+        u.cerrarSesiones();
         u.setModificacion(new Date());
         u.setModificacionIdUsuario(actor.id());
         return Resultado.exito(activo ? "Usuario activado." : "Usuario desactivado.", usuarioDao.save(u));
@@ -236,6 +247,7 @@ public class GestionUsuarioService {
         }
 
         u.setEstado(ELIMINADO);
+        u.cerrarSesiones();
         u.setModificacion(new Date());
         u.setModificacionIdUsuario(actor.id());
         vendedorAsignacion.liberarAsignacionesDe(id);

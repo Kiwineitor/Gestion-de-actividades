@@ -32,17 +32,8 @@ public class InscripcionGeneralService {
             if (clave == null || clave.isBlank()) return new Actividad(null, null);
             String c = clave.trim().toLowerCase();
             if (c.equals("ferias")) return new Actividad("FERIA", null);
-            if (c.equals("eventos")) return new Actividad("MESAS", null);
-            if (c.matches("[fe]-\\d+")) return new Actividad(c.startsWith("f") ? "FERIA" : "MESAS", Long.parseLong(c.substring(2)));
+            if (c.matches("f-\\d+")) return new Actividad("FERIA", Long.parseLong(c.substring(2)));
             return new Actividad(null, null);
-        }
-
-        boolean incluyeFerias() {
-            return tipo == null || "FERIA".equals(tipo);
-        }
-
-        boolean incluyeEventos() {
-            return tipo == null || "MESAS".equals(tipo);
         }
     }
 
@@ -51,8 +42,7 @@ public class InscripcionGeneralService {
         Actividad a = Actividad.de(f.actividad());
         String estado = f.estado() == null ? "" : f.estado().trim().toUpperCase();
         List<Map<String, Object>> filas = new ArrayList<>();
-        if (a.incluyeFerias()) filas.addAll(ferias(a, f));
-        if (a.incluyeEventos()) filas.addAll(mesas(a, f));
+        filas.addAll(ferias(a, f));
         String q = normal(f.q());
         return filas.stream()
                 .filter(m -> coincideEstado(estado, (String) m.get("estadoGeneral")))
@@ -73,37 +63,18 @@ public class InscripcionGeneralService {
                      WHERE c.id_edicion = ? AND (c."_estado" IS NULL OR c."_estado" <> 'X')
                      ORDER BY c.nombre
                     """, (rs, i) -> opcion(String.valueOf(rs.getLong("id")), rs.getString("nombre")), a.id());
-        } else if ("MESAS".equals(a.tipo()) && a.id() != null) {
-            categorias = jdbc.query("""
-                    SELECT DISTINCT m.zona FROM mesa m
-                     WHERE m.id_evento = ? AND m.zona IS NOT NULL AND btrim(m.zona) <> '' AND m."_estado" = 'A'
-                     ORDER BY m.zona
-                    """, (rs, i) -> opcion(rs.getString("zona"), rs.getString("zona")), a.id());
         }
         r.put("categorias", categorias);
-        r.put("categoriaEs", "MESAS".equals(a.tipo()) ? "zona" : "categoría");
+        r.put("categoriaEs", "categoría");
 
         List<Object> params = new ArrayList<>();
         StringBuilder sql = new StringBuilder("SELECT DISTINCT u.id, " + NOMBRE_USUARIO + " AS nombre FROM (");
-        List<String> partes = new ArrayList<>();
-        if (a.incluyeFerias()) {
-            StringBuilder p = new StringBuilder("SELECT i.\"_registro_id_usuario\" AS uid FROM inscripcion i WHERE i.\"_registro_id_usuario\" IS NOT NULL");
-            if (a.id() != null) {
-                p.append(" AND i.id_edicion = ?");
-                params.add(a.id());
-            }
-            partes.add(p.toString());
+        StringBuilder p = new StringBuilder("SELECT i.\"_registro_id_usuario\" AS uid FROM inscripcion i WHERE i.\"_registro_id_usuario\" IS NOT NULL");
+        if (a.id() != null) {
+            p.append(" AND i.id_edicion = ?");
+            params.add(a.id());
         }
-        if (a.incluyeEventos()) {
-            StringBuilder p = new StringBuilder("SELECT unnest(ARRAY[r.registrado_por, r.validado_por]) AS uid FROM mesa_reserva r "
-                    + "JOIN mesa_evento ev ON ev.id = r.id_evento AND ev.\"_estado\" = 'A' WHERE TRUE");
-            if (a.id() != null) {
-                p.append(" AND r.id_evento = ?");
-                params.add(a.id());
-            }
-            partes.add(p.toString());
-        }
-        sql.append(String.join(" UNION ", partes)).append(") x JOIN usuario u ON u.id = x.uid LEFT JOIN persona vp ON vp.id = u.persona_id");
+        sql.append(p).append(") x JOIN usuario u ON u.id = x.uid LEFT JOIN persona vp ON vp.id = u.persona_id");
         if (soloDe != null) {
             sql.append(" WHERE u.id = ?");
             params.add(soloDe);
@@ -125,9 +96,10 @@ public class InscripcionGeneralService {
                        i.fecha_compra AS fecha, e.nombre AS cliente, e.representante_legal AS representante,
                        e.ci_representante AS ci, e.celular_representante AS celular,
                        pu.espacios, pu.categorias, coalesce(pu.monto, 0) + coalesce(ex.monto, 0) AS monto,
-                       i.img_comprobante IS NOT NULL AS pagado, i.pago_contado,
+                       (i.img_comprobante IS NOT NULL OR i.cobro_efectivo) AS pagado, i.pago_contado, i.cobro_efectivo,
                        (i."_estado" = 'X') AS anulada, i.inscripcion_estado AS estado,
-                       u.id AS vendedor_id, %s AS vendedor
+                       u.id AS vendedor_id, %s AS vendedor,
+                       EXISTS (SELECT 1 FROM interesado_stand s WHERE s.id_inscripcion = i.id) AS en_linea
                   FROM inscripcion i
                   JOIN entidad e ON e.id = i.id_entidad
                   LEFT JOIN edicion ed ON ed.id = i.id_edicion
@@ -185,73 +157,12 @@ public class InscripcionGeneralService {
             m.put("personas", null);
             m.put("monto", rs.getBigDecimal("monto"));
             m.put("pagado", rs.getBoolean("pagado"));
-            m.put("formaPago", rs.getBoolean("pago_contado") ? "Al contado" : rs.getBoolean("pagado") ? "Depósito / transferencia" : null);
+            m.put("formaPago", rs.getBoolean("cobro_efectivo") ? "Efectivo" : rs.getBoolean("pago_contado") ? "Al contado" : rs.getBoolean("pagado") ? "Depósito / transferencia" : null);
             boolean anulada = rs.getBoolean("anulada");
             m.put("estadoGeneral", anulada ? "ANULADA" : "VIGENTE");
-            m.put("estado", anulada ? "Anulada" : texto(rs.getString("estado"), "Vigente"));
+            m.put("estado", anulada ? "Anulada" : "Vigente");
             vendedor(m, rs);
-            return m;
-        }, params.toArray());
-    }
-
-    private List<Map<String, Object>> mesas(Actividad a, Filtros f) {
-        List<Object> params = new ArrayList<>();
-        StringBuilder sql = new StringBuilder("""
-                SELECT r.id, r.codigo, ev.id AS evento_id, ev.nombre AS actividad, r.creado_en AS fecha,
-                       btrim(concat_ws(' ', r.nombre, r.apellidos)) AS cliente, r.ci, r.celular,
-                       concat_ws(', ', m.codigo, ad.codigo) AS mesa, m.zona, r.personas, r.tipo_pase, r.monto, r.estado,
-                       r.comprobante_archivo IS NOT NULL AS con_comprobante, r.registrado_por IS NOT NULL AS en_oficina,
-                       u.id AS vendedor_id, %s AS vendedor
-                  FROM mesa_reserva r
-                  JOIN mesa m ON m.id = r.id_mesa
-                  LEFT JOIN mesa ad ON ad.id = r.id_mesa_adicional
-                  JOIN mesa_evento ev ON ev.id = r.id_evento AND ev."_estado" = 'A'
-                  LEFT JOIN usuario u ON u.id = coalesce(r.registrado_por, r.validado_por)
-                  LEFT JOIN persona vp ON vp.id = u.persona_id
-                 WHERE TRUE
-                """.formatted(NOMBRE_USUARIO));
-        if (a.id() != null) {
-            sql.append(" AND r.id_evento = ?");
-            params.add(a.id());
-            if (f.categoria() != null && !f.categoria().isBlank()) {
-                sql.append(" AND (m.zona = ? OR ad.zona = ?)");
-                params.add(f.categoria().trim());
-                params.add(f.categoria().trim());
-            }
-        }
-        if (f.vendedor() != null) {
-            sql.append(" AND (r.registrado_por = ? OR r.validado_por = ?)");
-            params.add(f.vendedor());
-            params.add(f.vendedor());
-        }
-        if (f.soloDe() != null) {
-            sql.append(" AND (r.registrado_por = ? OR r.validado_por = ?)");
-            params.add(f.soloDe());
-            params.add(f.soloDe());
-        }
-        return jdbc.query(sql.toString(), (rs, i) -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("tipo", "MESAS");
-            m.put("id", rs.getLong("id"));
-            m.put("codigo", rs.getString("codigo"));
-            m.put("actividadClave", "e-" + rs.getLong("evento_id"));
-            m.put("actividad", rs.getString("actividad"));
-            m.put("fecha", fecha(rs.getTimestamp("fecha")));
-            m.put("cliente", rs.getString("cliente"));
-            m.put("representante", null);
-            m.put("ci", rs.getString("ci"));
-            m.put("celular", rs.getString("celular"));
-            m.put("espacios", "Mesa " + rs.getString("mesa"));
-            m.put("categoria", rs.getString("zona"));
-            m.put("personas", rs.getObject("personas", Integer.class));
-            m.put("tipoPase", rs.getString("tipo_pase"));
-            m.put("monto", rs.getBigDecimal("monto"));
-            String estado = rs.getString("estado");
-            m.put("pagado", "CONFIRMADA".equals(estado));
-            m.put("formaPago", rs.getBoolean("en_oficina") ? "En oficina" : rs.getBoolean("con_comprobante") ? "Comprobante adjunto" : null);
-            m.put("estadoGeneral", estadoGeneral(estado));
-            m.put("estado", etiquetaMesa(estado));
-            vendedor(m, rs);
+            m.put("canal", rs.getBoolean("en_linea") ? "EN_LINEA" : "EN_PERSONA");
             return m;
         }, params.toArray());
     }
@@ -260,27 +171,6 @@ public class InscripcionGeneralService {
         if (filtro.isEmpty()) return "VIGENTE".equals(estadoGeneral) || "POR_VALIDAR".equals(estadoGeneral);
         if ("TODAS".equals(filtro)) return true;
         return filtro.equals(estadoGeneral);
-    }
-
-    private static String estadoGeneral(String estado) {
-        return switch (String.valueOf(estado)) {
-            case "CONFIRMADA" -> "VIGENTE";
-            case "EN_REVISION" -> "POR_VALIDAR";
-            case "BLOQUEADA" -> "APARTADA";
-            default -> String.valueOf(estado);
-        };
-    }
-
-    private static String etiquetaMesa(String estado) {
-        return switch (String.valueOf(estado)) {
-            case "CONFIRMADA" -> "Confirmada";
-            case "EN_REVISION" -> "Pago por validar";
-            case "BLOQUEADA" -> "Apartada, sin pago";
-            case "RECHAZADA" -> "Rechazada";
-            case "VENCIDA" -> "Vencida";
-            case "CANCELADA" -> "Cancelada";
-            default -> String.valueOf(estado);
-        };
     }
 
     private static void vendedor(Map<String, Object> m, ResultSet rs) throws SQLException {
@@ -314,10 +204,6 @@ public class InscripcionGeneralService {
     private static Long numero(String s) {
         if (s == null || !s.trim().matches("\\d+")) return null;
         return Long.parseLong(s.trim());
-    }
-
-    private static String texto(String s, String porDefecto) {
-        return s == null || s.isBlank() ? porDefecto : s;
     }
 
     private static String fecha(Timestamp t) {

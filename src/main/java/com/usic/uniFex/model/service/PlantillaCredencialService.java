@@ -35,12 +35,16 @@ public class PlantillaCredencialService {
     private static final String COLUMNAS = """
             id, codigo, etiqueta, detalle, imagen, requiere_foto, centrado, mayusculas,
             foto_circular, multilinea, color_texto, tipo_texto, cajas, orden, predeterminada,
-            uso, id_edicion, id_dependencia, imagen_reverso, id_evento, foto_forma
+            uso, id_edicion, id_dependencia, imagen_reverso, id_evento, foto_forma, rol
             """;
 
     public static final String USO_EXPOSITOR = "EXPOSITOR";
     public static final String USO_APOYO = "APOYO";
     public static final String CODIGO_PASE_EVENTO = "PASE_EVENTO";
+    public static final String ROL_ENTRADA = "ENTRADA";
+    public static final String ROL_REPRESENTANTE = "REPRESENTANTE";
+    public static final String ROL_ACOMPANANTE = "ACOMPANANTE";
+    public static final java.util.Set<String> ROLES = java.util.Set.of(ROL_ENTRADA, ROL_REPRESENTANTE, ROL_ACOMPANANTE);
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
@@ -56,7 +60,7 @@ public class PlantillaCredencialService {
     }
 
     public record Fila(Long id, PlantillaCredencial plantilla, int orden, boolean predeterminada,
-                       String uso, Long idEdicion, Long idDependencia, Long idEvento) {
+                       String uso, Long idEdicion, Long idDependencia, Long idEvento, String rol) {
         public boolean deApoyo() {
             return USO_APOYO.equals(uso);
         }
@@ -100,6 +104,8 @@ public class PlantillaCredencialService {
         String porDefecto = expositores.stream().filter(Fila::predeterminada)
                 .map(f -> f.plantilla().id()).findFirst().orElse(null);
         PlantillaCredencial.registrar(expositores.stream().map(Fila::plantilla).toList(), porDefecto);
+        PlantillaCredencial.registrarConocidas(listar().stream()
+                .filter(f -> !f.deApoyo() && f.idEvento() == null).map(Fila::plantilla).toList());
     }
 
     @Scheduled(initialDelay = 300_000, fixedDelay = 300_000)
@@ -122,11 +128,15 @@ public class PlantillaCredencialService {
     }
 
     public PlantillaCredencial paraActividad(Long edicionId, Long eventoId) {
+        if (eventoId == null && edicionId != null) {
+            Fila representante = filaDeRol(edicionId, ROL_REPRESENTANTE);
+            if (representante != null) return representante.plantilla();
+        }
         if (edicionId != null || eventoId != null) {
             for (Fila f : listar()) {
                 if (f.deApoyo()) continue;
                 boolean coincide = eventoId != null ? eventoId.equals(f.idEvento())
-                        : f.idEvento() == null && edicionId.equals(f.idEdicion());
+                        : f.idEvento() == null && edicionId.equals(f.idEdicion()) && f.rol() == null;
                 if (coincide) return f.plantilla();
             }
         }
@@ -136,6 +146,74 @@ public class PlantillaCredencialService {
             }
         }
         return PlantillaCredencial.actual(PlantillaCredencial.CREDENCIAL_VIRTUAL);
+    }
+
+    public PlantillaCredencial paraEntradas(Long edicionId) {
+        Fila propia = filaDeRol(edicionId, ROL_ENTRADA);
+        if (propia != null) return propia.plantilla();
+        for (Fila f : listar()) {
+            if (CODIGO_PASE_EVENTO.equals(f.plantilla().id())) return f.plantilla();
+        }
+        return PlantillaCredencial.actual(PlantillaCredencial.CREDENCIAL_VIRTUAL);
+    }
+
+    public Fila filaDeRol(Long edicionId, String rol) {
+        if (edicionId == null || rol == null) return null;
+        for (Fila f : listar()) {
+            if (!f.deApoyo() && f.idEvento() == null && edicionId.equals(f.idEdicion()) && rol.equals(f.rol())) return f;
+        }
+        return null;
+    }
+
+    public PlantillaCredencial paraResponsable(Long responsableId, PlantillaCredencial porDefecto) {
+        if (responsableId == null) return porDefecto;
+        List<Map<String, Object>> f = jdbc.queryForList("""
+                SELECT r.sin_datos, i.id_edicion FROM responsable r JOIN inscripcion i ON i.id_entidad = r.id_entidad
+                 WHERE r.id = ? ORDER BY i.id DESC LIMIT 1
+                """, responsableId);
+        if (f.isEmpty() || !Boolean.TRUE.equals(f.get(0).get("sin_datos")) || f.get(0).get("id_edicion") == null) return porDefecto;
+        Fila acompanante = filaDeRol(((Number) f.get(0).get("id_edicion")).longValue(), ROL_ACOMPANANTE);
+        return acompanante == null ? porDefecto : acompanante.plantilla();
+    }
+
+    @Transactional
+    public Fila asegurarParaRol(Long edicionId, String rol, Long usuarioId) {
+        if (!ROLES.contains(rol)) throw new PlantillaInvalida("Rol de credencial no válido");
+        List<String> nombres = jdbc.queryForList("SELECT nombre FROM edicion WHERE id = ?", String.class, edicionId);
+        if (nombres.isEmpty()) throw new PlantillaInvalida("La actividad no existe");
+        Fila existente = filaDeRol(edicionId, rol);
+        if (existente != null) return existente;
+        Fila base = null;
+        List<Fila> todas = listar().stream().filter(f -> !f.deApoyo()).toList();
+        boolean persona = Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT comprador = 'PERSONA' FROM edicion WHERE id = ?", Boolean.class, edicionId));
+        if (ROL_ACOMPANANTE.equals(rol)) base = filaDeRol(edicionId, ROL_REPRESENTANTE);
+        if (base == null && (ROL_ENTRADA.equals(rol) || persona)) {
+            base = todas.stream().filter(f -> CODIGO_PASE_EVENTO.equals(f.plantilla().id())).findFirst().orElse(null);
+        }
+        if (base == null) {
+            base = todas.stream().filter(f -> f.idEvento() == null && edicionId.equals(f.idEdicion()) && f.rol() == null)
+                    .findFirst()
+                    .or(() -> todas.stream().filter(Fila::predeterminada).findFirst())
+                    .or(() -> todas.stream().findFirst())
+                    .orElseThrow(() -> new PlantillaInvalida("No hay una plantilla base para copiar"));
+        }
+        Fila copia = duplicar(base.id(), usuarioId);
+        String etiqueta = switch (rol) {
+            case ROL_ENTRADA -> "Pase de entrada";
+            case ROL_ACOMPANANTE -> "Pase de acompañante";
+            default -> "Credencial del representante";
+        };
+        jdbc.update("""
+                UPDATE plantilla_credencial
+                   SET id_edicion = ?, id_evento = NULL, uso = ?, rol = ?, etiqueta = ?, predeterminada = FALSE,
+                       requiere_foto = CASE WHEN ? THEN FALSE ELSE requiere_foto END,
+                       tipo_texto = CASE WHEN ? THEN 'ACOMPAÑANTE' WHEN ? THEN 'ENTRADA' ELSE tipo_texto END
+                 WHERE id = ?
+                """, edicionId, USO_EXPOSITOR, rol, recortar(etiqueta + " · " + nombres.get(0), 80),
+                !ROL_REPRESENTANTE.equals(rol), ROL_ACOMPANANTE.equals(rol), ROL_ENTRADA.equals(rol), copia.id());
+        recargar();
+        return buscar(copia.id());
     }
 
     public PlantillaCredencial paraInscripcion(Long inscripcionId) {
@@ -169,7 +247,8 @@ public class PlantillaCredencialService {
                 rs.getString("uso"),
                 rs.getObject("id_edicion", Long.class),
                 rs.getObject("id_dependencia", Long.class),
-                rs.getObject("id_evento", Long.class));
+                rs.getObject("id_evento", Long.class),
+                rs.getString("rol"));
         });
     }
 
@@ -349,6 +428,7 @@ public class PlantillaCredencialService {
         m.put("idDependencia", f.idDependencia());
         m.put("imagenReverso", p.imagenReverso());
         m.put("idEvento", f.idEvento());
+        m.put("rol", f.rol());
         return m;
     }
 

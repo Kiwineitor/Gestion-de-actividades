@@ -5,6 +5,7 @@ const props = defineProps({
   acciones: { type: Array, required: true },
   etiqueta: { type: String, default: 'Acciones' },
   deshabilitado: { type: Boolean, default: false },
+  texto: { type: String, default: '' },
 });
 
 const abierto = ref(false);
@@ -72,8 +73,8 @@ onBeforeUnmount(quitarOyentes);
 </script>
 
 <template>
-  <button ref="boton" type="button" class="btn btn-fantasma btn-sm puntos" :disabled="deshabilitado"
-          :aria-label="etiqueta" :aria-expanded="abierto" aria-haspopup="menu" @click="alternar">⋮</button>
+  <button ref="boton" type="button" class="btn btn-fantasma btn-sm puntos" :class="{ 'con-texto': texto }" :disabled="deshabilitado"
+          :aria-label="etiqueta" :aria-expanded="abierto" aria-haspopup="menu" :title="etiqueta" @click="alternar"><span aria-hidden="true">⋮</span><span v-if="texto" class="txt-menu">{{ texto }}</span></button>
   <Teleport to="body">
     <div v-if="abierto" ref="lista" class="menu-acciones-flotante" role="menu" :style="posicion">
       <template v-for="(a, i) in acciones" :key="i">
@@ -87,6 +88,8 @@ onBeforeUnmount(quitarOyentes);
 
 <style scoped>
 .puntos { font-size: 1.15rem; line-height: 1; padding: 0.25rem 0.55rem; }
+.puntos.con-texto { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; font-weight: 700; padding: 0.3rem 0.6rem; }
+.puntos.con-texto > span:first-child { font-size: 1.05rem; }
 </style>
 
 <style>

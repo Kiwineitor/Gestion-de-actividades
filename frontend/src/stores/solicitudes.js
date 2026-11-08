@@ -1,8 +1,8 @@
-import { ref, computed } from 'vue';
+import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import { apiFetch } from '../api.js';
 import { alCambiarPublico } from '../ui/canalPublico.js';
-import { toast } from '../ui/toast.js';
+import { actividades, cargarActividades } from '../ui/actividadElegida.js';
 
 function sonar() {
   try {
@@ -20,55 +20,61 @@ function sonar() {
 }
 
 export const useSolicitudesStore = defineStore('solicitudes', () => {
-  const pendientes = ref([]);
   const nuevosFeria = ref(0);
+  const nuevasEntradas = ref(0);
   const activo = ref(false);
-  let alcance = { mesas: false, ferias: false };
+  const aviso = ref(null);
   let soltar = null;
   let pendiente = null;
   let sondeo = null;
-  let conocidas = null;
-
-  const porValidar = computed(() => pendientes.value.filter((r) => r.estado === 'EN_REVISION'));
-  const esperandoPago = computed(() => pendientes.value.filter((r) => r.estado === 'BLOQUEADA'));
-
-  async function cargarFeria() {
-    if (!alcance.ferias) return;
-    try {
-      const r = await apiFetch('/api/app/interesados-stand');
-      if (!r.ok) return;
-      nuevosFeria.value = (await r.json()).filter((x) => x.estado === 'NUEVO').length;
-    } catch { }
-  }
+  let vistos = false;
 
   async function cargar() {
-    cargarFeria();
-    if (!alcance.mesas) return;
     try {
-      const r = await apiFetch('/api/app/mesas/reservas/pendientes');
-      if (!r.ok) return;
-      const lista = await r.json();
-      const nuevas = lista.filter((x) => x.estado === 'EN_REVISION' && conocidas && !conocidas.has(x.codigo));
-      conocidas = new Set(lista.filter((x) => x.estado === 'EN_REVISION').map((x) => x.codigo));
-      pendientes.value = lista;
-      if (nuevas.length) {
-        sonar();
-        toast(nuevas.length === 1
-          ? `Nuevo pago por revisar: mesa ${nuevas[0].mesa} · ${nuevas[0].evento}`
-          : `${nuevas.length} pagos nuevos por revisar`, 'info', 6000);
+      const [r, e] = await Promise.all([apiFetch('/api/app/interesados-stand'), apiFetch('/api/app/entradas/pendientes')]);
+      const antesFeria = nuevosFeria.value;
+      const antesEntradas = nuevasEntradas.value;
+      let nuevas = [];
+      let ultima = null;
+      if (r.ok) {
+        nuevas = (await r.json()).filter((x) => x.estado === 'NUEVO');
+        nuevosFeria.value = nuevas.length;
       }
+      if (e.ok) {
+        const d = await e.json();
+        nuevasEntradas.value = Number(d.revision) || 0;
+        ultima = d.ultima || null;
+      }
+      if (vistos && nuevasEntradas.value > antesEntradas && ultima) {
+        sonar();
+        aviso.value = {
+          clave: `e${ultima.id}`, icono: '🎟️', titulo: 'Nueva compra de entradas', quien: ultima.nombre,
+          detalle: `${ultima.cantidad || ''} entrada${Number(ultima.cantidad) === 1 ? '' : 's'} · ${ultima.actividad}`,
+          monto: ultima.total, edicion: ultima.edicion, mas: nuevasEntradas.value - antesEntradas - 1,
+        };
+      } else if (vistos && nuevosFeria.value > antesFeria && nuevas.length) {
+        sonar();
+        const s = nuevas.reduce((a, b) => (b.id > a.id ? b : a));
+        await cargarActividades(true);
+        const act = actividades.value.find((a) => a.clave === `f-${s.edicionId}`);
+        aviso.value = {
+          clave: `s${s.id}`, icono: '🗺️', titulo: 'Nueva solicitud de compra', quien: s.empresa || s.nombreCompleto,
+          detalle: [[s.categoriaNombre, s.puestoCodigo].filter(Boolean).join(' · '), act?.nombre].filter(Boolean).join(' · '),
+          monto: s.precio, edicion: s.edicionId, mas: nuevosFeria.value - antesFeria - 1,
+        };
+      }
+      vistos = true;
     } catch { }
   }
 
-  function iniciar(nuevoAlcance = { mesas: true, ferias: false }) {
-    const igual = activo.value && alcance.mesas === nuevoAlcance.mesas && alcance.ferias === nuevoAlcance.ferias;
-    if (igual) return;
-    detener();
-    alcance = { ...nuevoAlcance };
+  const cargarFeria = cargar;
+
+  function iniciar() {
+    if (activo.value) return;
     activo.value = true;
     cargar();
     soltar = alCambiarPublico((m) => {
-      if (m?.tipo !== 'mesas' && m?.tipo !== 'feria') return;
+      if (m?.tipo !== 'feria' && m?.tipo !== 'entradas') return;
       clearTimeout(pendiente);
       pendiente = setTimeout(cargar, 500);
     }, { reconectado: cargar });
@@ -81,10 +87,15 @@ export const useSolicitudesStore = defineStore('solicitudes', () => {
     soltar = null;
     clearTimeout(pendiente);
     clearInterval(sondeo);
-    pendientes.value = [];
     nuevosFeria.value = 0;
-    conocidas = null;
+    nuevasEntradas.value = 0;
+    aviso.value = null;
+    vistos = false;
   }
 
-  return { pendientes, nuevosFeria, porValidar, esperandoPago, cargar, cargarFeria, iniciar, detener };
+  function cerrarAviso() {
+    aviso.value = null;
+  }
+
+  return { nuevosFeria, nuevasEntradas, aviso, cerrarAviso, cargar, cargarFeria, iniciar, detener };
 });

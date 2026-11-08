@@ -43,6 +43,8 @@ services:
       UNIFEX_PUBLICO_BASE_URL: ${UNIFEX_PUBLICO_BASE_URL:-http://localhost:7676}
       NOTA_VERIFICACION_URL: ${NOTA_VERIFICACION_URL:-}
       WHATSAPP_ENABLED: "false"
+      UNIFEX_RESTABLECER_USUARIO: ${UNIFEX_RESTABLECER_USUARIO:-}
+      UNIFEX_RESTABLECER_CLAVE: ${UNIFEX_RESTABLECER_CLAVE:-}
     volumes:
       - uploads:/var/lib/unifex
       - logs:/var/log/unifex

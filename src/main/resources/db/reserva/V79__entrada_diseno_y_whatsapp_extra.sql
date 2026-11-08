@@ -1,0 +1,3 @@
+ALTER TABLE edicion ADD COLUMN IF NOT EXISTS entrada_diseno VARCHAR(2000);
+ALTER TABLE entrada_compra ADD COLUMN IF NOT EXISTS celular_extra VARCHAR(30);
+ALTER TABLE interesado_stand ADD COLUMN IF NOT EXISTS celular_extra VARCHAR(30);

@@ -1,13 +1,5 @@
 const FUENTE = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
-export const COLOR_MESA = { L: '#1f9d63', P: '#2b8fd6', T: '#d98b0b', R: '#d98b0b', O: '#d23b5a', X: '#8a90a6' };
-export const LEYENDA_MESAS = [
-  { color: COLOR_MESA.L, texto: 'Libre' },
-  { color: COLOR_MESA.R, texto: 'Reservada' },
-  { color: COLOR_MESA.O, texto: 'Vendida' },
-  { color: COLOR_MESA.X, texto: 'No disponible' },
-];
-
 async function cargarImagen(url) {
   if (!url) return null;
   try {
@@ -56,12 +48,6 @@ function lineas(ctx, texto, ancho) {
   }
   if (actual) res.push(actual);
   return res;
-}
-
-function textoCentrado(ctx, texto, cx, cy, ancho, tam) {
-  const filas = lineas(ctx, texto, ancho);
-  const alto = tam * 1.1;
-  filas.forEach((f, i) => ctx.fillText(f, cx, cy + (i - (filas.length - 1) / 2) * alto));
 }
 
 function lienzoBase(ancho, aspecto, cabecera, pie) {
@@ -125,60 +111,6 @@ async function dibujarFondo(ctx, ancho, alto, y0, fondoUrl, colorLiso) {
     for (let y = paso; y < alto; y += paso) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(ancho, y); ctx.stroke(); }
   }
   ctx.restore();
-}
-
-function dibujarElementos(ctx, W, H, elementos) {
-  for (const e of elementos || []) {
-    const x = e.x * W;
-    const y = e.y * H;
-    const w = e.ancho * W;
-    const h = e.alto * H;
-    ctx.save();
-    ctx.translate(x + w / 2, y + h / 2);
-    if (e.rotacion) ctx.rotate((e.rotacion * Math.PI) / 180);
-    if (e.tipo === 'zona') {
-      rectRedondeado(ctx, -w / 2, -h / 2, w, h, Math.min(w, h) * 0.08);
-      ctx.fillStyle = conAlfa(e.fondo, 0.22);
-      ctx.fill();
-      ctx.lineWidth = Math.max(2, W * 0.0015);
-      ctx.strokeStyle = conAlfa(e.fondo, 0.8);
-      ctx.stroke();
-    }
-    const tam = Math.max(8, (e.tamano || 0.025) * W);
-    ctx.font = `800 ${tam}px ${FUENTE}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = e.color || (e.tipo === 'zona' ? '#e9e4ff' : '#ffffff');
-    textoCentrado(ctx, String(e.texto || '').toUpperCase(), 0, 0, w * 0.94, tam);
-    ctx.restore();
-  }
-}
-
-function dibujarMesas(ctx, W, H, mesas) {
-  for (const m of mesas || []) {
-    if (m.mapaX == null || m.mapaY == null) continue;
-    const w = (m.tamano || 0.06) * W;
-    const h = m.forma === 'rectangulo' ? w / 1.7 : w;
-    const cx = m.mapaX * W;
-    const cy = m.mapaY * H;
-    ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.35)';
-    ctx.shadowBlur = w * 0.12;
-    ctx.fillStyle = COLOR_MESA[m.estado] || COLOR_MESA.L;
-    if (m.forma === 'cuadrado' || m.forma === 'rectangulo') rectRedondeado(ctx, cx - w / 2, cy - h / 2, w, h, w * 0.13);
-    else { ctx.beginPath(); ctx.arc(cx, cy, w / 2, 0, Math.PI * 2); }
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.lineWidth = Math.max(2, w * 0.06);
-    ctx.strokeStyle = m.color || '#6d5bd0';
-    ctx.stroke();
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `700 ${Math.max(9, Math.min(h * 0.42, W * 0.02))}px ${FUENTE}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(String(m.codigo ?? ''), cx, cy);
-    ctx.restore();
-  }
 }
 
 function dibujarRotulos(ctx, W, H, textos) {
@@ -250,21 +182,6 @@ function aBlob(lienzo) {
       reject(e);
     }
   });
-}
-
-export async function imagenPlanoMesas({ titulo, subtitulo, aspecto, fondoUrl, mesas, elementos, ancho = 1800 }) {
-  const cab = Math.round(ancho * 0.07);
-  const pie = Math.round(ancho * 0.04);
-  const { lienzo, ctx, altoPlano } = lienzoBase(ancho, aspecto, cab, pie);
-  dibujarCabecera(ctx, ancho, cab, titulo, subtitulo);
-  await dibujarFondo(ctx, ancho, altoPlano, cab, fondoUrl, '#1b1f33');
-  ctx.save();
-  ctx.translate(0, cab);
-  dibujarElementos(ctx, ancho, altoPlano, elementos);
-  dibujarMesas(ctx, ancho, altoPlano, mesas);
-  ctx.restore();
-  dibujarLeyenda(ctx, ancho, cab + altoPlano, pie, LEYENDA_MESAS);
-  return aBlob(lienzo);
 }
 
 export async function imagenPlanoFeria({ titulo, subtitulo, aspecto, fondoUrl, puestos, textos, leyenda = [], colorDe, ancho = 2000 }) {

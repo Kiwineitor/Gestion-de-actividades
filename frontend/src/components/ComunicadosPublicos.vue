@@ -1,26 +1,17 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { url as urlApi } from '../config.js';
-import { alCambiarPublico } from '../ui/canalPublico';
+import { ref, computed } from 'vue';
+import { usarPromos, destinoDe, contarClic } from '../ui/promosPublicas';
 
 const CLAVE = 'pub.comunicados.cerrados';
-const lista = ref([]);
+const todas = usarPromos();
+const lista = computed(() => todas.value.filter((a) => !a.formato || a.formato === 'AVISO'));
 const cerrados = ref(new Set(leer()));
-let soltar = null;
-let sondeo = null;
 
 function leer() {
   try { return JSON.parse(sessionStorage.getItem(CLAVE) || '[]'); } catch { return []; }
 }
 
 const visibles = computed(() => lista.value.filter((a) => !cerrados.value.has(a.id)).slice(0, 2));
-
-async function cargar() {
-  try {
-    const r = await fetch(urlApi('/api/publico/anuncios'));
-    if (r.ok) lista.value = await r.json();
-  } catch { }
-}
 
 function cerrar(a) {
   const s = new Set(cerrados.value).add(a.id);
@@ -38,12 +29,6 @@ function restante(a) {
   return `Quedan ${Math.max(1, Math.round(ms / 60000))} min`;
 }
 
-onMounted(() => {
-  cargar();
-  soltar = alCambiarPublico((m) => { if (m?.tipo === 'anuncios') cargar(); }, { reconectado: cargar });
-  sondeo = setInterval(cargar, 120000);
-});
-onUnmounted(() => { soltar?.(); clearInterval(sondeo); });
 </script>
 
 <template>
@@ -54,7 +39,7 @@ onUnmounted(() => { soltar?.(); clearInterval(sondeo); });
         <b v-if="a.titulo">{{ a.titulo }}</b>
         <p>{{ a.mensaje }}</p>
         <div class="pie">
-          <a v-if="a.enlace" :href="a.enlace" target="_blank" rel="noopener" class="ver">Ver más →</a>
+          <a v-if="destinoDe(a)?.href" :href="destinoDe(a).href" target="_blank" rel="noopener" class="ver" @click="contarClic(a)">{{ destinoDe(a).texto }} →</a>
           <small v-if="restante(a)">{{ restante(a) }}</small>
         </div>
       </div>

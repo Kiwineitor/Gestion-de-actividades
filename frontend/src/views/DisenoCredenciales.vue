@@ -1,5 +1,6 @@
 <script setup>
 import { aModulo } from '../modulos';
+import { useRoute } from 'vue-router';
 import { ref, reactive, computed, watch, nextTick, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue';
 import UiModal from '../components/UiModal.vue';
 import MenuAcciones from '../components/MenuAcciones.vue';
@@ -41,29 +42,25 @@ const CLAVE_CALIBRACION = 'credenciales.pxPorCm';
 const plantillas = ref([]);
 const actividades = ref([]);
 const ediciones = computed(() => actividades.value.filter((a) => a.tipo === 'FERIA'));
-const eventos = computed(() => actividades.value.filter((a) => a.tipo === 'MESAS'));
 const dependencias = ref([]);
 const cargando = ref(true);
 const grupos = computed(() => [
   { uso: 'EXPOSITOR', titulo: 'Clientes y expositores', items: plantillas.value.filter((p) => p.uso !== 'APOYO') },
   { uso: 'APOYO', titulo: 'Personal de apoyo', items: plantillas.value.filter((p) => p.uso === 'APOYO') },
 ]);
-const nombreActividad = (p) => (p.idEvento
-  ? eventos.value.find((e) => e.id === p.idEvento)?.nombre
-  : ediciones.value.find((e) => e.id === p.idEdicion)?.nombre);
+const nombreActividad = (p) => ediciones.value.find((e) => e.id === p.idEdicion)?.nombre;
 
 const vinculo = computed({
   get: () => {
     const b = borrador.value;
     if (!b) return '';
-    if (b.idEvento) return `e-${b.idEvento}`;
     return b.idEdicion ? `f-${b.idEdicion}` : '';
   },
   set: (v) => {
     const b = borrador.value;
     if (!b) return;
     b.idEdicion = v.startsWith('f-') ? Number(v.slice(2)) : null;
-    b.idEvento = v.startsWith('e-') ? Number(v.slice(2)) : null;
+    b.idEvento = null;
   },
 });
 
@@ -118,7 +115,10 @@ function copia(p) {
   return JSON.parse(JSON.stringify({ ...p, cajas: p.cajas || {} }));
 }
 
-async function cargar(conservar = selId.value) {
+const rutaDiseno = useRoute();
+const pedida = () => Number(rutaDiseno.query.plantilla) || null;
+
+async function cargar(conservar = pedida() || selId.value) {
   cargando.value = true;
   try {
     const r = await apiFetch('/api/app/plantillas-credencial');
@@ -416,7 +416,7 @@ async function crear() {
       body: JSON.stringify({
         codigo, etiqueta: nueva.etiqueta.trim(), imagen, requiereFoto: false, mayusculas: true, uso: nueva.uso,
         idEdicion: nueva.uso !== 'APOYO' && nueva.vinculo.startsWith('f-') ? Number(nueva.vinculo.slice(2)) : null,
-        idEvento: nueva.uso !== 'APOYO' && nueva.vinculo.startsWith('e-') ? Number(nueva.vinculo.slice(2)) : null,
+        idEvento: null,
         cajas: { qr: { x: 0.35, y: 0.05, ancho: 0.3, alto: Math.round((0.3 / prop) * 10000) / 10000 } },
       }),
     });
@@ -533,6 +533,12 @@ onMounted(() => {
   cargarCatalogos();
   cargar();
 });
+watch(() => rutaDiseno.query.plantilla, (v) => {
+  const id = Number(v) || null;
+  if (!id || id === selId.value) return;
+  if (plantillas.value.some((p) => p.id === id)) elegir(id);
+  else cargar(id);
+});
 onActivated(() => {
   window.addEventListener('keydown', onTecla);
   window.addEventListener('beforeunload', avisar);
@@ -565,8 +571,9 @@ onUnmounted(() => {
             <li v-for="p in g.items" :key="p.id" :class="{ on: p.id === selId }">
               <button class="elegir" @click="elegir(p.id)">
                 <span class="nom">{{ p.etiqueta }}</span>
+                <span v-if="p.rol" class="badge badge-parcial">{{ { ENTRADA: '🎟️ Entrada', REPRESENTANTE: '👤 Representante', ACOMPANANTE: '👥 Acompañante' }[p.rol] }}</span>
                 <span v-if="p.predeterminada" class="badge badge-ok">★ por defecto</span>
-                <span v-else-if="p.idEdicion || p.idEvento" class="badge badge-muted" :title="`Se usa en ${nombreActividad(p) || 'su actividad'}`">{{ p.idEvento ? '🍸' : '🗓️' }} {{ nombreActividad(p) || 'actividad' }}</span>
+                <span v-else-if="p.idEdicion || p.idEvento" class="badge badge-muted" :title="`Se usa en ${nombreActividad(p) || 'su actividad'}`">🗓️ {{ nombreActividad(p) || 'actividad' }}</span>
               </button>
               <MenuAcciones :acciones="accionesDe(p)" :etiqueta="`Acciones de ${p.etiqueta}`" />
             </li>
@@ -636,11 +643,8 @@ onUnmounted(() => {
           <label class="campo"><span>¿Para qué actividad es este diseño?</span>
             <select v-model="vinculo" class="control" :disabled="borrador.predeterminada">
               <option value="">Ninguna en especial (global)</option>
-              <optgroup v-if="ediciones.length" label="Ferias (puestos)">
+              <optgroup v-if="ediciones.length" label="Actividades">
                 <option v-for="e in ediciones" :key="e.clave" :value="e.clave">{{ e.nombre }}{{ e.activa ? ' (en curso)' : '' }}</option>
-              </optgroup>
-              <optgroup v-if="eventos.length" label="Eventos con mesas">
-                <option v-for="e in eventos" :key="e.clave" :value="e.clave">{{ e.nombre }}</option>
               </optgroup>
             </select>
           </label>
@@ -650,10 +654,9 @@ onUnmounted(() => {
           </p>
           <p v-else class="chico">
             {{ vinculo
-              ? 'Este diseño se aplica a las credenciales que emitas desde la venta o reserva de esta actividad.'
-              : 'Sin vincular: las ferias sin diseño propio usan la «Credencial virtual» y los eventos con mesas, el «Pase de evento».' }}
+              ? 'Este diseño se aplica a las credenciales que emitas desde las ventas de esta actividad.'
+              : 'Sin vincular: las actividades sin diseño propio usan la plantilla por defecto.' }}
           </p>
-          <router-link v-if="seleccionada?.idEvento" class="btn btn-sm" :to="aModulo('inscripciones', { tab: 'todas', actividad: `e-${seleccionada.idEvento}` })">Ver reservas para emitir credenciales</router-link>
         </div>
         <h4>Plantilla</h4>
         <label class="campo"><span>Nombre</span><input v-model="borrador.etiqueta" class="control" maxlength="80" /></label>
@@ -698,7 +701,7 @@ onUnmounted(() => {
 
         <h4>Campos</h4>
         <p class="muted chico">
-          En eventos con mesas, la credencial del titular lleva su nombre. Las de invitados indican las mesas y el representante. El logo del local ocupa el lugar de la foto cuando corresponde.
+          Los pases de acompañante sin datos muestran «Acompañante n de» y el nombre de quien compró, con su espacio.
         </p>
         <div class="campos">
           <label v-for="c in CAMPOS" :key="c.id" class="chip-campo" :class="{ sel: campoSel === c.id, activo: !!borrador.cajas[c.id] }">
@@ -732,11 +735,8 @@ onUnmounted(() => {
         <label v-if="nueva.uso !== 'APOYO'" class="campo"><span>¿Para qué actividad?</span>
           <select v-model="nueva.vinculo" class="control">
             <option value="">Ninguna en especial (global)</option>
-            <optgroup v-if="ediciones.length" label="Ferias (puestos)">
+            <optgroup v-if="ediciones.length" label="Actividades">
               <option v-for="e in ediciones" :key="e.clave" :value="e.clave">{{ e.nombre }}</option>
-            </optgroup>
-            <optgroup v-if="eventos.length" label="Eventos con mesas">
-              <option v-for="e in eventos" :key="e.clave" :value="e.clave">{{ e.nombre }}</option>
             </optgroup>
           </select>
         </label>

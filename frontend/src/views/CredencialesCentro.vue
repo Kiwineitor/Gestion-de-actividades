@@ -18,7 +18,7 @@ const pestanas = computed(() => [
   },
   {
     k: 'impresion', t: 'Impresión masiva', icono: '🖨️', visible: auth.puedeEditarPlano || ve('impresion-masiva'),
-    ayuda: 'Para reenviar el recibo o las credenciales de una sola venta o reserva, búscala en Inscripciones y pulsa «📲 Recibo y credenciales».',
+    ayuda: 'Para reenviar el recibo o las credenciales de una sola venta o reserva, búscala en Detalle de ventas y pulsa «📲 Entregar al cliente».',
     vista: defineAsyncComponent(() => import('./ImpresionMasiva.vue')),
   },
   {

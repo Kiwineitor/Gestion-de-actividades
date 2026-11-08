@@ -49,7 +49,7 @@ public class ConfiguracionActividadService {
                           String condiciones, Integer minutosBloqueo, String ventaHasta,
                           String pagoBanco, String pagoCuenta, String pagoTitular, String pagoInstrucciones, String pagoOficina,
                           Boolean usaCredenciales, Boolean credencialEntrada, Boolean credencialRepresentante,
-                          Boolean credencialAcompanantes, BigDecimal metaRecaudacion, Boolean metaAutomatica) {
+                          Boolean credencialAcompanantes, BigDecimal metaRecaudacion, Boolean metaAutomatica, String ventaDesde) {
     }
 
     public record Resultado(boolean ok, String mensaje, Long id) {
@@ -82,6 +82,7 @@ public class ConfiguracionActividadService {
         if (c == null) return Resultado.error("No hay cambios que guardar");
         List<Map<String, Object>> filas = jdbc.queryForList("SELECT id FROM edicion WHERE id = ? FOR UPDATE", id);
         if (filas.isEmpty()) return Resultado.error("La actividad no existe");
+        Map<String, Object> fotoAntes = foto(id);
 
         if (c.nombre() != null) {
             String nombre = limpio(c.nombre(), 120);
@@ -140,6 +141,17 @@ public class ConfiguracionActividadService {
             if (c.minutosBloqueo() < 5 || c.minutosBloqueo() > 120) return Resultado.error("El tiempo para pagar va de 5 a 120 minutos");
             jdbc.update("UPDATE edicion SET minutos_bloqueo = ? WHERE id = ?", c.minutosBloqueo(), id);
         }
+        if (c.ventaDesde() != null) {
+            LocalDateTime desde = null;
+            if (!c.ventaDesde().isBlank()) {
+                try {
+                    desde = LocalDateTime.parse(c.ventaDesde().length() == 16 ? c.ventaDesde() + ":00" : c.ventaDesde());
+                } catch (DateTimeParseException e) {
+                    return Resultado.error("La fecha de apertura de la venta no es válida");
+                }
+            }
+            jdbc.update("UPDATE edicion SET venta_desde = ? WHERE id = ?", desde, id);
+        }
         if (c.ventaHasta() != null) {
             LocalDateTime hasta = null;
             if (!c.ventaHasta().isBlank()) {
@@ -174,8 +186,52 @@ public class ConfiguracionActividadService {
             jdbc.update("UPDATE edicion SET configuracion_paso = GREATEST(configuracion_paso, ?) WHERE id = ?",
                     Math.min(c.paso(), PASO_COMPLETO), id);
         }
+        Map<String, Object> fotoDespues = foto(id);
+        HistorialService.anotarResumen(String.valueOf(fotoDespues.get("Nombre")));
+        HistorialService.anotarCambios(fotoAntes, fotoDespues);
         avisoPublico.cambio("actividad", id);
         return new Resultado(true, "Cambios guardados", id);
+    }
+
+    private Map<String, Object> foto(Long id) {
+        Map<String, Object> e = jdbc.queryForMap("""
+                SELECT nombre, tipo, descripcion_publica, lugar, contacto, fechas_texto, vende_entradas, vende_espacios,
+                       tipo_espacio, etiqueta_espacio, comprador, condiciones, minutos_bloqueo, venta_desde, venta_hasta, pago_banco,
+                       pago_cuenta, pago_titular, pago_instrucciones, pago_oficina, usa_credenciales, credencial_entrada,
+                       credencial_representante, credencial_acompanantes, meta_recaudacion
+                  FROM edicion WHERE id = ?
+                """, id);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("Nombre", e.get("nombre"));
+        m.put("Tipo", e.get("tipo"));
+        m.put("Descripción", e.get("descripcion_publica"));
+        m.put("Lugar", e.get("lugar"));
+        m.put("Contacto", e.get("contacto"));
+        m.put("Días", e.get("fechas_texto"));
+        m.put("Vende entradas", e.get("vende_entradas"));
+        m.put("Vende espacios", e.get("vende_espacios"));
+        m.put("Tipo de espacio", e.get("tipo_espacio"));
+        m.put("Nombre del espacio", e.get("etiqueta_espacio"));
+        m.put("Quién compra", e.get("comprador"));
+        m.put("Entradas", String.join("; ", jdbc.queryForList("""
+                SELECT nombre || ' Bs ' || precio || COALESCE(' (cupo ' || cupo || ')', '') FROM entrada_tipo
+                 WHERE id_edicion = ? AND "_estado" <> 'X' ORDER BY orden, id
+                """, String.class, id)));
+        m.put("Condiciones", e.get("condiciones"));
+        m.put("Tiempo para pagar (min)", e.get("minutos_bloqueo"));
+        m.put("Venta desde", e.get("venta_desde"));
+        m.put("Venta hasta", e.get("venta_hasta"));
+        m.put("Banco", e.get("pago_banco"));
+        m.put("Cuenta", e.get("pago_cuenta"));
+        m.put("Titular", e.get("pago_titular"));
+        m.put("Instrucciones de pago", e.get("pago_instrucciones"));
+        m.put("Pago en persona", e.get("pago_oficina"));
+        m.put("Usa credenciales", e.get("usa_credenciales"));
+        m.put("Pase de entrada", e.get("credencial_entrada"));
+        m.put("Credencial de representante", e.get("credencial_representante"));
+        m.put("Pases de acompañante", e.get("credencial_acompanantes"));
+        m.put("Meta de recaudación", e.get("meta_recaudacion"));
+        return m;
     }
 
     @Transactional
@@ -190,6 +246,64 @@ public class ConfiguracionActividadService {
             jdbc.update("UPDATE edicion SET configuracion_paso = ?, finalizada = FALSE WHERE id = ?", PASO_COMPLETO, id);
         }
         return new Resultado(r.ok(), r.mensaje(), r.id());
+    }
+
+    public record CambioEstado(String estado, String motivo, String nuevaFecha, Boolean publico) {
+    }
+
+    @Transactional
+    public Resultado cambiarEstado(Long id, CambioEstado c) {
+        String estado = c == null || c.estado() == null ? "" : c.estado().trim().toUpperCase();
+        if (!List.of("NORMAL", "POSPUESTA", "CANCELADA").contains(estado)) return Resultado.error("Elige si la actividad se pospone o se cancela");
+        List<Map<String, Object>> filas = jdbc.queryForList("SELECT nombre, estado_evento, activa FROM edicion WHERE id = ? FOR UPDATE", id);
+        if (filas.isEmpty()) return Resultado.error("La actividad no existe");
+        String nombre = (String) filas.get(0).get("nombre");
+        String antes = (String) filas.get(0).get("estado_evento");
+        String motivo = limpio(c.motivo(), 500);
+        String nuevaFecha = limpio(c.nuevaFecha(), 160);
+        boolean publico = !Boolean.FALSE.equals(c.publico());
+        if (!"NORMAL".equals(estado) && motivo == null) return Resultado.error("Escribe el motivo");
+        if ("POSPUESTA".equals(estado) && nuevaFecha == null) return Resultado.error("Indica la nueva fecha o escribe «por definir»");
+        switch (estado) {
+            case "CANCELADA" -> jdbc.update("""
+                    UPDATE edicion SET estado_evento = 'CANCELADA', estado_motivo = ?, estado_nueva_fecha = NULL, estado_publico = ?,
+                           estado_cambiado_en = now(), finalizada = TRUE, publica = CASE WHEN ? THEN publica ELSE FALSE END
+                     WHERE id = ?
+                    """, motivo, publico, publico, id);
+            case "POSPUESTA" -> jdbc.update("""
+                    UPDATE edicion SET estado_evento = 'POSPUESTA', estado_motivo = ?, estado_nueva_fecha = ?, estado_publico = ?,
+                           estado_cambiado_en = now()
+                     WHERE id = ?
+                    """, motivo, nuevaFecha, publico, id);
+            default -> jdbc.update("""
+                    UPDATE edicion SET estado_evento = 'NORMAL', estado_motivo = NULL, estado_nueva_fecha = NULL, estado_publico = TRUE,
+                           estado_cambiado_en = now(), finalizada = CASE WHEN estado_evento = 'CANCELADA' THEN FALSE ELSE finalizada END
+                     WHERE id = ?
+                    """, id);
+        }
+        HistorialService.anotarResumen(nombre);
+        HistorialService.anotarCambio("Estado", antes, estado);
+        if (motivo != null) HistorialService.anotarCambio("Motivo", null, motivo);
+        if (nuevaFecha != null) HistorialService.anotarCambio("Nueva fecha", null, nuevaFecha);
+        avisoPublico.cambio("actividad", id);
+        return new Resultado(true, switch (estado) {
+            case "CANCELADA" -> "Actividad cancelada: ya no recibe ventas. Las ventas registradas se conservan.";
+            case "POSPUESTA" -> "Actividad pospuesta para " + nuevaFecha + ".";
+            default -> "La actividad vuelve a la normalidad.";
+        }, id);
+    }
+
+    @Transactional
+    public Resultado guardarQrEstilo(Long id, Map<String, Object> estilo) {
+        String texto;
+        try {
+            texto = estilo == null ? null : new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(estilo);
+        } catch (Exception e) {
+            return Resultado.error("Estilo de QR no válido");
+        }
+        if (texto != null && texto.length() > 2000) return Resultado.error("El estilo del QR es demasiado largo");
+        int n = jdbc.update("UPDATE edicion SET qr_estilo = ? WHERE id = ?", texto, id);
+        return n == 0 ? Resultado.error("La actividad no existe") : new Resultado(true, "Diseño del QR guardado", id);
     }
 
     @Transactional
@@ -208,7 +322,8 @@ public class ConfiguracionActividadService {
                 SELECT id, nombre, anio, tipo, activa, publica, publicacion_independiente, lugar, fechas_texto,
                        descripcion_publica, contacto, portada_archivo, pago_qr_archivo, pago_banco, pago_cuenta,
                        pago_titular, pago_instrucciones, pago_oficina, tipo_espacio, etiqueta_espacio, comprador,
-                       vende_espacios, vende_entradas, condiciones, minutos_bloqueo, venta_hasta, meta_recaudacion,
+                       vende_espacios, vende_entradas, condiciones, minutos_bloqueo, venta_desde, venta_hasta, meta_recaudacion,
+                       estado_evento, estado_motivo, estado_nueva_fecha, estado_publico, qr_estilo,
                        finalizada, usa_credenciales, credencial_entrada, credencial_representante,
                        credencial_acompanantes, configuracion_paso, plano_archivo IS NOT NULL AS con_plano
                   FROM edicion WHERE id = ?
@@ -250,6 +365,13 @@ public class ConfiguracionActividadService {
         m.put("minutosBloqueo", f.get("minutos_bloqueo"));
         Object hasta = f.get("venta_hasta");
         m.put("ventaHasta", hasta == null ? null : hasta.toString().replace(' ', 'T').substring(0, 16));
+        Object desde = f.get("venta_desde");
+        m.put("ventaDesde", desde == null ? null : desde.toString().replace(' ', 'T').substring(0, 16));
+        m.put("estadoEvento", f.get("estado_evento"));
+        m.put("estadoMotivo", f.get("estado_motivo"));
+        m.put("estadoNuevaFecha", f.get("estado_nueva_fecha"));
+        m.put("estadoPublico", f.get("estado_publico"));
+        m.put("qrEstilo", f.get("qr_estilo"));
         m.put("pagoQrUrl", archivo(f.get("pago_qr_archivo")));
         m.put("pagoBanco", f.get("pago_banco"));
         m.put("pagoCuenta", f.get("pago_cuenta"));
@@ -267,7 +389,11 @@ public class ConfiguracionActividadService {
                 SELECT count(*) FROM plano_texto WHERE id_edicion = ? AND ("_estado" IS NULL OR "_estado" <> 'X')
                 """, Long.class, id));
         m.put("disenosCredencial", jdbc.queryForObject(
-                "SELECT count(*) FROM plantilla_credencial WHERE id_edicion = ?", Long.class, id));
+                "SELECT count(*) FROM plantilla_credencial WHERE id_edicion = ? AND \"_estado\" = 'A'", Long.class, id));
+        m.put("credencialRoles", jdbc.queryForList("""
+                SELECT rol, id, etiqueta FROM plantilla_credencial
+                 WHERE id_edicion = ? AND rol IS NOT NULL AND "_estado" = 'A' ORDER BY rol
+                """, id));
         Map<String, Object> meta = metaCalculada(id);
         m.put("metaCalculada", meta.get("total"));
         m.put("metaEspacios", meta.get("espacios"));
@@ -345,7 +471,7 @@ public class ConfiguracionActividadService {
     private List<Map<String, Object>> categorias(Long id) {
         return jdbc.query("""
                 SELECT c.id, c.nombre, c.descripcion, c.color, c.forma, COALESCE(c.precio_base, 0) AS precio,
-                       c.personas_por_puesto,
+                       c.personas_por_puesto, c.costo_persona_extra,
                        count(p.id) FILTER (WHERE p."_estado" IS DISTINCT FROM 'X') AS cantidad,
                        count(p.id) FILTER (WHERE p."_estado" IS DISTINCT FROM 'X' AND p.mapa_x IS NOT NULL) AS ubicados,
                        count(p.id) FILTER (WHERE p."_estado" IS DISTINCT FROM 'X' AND p.estado_puesto = 'O') AS vendidos
@@ -363,6 +489,7 @@ public class ConfiguracionActividadService {
             c.put("precio", rs.getBigDecimal("precio"));
             int personas = rs.getInt("personas_por_puesto");
             c.put("personasPorPuesto", personas < 1 ? 2 : personas);
+            c.put("costoPersonaExtra", rs.getBigDecimal("costo_persona_extra"));
             c.put("cantidad", rs.getLong("cantidad"));
             c.put("ubicados", rs.getLong("ubicados"));
             c.put("vendidos", rs.getLong("vendidos"));
@@ -370,7 +497,7 @@ public class ConfiguracionActividadService {
         }, id);
     }
 
-    private Map<String, Object> metaCalculada(Long id) {
+    public Map<String, Object> metaCalculada(Long id) {
         BigDecimal espacios = jdbc.queryForObject("""
                 SELECT COALESCE(sum(COALESCE(p.precio, c.precio_base, 0)), 0)
                   FROM puesto p JOIN categoria c ON c.id = p.id_categoria

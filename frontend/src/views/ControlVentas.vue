@@ -5,6 +5,7 @@ import { toast } from '../ui/toast';
 import { descargarArchivo, nombreSeguro } from '../ui/descargas';
 import FichaVenta from '../components/control-ventas/FichaVenta.vue';
 import { bs, ent, pct, fecha, ESTADOS } from '../components/control-ventas/formato';
+import { canalDe } from '../ui/canal';
 import { edicionElegida as edicion } from '../ui/actividadElegida';
 
 const pestana = ref('ventas');
@@ -16,7 +17,7 @@ const opciones = ref({ vendedores: [], categorias: [], puedeAdjuntar: false, sol
 const tablero = ref(null);
 const ventas = ref([]);
 
-const filtros = ref({ vendedor: '', categoria: '', desde: '', hasta: '', estado: '', q: '' });
+const filtros = ref({ vendedor: '', categoria: '', desde: '', hasta: '', estado: '', canal: '', q: '' });
 
 const hayFiltros = computed(() => Object.values(filtros.value).some((v) => String(v).trim() !== ''));
 
@@ -79,7 +80,7 @@ watch(edicion, async () => {
 let esperaTexto = null;
 watch(() => {
   const f = filtros.value;
-  return [f.vendedor, f.categoria, f.desde, f.hasta, f.estado].join('|');
+  return [f.vendedor, f.categoria, f.desde, f.hasta, f.estado, f.canal].join('|');
 }, () => cargar());
 watch(() => filtros.value.q, () => {
   clearTimeout(esperaTexto);
@@ -87,7 +88,7 @@ watch(() => filtros.value.q, () => {
 });
 
 function limpiarFiltros() {
-  filtros.value = { vendedor: '', categoria: '', desde: '', hasta: '', estado: '', q: '' };
+  filtros.value = { vendedor: '', categoria: '', desde: '', hasta: '', estado: '', canal: '', q: '' };
 }
 
 function verVentasDe(vendedorId) {
@@ -167,15 +168,20 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
   <div class="control">
     <section class="card filtros">
       <select v-model="filtros.vendedor" class="control-campo" aria-label="Vendedor">
-        <option value="">Todos los vendedores</option>
+        <option value="">Todos los que atendieron</option>
         <option v-for="v in opciones.vendedores" :key="v.id" :value="String(v.id)">{{ v.nombre }}</option>
       </select>
       <select v-model="filtros.categoria" class="control-campo" aria-label="Categoría">
         <option value="">Todas las categorías</option>
         <option v-for="c in opciones.categorias" :key="c.id" :value="String(c.id)">{{ c.nombre }}</option>
       </select>
-      <select v-model="filtros.estado" class="control-campo" aria-label="Estado del comprobante">
-        <option value="">Con y sin comprobante</option>
+      <select v-model="filtros.canal" class="control-campo" aria-label="Canal de venta">
+        <option value="">En línea y en persona</option>
+        <option value="EN_LINEA">🌐 En línea (con comprobante)</option>
+        <option value="EN_PERSONA">🏢 En persona (cobro confirmado por el personal)</option>
+      </select>
+      <select v-model="filtros.estado" class="control-campo" aria-label="Estado del cobro">
+        <option value="">Cobradas y por cobrar</option>
         <option v-for="(e, k) in ESTADOS" :key="k" :value="k">{{ e.texto }}</option>
       </select>
       <label class="fecha-campo"><span>Desde</span><input v-model="filtros.desde" type="date" class="control-campo" /></label>
@@ -242,10 +248,10 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
           <table class="tabla ventas">
             <thead>
               <tr>
-                <th>Venta</th><th>Fecha</th><th>Vendedor</th><th>Expositor</th><th>Representante</th>
+                <th>Venta</th><th>Fecha</th><th title="En línea: quién aprobó · En persona: quién registró">Atendió</th><th>Expositor</th><th>Representante</th>
                 <th>Celular</th><th>Categoría</th><th>Puestos</th>
                 <th class="num">Vendido</th><th class="num">Recaudado</th><th class="num">Por rendir</th>
-                <th>Comprobante</th><th class="num">Credenciales</th>
+                <th>Cobro</th><th class="num">Credenciales</th>
               </tr>
             </thead>
             <tbody>
@@ -256,7 +262,7 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
                   <span class="muted chico">{{ v.codigoVenta }}</span>
                 </td>
                 <td class="nowrap">{{ fecha(v.fecha, true) }}</td>
-                <td class="corto" :title="v.vendedor">{{ v.vendedor || '—' }}</td>
+                <td class="atendio"><span class="canal" :class="canalDe(v.canal).clase">{{ canalDe(v.canal).icono }} {{ canalDe(v.canal).texto }}</span><small class="quien" :title="v.vendedor">{{ canalDe(v.canal).rol }}: {{ v.vendedor || '—' }}</small></td>
                 <td class="entidad">
                   <strong>{{ v.entidad || '—' }}</strong>
                   <span class="muted chico">
@@ -448,6 +454,7 @@ const totalCategorias = computed(() => categorias.value.reduce((t, c) => ({
 .pestana:hover { color: var(--text); }
 .pestana.activa { color: var(--acento); border-bottom-color: var(--acento); }
 
+.atendio .quien { display: block; margin-top: 0.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
 .bloque { padding: 1rem; display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; }
 .cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.8rem; flex-wrap: wrap; }
 .cab h3 { margin: 0; font-size: 1.05rem; }

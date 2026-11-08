@@ -37,6 +37,9 @@ public class CredencialPdfService {
 
     private final ImagenPlantillaCredencial imagenes;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private PlantillaCredencialService plantillas;
+
     public static final double ANCHO_CM_POR_DEFECTO = 10.0;
     private static final float CM = 72f / 2.54f;
     public static final float A4_ANCHO_CM = 21f;
@@ -72,12 +75,17 @@ public class CredencialPdfService {
             PdfContentByte lienzo = writer.getDirectContent();
             BaseFont fuente = BaseFont.createFont(
                     BaseFont.HELVETICA_BOLD, BaseFont.CP1252, BaseFont.NOT_EMBEDDED);
-            Image fondoOriginal = Image.getInstance(bytes(plantilla.imagen()));
-
+            java.util.Map<String, Image> fondos = new java.util.HashMap<>();
             for (int i = 0; i < credenciales.size(); i++) {
                 if (i > 0) doc.newPage();
-                pintar(lienzo, fuente, fondoOriginal, plantilla, credenciales.get(i),
-                        ancho, urlBase, codigos);
+                CredencialDTO c = credenciales.get(i);
+                PlantillaCredencial propia = plantillas == null ? plantilla : plantillas.paraResponsable(c.responsableId(), plantilla);
+                Image fondo = fondos.get(propia.id());
+                if (fondo == null) {
+                    fondo = Image.getInstance(bytes(propia.imagen()));
+                    fondos.put(propia.id(), fondo);
+                }
+                pintar(lienzo, fuente, fondo, propia, c, ancho, urlBase, codigos);
             }
             doc.close();
             log.info("Credenciales impresas: {} (plantilla {}, {} cm de ancho)",

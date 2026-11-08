@@ -28,7 +28,7 @@ String SELECT = """
                    e.descripcion                          AS rubro,
                    i.id                                   AS inscripcionId,
                    i.pago_contado                         AS pagoContado,
-                   i.img_comprobante                      AS comprobante,
+                   COALESCE(NULLIF(i.img_comprobante, ''), CASE WHEN i.cobro_efectivo THEN 'efectivo' END) AS comprobante,
                    COALESCE(SUM(ip.costo), 0)             AS totalVenta,
                    string_agg(DISTINCT c.nombre, ', ')    AS categorias,
                    string_agg(DISTINCT pu.codigo, ', ')   AS casetas,
@@ -49,7 +49,7 @@ String SELECT = """
     String GROUP = """
              GROUP BY r.id, p.nombre, p.paterno, p.materno, p.ci, p.foto, r.es_titular, r.cargo,
                       r.es_extra, r.monto_extra, r.comprobante_extra,
-                      e.nombre, e.descripcion, i.id, i.pago_contado, i.img_comprobante,
+                      e.nombre, e.descripcion, i.id, i.pago_contado, i.img_comprobante, i.cobro_efectivo,
                       c.id
              """;
 

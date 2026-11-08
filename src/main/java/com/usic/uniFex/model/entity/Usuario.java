@@ -1,6 +1,9 @@
 package com.usic.uniFex.model.entity;
 
+import java.util.Date;
+
 import com.usic.uniFex.Config.AuditoriaConfig;
+import com.usic.uniFex.security.SelloUsuario;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -38,4 +41,45 @@ public class Usuario extends AuditoriaConfig{
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_area_seguimiento")
     private Area areaSeguimiento;
+
+    @Column(name = "debe_cambiar_clave", nullable = false)
+    private boolean debeCambiarClave;
+
+    @Column(name = "clave_cambiada_en")
+    private Date claveCambiadaEn;
+
+    @Column(name = "sello", length = 100)
+    private String sello;
+
+    @Column(name = "sesion_version", nullable = false)
+    private int sesionVersion;
+
+    @Column(name = "terminos_version", length = 20)
+    private String terminosVersion;
+
+    @Column(name = "terminos_aceptados_en")
+    private Date terminosAceptadosEn;
+
+    public void setUsername(String username) {
+        this.username = username;
+        resellar();
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+        resellar();
+    }
+
+    public void setRol(Rol rol) {
+        this.rol = rol;
+        resellar();
+    }
+
+    public void resellar() {
+        this.sello = SelloUsuario.calcular(username, password, rol == null ? null : rol.getId());
+    }
+
+    public void cerrarSesiones() {
+        this.sesionVersion++;
+    }
 }

@@ -22,7 +22,7 @@ onUnmounted(() => window.removeEventListener('keydown', onTecla));
         <h2>{{ titulo }}</h2>
         <button class="btn btn-fantasma btn-icono" @click="emit('cerrar')" aria-label="Cerrar">✕</button>
       </header>
-      <div class="cuerpo">
+      <div class="cuerpo desliza">
         <slot />
       </div>
       <footer v-if="$slots.pie" class="pie">

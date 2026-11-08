@@ -37,7 +37,8 @@ public class FileStorageService {
         MESAS("mesas"),
         SISTEMA("sistema"),
         ACTIVIDADES("actividades"),
-        APOYO("apoyo");
+        APOYO("apoyo"),
+        COMUNICACION("comunicacion");
 
         private final String dir;
         Bucket(String dir) { this.dir = dir; }

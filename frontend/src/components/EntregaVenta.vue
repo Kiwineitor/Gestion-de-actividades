@@ -26,7 +26,9 @@ async function cargarCupo() {
 onMounted(cargarCupo);
 watch(() => props.entrega.personas.length, cargarCupo);
 
+const conCredenciales = computed(() => props.entrega.registraPersonas !== false);
 const cobraExtra = computed(() => cupo.value && !cupo.value.dentroDelDerecho && Number(cupo.value.costoSiguiente) > 0);
+const puedeSumar = computed(() => Boolean(cupo.value) && (cupo.value.dentroDelDerecho || cupo.value.admiteExtras));
 
 async function agregarPersona() {
   if (!nueva.nombre.trim() || !nueva.ci.trim()) { toast('Nombre y C.I. son obligatorios', 'error'); return; }
@@ -53,23 +55,28 @@ async function agregarPersona() {
 
 const bs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 const enlaceCredencial = (codigo) => `${location.origin}${router.resolve({ path: '/', query: { credencial: codigo } }).href}`;
-const sinFoto = computed(() => props.entrega.personas.filter((p) => !p.tieneFoto).length);
+const sinFoto = computed(() => props.entrega.personas.filter((p) => !p.tieneFoto && !p.sinDatos).length);
 
 const mensaje = computed(() => {
   const e = props.entrega;
+  const pagado = e.conComprobante || e.cobroEfectivo;
   const lineas = [
-    `Hola ${props.titular.nombre || ''} 👋`.trim(),
+    `Hola ${props.titular.nombre || ''}`.trim() + ',',
     '',
-    `Tu solicitud${props.actividad ? ` para *${props.actividad}*` : ''} fue *aprobada* ✅`,
-    `🏷️ Espacio: ${e.espacios.join(', ')}`,
-    `💵 Total: ${bs(e.total)} — ${e.conComprobante ? 'pago recibido' : 'pendiente de pago'}`,
-    '🧾 Te enviamos tu recibo en este chat.',
+    `Tu compra${props.actividad ? ` para *${props.actividad}*` : ''} quedó *confirmada*.`,
+    `- Espacio: ${e.espacios.join(', ')}`,
+    `- Total: ${bs(e.total)} (${pagado ? 'pago recibido' : 'pendiente de pago'})`,
+    '- Te enviamos tu recibo en este chat.',
     '',
-    `🪪 Credenciales de acceso (${e.personas.length}):`,
-    ...e.personas.map((p) => `• ${p.nombre}: ${enlaceCredencial(p.codigo)}`),
-    '',
-    'Presenta tu credencial con el QR en el ingreso. ¡Te esperamos!',
   ];
+  if (conCredenciales.value && e.personas.length) {
+    lineas.push(`Credenciales de acceso (${e.personas.length}):`);
+    lineas.push(...e.personas.map((p) => `• ${p.nombre}: ${enlaceCredencial(p.codigo)}`));
+    lineas.push('', 'Presenta tu credencial con el QR en el ingreso.');
+  } else {
+    lineas.push('Al llegar, da tu nombre o tu C.I. en la recepción y te ubicamos en tu lugar.');
+  }
+  lineas.push('¡Te esperamos!');
   return lineas.join('\n');
 });
 
@@ -122,7 +129,7 @@ async function archivosParaCompartir() {
   const archivos = [];
   const r = await apiFetch(`/api/app/inscripciones/${props.entrega.inscripcionId}/recibo`);
   if (r.ok) archivos.push(new File([await r.blob()], `recibo-${props.entrega.inscripcionId}.pdf`, { type: 'application/pdf' }));
-  for (const p of props.entrega.personas) {
+  for (const p of conCredenciales.value ? props.entrega.personas : []) {
     const c = await apiFetch(`/api/app/credenciales/${p.id}/virtual`);
     if (c.ok) archivos.push(new File([await c.blob()], `credencial-${nombreSeguro(p.nombre)}.png`, { type: 'image/png' }));
   }
@@ -165,17 +172,17 @@ const puedeCompartirArchivos = typeof navigator !== 'undefined' && typeof naviga
       <div>
         <strong>{{ entrega.anulada ? 'Venta anulada' : 'Venta registrada' }} #{{ entrega.inscripcionId }}</strong>
         <small>{{ entrega.espacios.join(' · ') }} · {{ bs(entrega.total) }}
-          · <b :class="entrega.conComprobante ? 'ok' : 'pend'">{{ entrega.conComprobante ? 'pago con comprobante' : 'pago pendiente' }}</b></small>
+          · <b :class="entrega.conComprobante || entrega.cobroEfectivo ? 'ok' : 'pend'">{{ entrega.cobroEfectivo ? 'cobrado en efectivo' : entrega.conComprobante ? 'pago con comprobante' : 'pago pendiente' }}</b></small>
       </div>
     </div>
 
-    <section class="bloque">
-      <header><b>Credenciales</b><small>{{ entrega.personas.length }} persona(s) del puesto</small></header>
+    <section v-if="conCredenciales" class="bloque">
+      <header><b>Personas y credenciales</b><small>{{ entrega.personas.length }} registrada(s)</small></header>
       <ul class="personas">
         <li v-for="p in entrega.personas" :key="p.id">
-          <span class="avatar" :class="{ con: p.tieneFoto }">{{ p.tieneFoto ? '📷' : (p.nombre || '?').charAt(0) }}</span>
-          <span class="quien"><b>{{ p.nombre }}</b><small>C.I. {{ p.ci || '—' }}{{ p.titular ? ' · titular' : '' }}</small></span>
-          <label class="btn btn-sm btn-fantasma" :class="{ deshabilitado: ocupado }" :title="p.tieneFoto ? 'Cambiar foto' : 'Subir foto'">
+          <span class="avatar" :class="{ con: p.tieneFoto }">{{ p.tieneFoto ? '📷' : p.sinDatos ? '👥' : (p.nombre || '?').charAt(0) }}</span>
+          <span class="quien"><b>{{ p.nombre }}</b><small>{{ p.sinDatos ? 'pase de acompañante sin datos' : `C.I. ${p.ci || '—'}${p.titular ? ' · titular' : p.extra ? ' · extra pagada' : ''}` }}</small></span>
+          <label v-if="!p.sinDatos" class="btn btn-sm btn-fantasma" :class="{ deshabilitado: ocupado }" :title="p.tieneFoto ? 'Cambiar foto' : 'Subir foto'">
             <input type="file" accept="image/*" hidden :disabled="Boolean(ocupado)" @change="subirFoto(p, $event)" />
             {{ ocupado === `foto-${p.id}` ? '…' : p.tieneFoto ? 'Cambiar foto' : '📷 Foto' }}
           </label>
@@ -184,12 +191,14 @@ const puedeCompartirArchivos = typeof navigator !== 'undefined' && typeof naviga
       </ul>
       <p v-if="sinFoto" class="nota">Si la credencial lleva foto, súbela antes de descargarla o enviarla ({{ sinFoto }} sin foto).</p>
       <div v-if="cupo && !entrega.anulada" class="cupo">
-        <span>Incluye <b>{{ cupo.derecho }}</b> · registradas <b>{{ cupo.registrados }}</b><template v-if="cupo.extras"> · {{ cupo.extras }} extra</template></span>
-        <button v-if="!nueva.abierta" type="button" class="btn btn-sm" @click="nueva.abierta = true">
-          ＋ {{ cupo.dentroDelDerecho ? 'Agregar persona' : `Persona extra (Bs ${cupo.costoSiguiente})` }}
+        <span>Incluye <b>{{ cupo.derecho }}</b> persona(s) · registradas <b>{{ cupo.registrados }}</b><template v-if="cupo.extras"> · {{ cupo.extras }} extra</template></span>
+        <button v-if="!nueva.abierta && puedeSumar" type="button" class="btn btn-sm" @click="nueva.abierta = true">
+          ＋ {{ cupo.dentroDelDerecho ? 'Agregar persona incluida' : `Persona extra · ${bs(cupo.costoSiguiente)}` }}
         </button>
+        <small v-else-if="!nueva.abierta" class="lleno">Cupo completo · esta categoría no vende personas extra</small>
       </div>
       <div v-if="nueva.abierta" class="nueva">
+        <p v-if="cobraExtra" class="aviso-extra">Pasa de las {{ cupo.derecho }} incluidas: se cobra <b>{{ bs(cupo.costoSiguiente) }}</b> y se genera su credencial.</p>
         <input v-model="nueva.nombre" class="control" placeholder="Nombre completo" maxlength="150" />
         <input v-model="nueva.ci" class="control" placeholder="C.I." maxlength="20" />
         <label v-if="cobraExtra" class="btn btn-sm btn-fantasma archivo">
@@ -202,21 +211,30 @@ const puedeCompartirArchivos = typeof navigator !== 'undefined' && typeof naviga
         </div>
       </div>
     </section>
+    <p v-else class="sin-credenciales">🧾 Esta actividad no usa credenciales: al cliente solo se le entrega el recibo. El día del evento se le ubica por su nombre o C.I. en <b>Recepción e ingreso › Llegadas</b>.</p>
 
     <section class="bloque">
-      <header><b>Enviar al expositor</b><small>{{ titular.celular || 'sin celular' }}</small></header>
-      <div class="acciones">
-        <button type="button" class="btn" :disabled="Boolean(ocupado)" @click="recibo">{{ ocupado === 'recibo' ? 'Descargando…' : '🧾 Recibo PDF' }}</button>
-        <a v-if="whatsapp" class="btn btn-whatsapp" :href="whatsapp" target="_blank" rel="noopener">💬 Abrir WhatsApp con el mensaje</a>
-        <button v-if="puedeCompartirArchivos" type="button" class="btn" :disabled="Boolean(ocupado)" @click="compartir">{{ ocupado === 'compartir' ? 'Preparando…' : '📤 Compartir recibo y credenciales' }}</button>
-        <button type="button" class="btn" :disabled="Boolean(ocupado)" @click="enviarAutomatico">{{ ocupado === 'auto' ? 'Enviando…' : '🤖 Envío automático' }}</button>
+      <header><b>Enviar al cliente</b><small>{{ titular.celular ? `📱 ${titular.celular}` : 'sin celular' }}</small></header>
+      <div class="envio-principal">
+        <a v-if="whatsapp" class="btn btn-whatsapp" :href="whatsapp" target="_blank" rel="noopener">
+          <span class="ico">💬</span><span class="txt"><b>Enviar por WhatsApp</b><small>Abre el chat con el mensaje listo</small></span>
+        </a>
+        <button type="button" class="btn" :disabled="Boolean(ocupado)" @click="enviarAutomatico">
+          <span class="ico">🤖</span><span class="txt"><b>{{ ocupado === 'auto' ? 'Enviando…' : 'Envío automático' }}</b><small>{{ conCredenciales ? 'Manda mensaje, recibo y credenciales' : 'Manda el mensaje y el recibo' }}</small></span>
+        </button>
+      </div>
+      <div class="envio-secundario">
+        <button type="button" class="btn btn-sm" :disabled="Boolean(ocupado)" @click="recibo">{{ ocupado === 'recibo' ? 'Descargando…' : '🧾 Descargar recibo' }}</button>
+        <button v-if="puedeCompartirArchivos" type="button" class="btn btn-sm" :disabled="Boolean(ocupado)" @click="compartir">{{ ocupado === 'compartir' ? 'Preparando…' : conCredenciales ? '📤 Compartir archivos' : '📤 Compartir recibo' }}</button>
+        <button type="button" class="btn btn-sm" @click="copiarMensaje">📋 Copiar mensaje</button>
       </div>
       <details class="vista-mensaje">
-        <summary>Ver el mensaje que se envía</summary>
+        <summary>Ver el mensaje</summary>
         <pre>{{ mensaje }}</pre>
-        <button type="button" class="btn btn-sm btn-fantasma" @click="copiarMensaje">Copiar mensaje</button>
       </details>
-      <p class="nota">«Abrir WhatsApp» lleva el texto con el enlace de cada credencial; el recibo y las imágenes se adjuntan arrastrándolos al chat. «Envío automático» usa la instancia de WhatsApp configurada y manda todo solo.</p>
+      <p class="nota">{{ conCredenciales
+        ? '«Enviar por WhatsApp» lleva el texto con el enlace de cada credencial; el recibo se adjunta en el chat. «Envío automático» usa la instancia de WhatsApp configurada y manda todo solo.'
+        : '«Enviar por WhatsApp» lleva el texto; el recibo se adjunta en el chat. «Envío automático» usa la instancia de WhatsApp configurada y manda el mensaje con el recibo.' }}</p>
     </section>
   </div>
 </template>
@@ -241,9 +259,18 @@ const puedeCompartirArchivos = typeof navigator !== 'undefined' && typeof naviga
 .quien b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; }
 .quien small { color: var(--muted); font-size: 0.78rem; }
 .deshabilitado { opacity: 0.6; pointer-events: none; }
-.acciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 0.5rem; }
-.acciones .btn { justify-content: center; text-align: center; }
+.envio-principal { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 0.5rem; }
+.envio-principal .btn { justify-content: flex-start; gap: 0.6rem; padding: 0.6rem 0.75rem; white-space: normal; text-align: left; min-height: 56px; }
+.envio-principal .ico { font-size: 1.35rem; flex: none; }
+.envio-principal .txt { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.envio-principal .txt small { font-weight: 500; font-size: 0.76rem; opacity: 0.85; }
+.envio-secundario { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.envio-secundario .btn { flex: 1 1 auto; white-space: normal; }
 .btn-whatsapp { background: #1fa855; border-color: #1fa855; color: #fff; text-decoration: none; }
+.sin-credenciales { margin: 0; padding: 0.6rem 0.75rem; border-radius: var(--radio-sm); background: var(--panel-2); font-size: 0.85rem; color: var(--muted); }
+.sin-credenciales b { color: var(--text); }
+.lleno { font-size: 0.78rem; }
+.aviso-extra { grid-column: 1 / -1; margin: 0; font-size: 0.8rem; padding: 0.45rem 0.6rem; border-radius: var(--radio-sm); background: color-mix(in srgb, var(--tramite) 12%, transparent); color: var(--text); }
 .vista-mensaje summary { cursor: pointer; font-size: 0.85rem; color: var(--acento); font-weight: 600; }
 .vista-mensaje pre { white-space: pre-wrap; font: inherit; font-size: 0.82rem; background: var(--panel-2); border-radius: var(--radio-sm); padding: 0.6rem; margin: 0.4rem 0; max-height: 200px; overflow: auto; }
 .nota { margin: 0; font-size: 0.8rem; color: var(--muted); }

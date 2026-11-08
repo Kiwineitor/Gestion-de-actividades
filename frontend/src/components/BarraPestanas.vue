@@ -3,7 +3,7 @@ import { computed, ref, nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import MenuAcciones from './MenuAcciones.vue';
 import { usePestanasStore } from '../stores/pestanas';
-import { aModulo } from '../modulos';
+import { aModulo, MODULOS } from '../modulos';
 
 const props = defineProps({
   iconos: { type: Object, default: () => ({}) },
@@ -13,6 +13,7 @@ const props = defineProps({
 const router = useRouter();
 const pestanas = usePestanasStore();
 const tira = ref(null);
+const tituloDe = (p) => MODULOS[p.m]?.titulo || p.titulo;
 
 const acciones = computed(() => [
   { txt: 'Cerrar esta pestaña', deshabilitado: !pestanas.activa, accion: () => cerrar(pestanas.activa) },
@@ -49,14 +50,14 @@ watch(() => pestanas.activa, async () => {
 
 <template>
   <div v-if="pestanas.lista.length" class="barra-pestanas">
-    <div ref="tira" class="tira" role="tablist">
+    <div ref="tira" class="tira desliza-h" role="tablist">
       <div v-for="p in pestanas.lista" :key="p.m" class="pestana" :class="{ on: p.m === pestanas.activa }" role="tab"
-           :aria-selected="p.m === pestanas.activa" :title="p.titulo" tabindex="0"
+           :aria-selected="p.m === pestanas.activa" :title="tituloDe(p)" tabindex="0"
            @click="ir(p)" @keydown.enter="ir(p)" @auxclick.prevent="$event.button === 1 && cerrar(p.m)">
         <span class="ico">{{ props.iconos[p.m] || '📄' }}</span>
-        <span class="txt">{{ p.titulo }}</span>
+        <span class="txt">{{ tituloDe(p) }}</span>
         <span v-if="props.contadores[p.m]" class="contador">{{ props.contadores[p.m] }}</span>
-        <button type="button" class="x" :aria-label="`Cerrar ${p.titulo}`" @click.stop="cerrar(p.m)">✕</button>
+        <button type="button" class="x" :aria-label="`Cerrar ${tituloDe(p)}`" @click.stop="cerrar(p.m)">✕</button>
       </div>
     </div>
     <MenuAcciones :acciones="acciones" etiqueta="Opciones de pestañas" />

@@ -26,5 +26,19 @@ public record InteresadoStandRequest(
 
         Long puestoId,
 
-        String modoPago) {
+        String modoPago,
+
+        @Size(max = 20, message = "El C.I. es demasiado largo")
+        String ci,
+
+        @Size(max = 40)
+        String reservaToken,
+
+        @Size(max = 30, message = "El otro número es demasiado largo")
+        String celularExtra) {
+
+    public InteresadoStandRequest(String nombreCompleto, String celular, String empresa, String rubro, Long categoriaId,
+                                  Long puestoId, String modoPago, String ci, String reservaToken) {
+        this(nombreCompleto, celular, empresa, rubro, categoriaId, puestoId, modoPago, ci, reservaToken, null);
+    }
 }

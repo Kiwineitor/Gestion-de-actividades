@@ -28,7 +28,7 @@ onMounted(cargar);
 </script>
 
 <template>
-  <UiModal :titulo="`Recibo y credenciales · venta #${inscripcionId}`" ancho="640px" @cerrar="emit('cerrar')">
+  <UiModal :titulo="`Entrega al cliente · venta #${inscripcionId}`" ancho="640px" @cerrar="emit('cerrar')">
     <p v-if="error" class="error">{{ error }}</p>
     <p v-else-if="!entrega" class="muted">Cargando…</p>
     <EntregaVenta v-else :entrega="entrega" :titular="titular" :actividad="entrega.actividad || ''" @actualizar="cargar" />

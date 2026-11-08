@@ -384,7 +384,10 @@ public class InscripcionApiController {
                 "registrados", c.registrados(),
                 "extras", c.extras(),
                 "dentroDelDerecho", c.dentroDelDerecho(),
-                "costoSiguiente", c.costoSiguiente()));
+                "costoSiguiente", c.costoSiguiente(),
+                "registraPersonas", c.registraPersonas(),
+                "admiteExtras", c.admiteExtras(),
+                "costoExtra", c.costoExtra()));
     }
 
     @PostMapping(value = "/{id}/responsables", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

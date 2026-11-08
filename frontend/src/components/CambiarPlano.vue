@@ -10,7 +10,6 @@ const props = defineProps({
 
 const router = useRouter();
 const ferias = ref([]);
-const eventos = ref([]);
 
 const valor = computed({
   get: () => props.actual,
@@ -19,9 +18,7 @@ const valor = computed({
 
 function ir(v) {
   if (!v || v === props.actual) return;
-  const [tipo, id] = v.split('-');
-  if (tipo === 'e') router.push(aModulo('mesas', { evento: id, tab: 'plano' }));
-  else router.push(aModulo('editor', { edicion: id }));
+  router.push(aModulo('editor', { edicion: v.split('-')[1] }));
 }
 
 async function leer(ruta) {
@@ -34,24 +31,16 @@ async function leer(ruta) {
 }
 
 onMounted(async () => {
-  const [f, e] = await Promise.all([leer('/api/app/ediciones'), leer('/api/app/mesas/eventos')]);
+  const f = await leer('/api/app/ediciones');
   ferias.value = Array.isArray(f) ? f : [];
-  eventos.value = Array.isArray(e) ? e : [];
 });
 </script>
 
 <template>
-  <label v-if="ferias.length + eventos.length > 1" class="cambiar-plano" title="Abrir el plano de otra actividad">
+  <label v-if="ferias.length > 1" class="cambiar-plano" title="Abrir el plano de otra actividad">
     <span>Plano de</span>
     <select v-model="valor" aria-label="Plano de la actividad">
-      <optgroup v-if="ferias.length" label="Ferias (puestos)">
-        <option v-for="f in ferias" :key="`f-${f.id}`" :value="`f-${f.id}`">
-          {{ f.nombre }}
-        </option>
-      </optgroup>
-      <optgroup v-if="eventos.length" label="Eventos con mesas">
-        <option v-for="e in eventos" :key="`e-${e.id}`" :value="`e-${e.id}`">{{ e.nombre }}</option>
-      </optgroup>
+      <option v-for="f in ferias" :key="`f-${f.id}`" :value="`f-${f.id}`">{{ f.nombre }}</option>
     </select>
   </label>
 </template>

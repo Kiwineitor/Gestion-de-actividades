@@ -38,13 +38,17 @@ public class CredencialImagenService {
     private final CredencialCodigoService codigos;
     private final ImagenPlantillaCredencial imagenes;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private PlantillaCredencialService plantillas;
+
     @Value("${app.upload-root:uploads}")
     private String uploadRoot;
 
     private static final Color TINTA = new Color(0x1F, 0x24, 0x2B);
     private static final String FORMA_ROMBO = PlantillaCredencial.FORMA_ROMBO;
 
-    public byte[] generar(CredencialDTO c, PlantillaCredencial plantilla, String urlBase) {
+    public byte[] generar(CredencialDTO c, PlantillaCredencial porDefecto, String urlBase) {
+        PlantillaCredencial plantilla = plantillas == null ? porDefecto : plantillas.paraResponsable(c.responsableId(), porDefecto);
         try {
             log.info("[CREDENCIAL-WA] Generando credencial responsable={} inscripcion={} nombre='{}' fotoUrl='{}' plantilla={} urlBase={}",
                     c.responsableId(), c.inscripcionId(), c.nombre(), c.fotoUrl(), plantilla.id(), urlBase);

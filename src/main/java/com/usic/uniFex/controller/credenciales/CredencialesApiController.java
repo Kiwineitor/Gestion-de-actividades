@@ -59,6 +59,7 @@ public class CredencialesApiController {
     private final com.usic.uniFex.model.dao.CredencialImpresionDao impresiones;
     private final com.usic.uniFex.model.service.CredencialDatosService datosService;
     private final com.usic.uniFex.model.service.PlantillaCredencialService plantillas;
+    private final com.usic.uniFex.model.service.ResponsableExtraService personasExtra;
 
     @Value("${unifex.publico.base-url:}")
     private String baseUrlPublica;
@@ -312,7 +313,7 @@ public class CredencialesApiController {
         CredencialDTO c = credencialService.porResponsable(responsableId).orElse(null);
         if (c == null) return ResponseEntity.notFound().build();
 
-        PlantillaCredencial p = plantillas.paraInscripcion(c.inscripcionId());
+        PlantillaCredencial p = plantillas.paraResponsable(responsableId, plantillas.paraInscripcion(c.inscripcionId()));
         if (!forzar && !c.apto(p.id())) {
             return ResponseEntity.status(409)
                     .contentType(MediaType.TEXT_PLAIN)
@@ -361,9 +362,10 @@ public class CredencialesApiController {
             return ResponseEntity.badRequest().body(Map.of("ok", false, "mensaje", "La venta no tiene celular del cliente"));
         }
 
-        PlantillaCredencial plantilla = plantillas.paraInscripcion(req.inscripcionId());
+        boolean conCredenciales = personasExtra.registraPersonas(req.inscripcionId());
+        PlantillaCredencial plantilla = conCredenciales ? plantillas.paraInscripcion(req.inscripcionId()) : null;
         List<Long> seleccion = req.responsables() == null ? List.of() : req.responsables();
-        var todas = credencialService.porInscripcion(req.inscripcionId());
+        var todas = conCredenciales ? credencialService.porInscripcion(req.inscripcionId()) : List.<CredencialDTO>of();
         log.info("[WHATSAPP-REENVIO] Credenciales de inscripcion={} total={} seleccion={}",
                 req.inscripcionId(), todas.size(), seleccion);
         List<CredencialDTO> credenciales = todas.stream()
@@ -374,14 +376,14 @@ public class CredencialesApiController {
                 .toList();
         log.info("[WHATSAPP-REENVIO] Credenciales aptas inscripcion={} cantidad={}",
                 req.inscripcionId(), credenciales.size());
-        if (credenciales.isEmpty()) {
+        if (conCredenciales && credenciales.isEmpty()) {
             return ResponseEntity.status(409).body(Map.of("ok", false,
                     "mensaje", "No hay credenciales listas para reenviar. Falta comprobante o foto."));
         }
 
         try {
             byte[] recibo = null;
-            if (Boolean.TRUE.equals(req.incluirRecibo())) {
+            if (Boolean.TRUE.equals(req.incluirRecibo()) || !conCredenciales) {
                 ByteArrayOutputStream salida = new ByteArrayOutputStream();
                 reciboPdfService.generarRecibo(req.inscripcionId(), salida);
                 recibo = salida.toByteArray();
@@ -405,7 +407,7 @@ public class CredencialesApiController {
                     req.inscripcionId(), recibo, imagenes, raizPublica(), recibosExtra);
 
             return ResponseEntity.ok(Map.of("ok", true,
-                    "mensaje", "Reenvío enviado por WhatsApp",
+                    "mensaje", conCredenciales ? "Reenvío enviado por WhatsApp" : "Mensaje y recibo enviados por WhatsApp",
                     "credenciales", credenciales.size()));
         } catch (Exception e) {
             log.warn("No se pudo reenviar WhatsApp de inscripcion {}: {}", req.inscripcionId(), e.getMessage());

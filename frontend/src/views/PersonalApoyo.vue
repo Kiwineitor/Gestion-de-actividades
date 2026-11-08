@@ -629,5 +629,11 @@ tr.clicable { cursor: pointer; }
 .detalle dl { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 0.9rem; margin: 0; }
 .detalle dt { color: var(--muted); font-size: 0.85rem; }
 .detalle dd { margin: 0; }
-@media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } }
+@media (max-width: 600px) {
+  .grid2 { grid-template-columns: 1fr; }
+  .acciones { flex-wrap: wrap; width: 100%; }
+  .acciones .busca { min-width: 0; max-width: none; flex: 1 1 100%; }
+  .acciones .btn { flex: 1 1 100%; justify-content: center; }
+  .tabs { flex-wrap: wrap; }
+}
 </style>

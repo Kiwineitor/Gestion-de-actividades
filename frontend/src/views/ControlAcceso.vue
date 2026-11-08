@@ -1,10 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-import { apiFetch } from '../api.js';
 import { useAccesosStore } from '../stores/accesos.js';
 import BarrasHorizontales from '../components/BarrasHorizontales.vue';
-import { ediciones, eventos, cargarActividades } from '../ui/actividadElegida';
-import { toast } from '../ui/toast';
+import { ediciones, cargarActividades } from '../ui/actividadElegida';
 
 const accesos = useAccesosStore();
 
@@ -15,11 +13,6 @@ const sentidoFiltro = ref('');
 const limite = ref(50);
 const offset = ref(0);
 
-const datosEvento = ref(null);
-const cargandoEvento = ref(false);
-const busquedaEvento = ref('');
-
-const eventoId = computed(() => (/^e-\d+$/.test(actividad.value) ? actividad.value.slice(2) : ''));
 const edicionFiltro = computed(() => {
   if (/^f-\d+$/.test(actividad.value)) return actividad.value.slice(2);
   if (actividad.value === 'todas') return null;
@@ -38,35 +31,9 @@ const opcionesSentido = [
   { valor: 'S', texto: 'Salida' },
 ];
 
-async function cargarEvento() {
-  if (!eventoId.value) return;
-  cargandoEvento.value = true;
-  try {
-    const p = new URLSearchParams();
-    if (desde.value) p.set('desde', desde.value);
-    if (hasta.value) p.set('hasta', hasta.value);
-    const q = p.toString();
-    const r = await apiFetch(`/api/app/accesos/evento/${eventoId.value}${q ? `?${q}` : ''}`);
-    if (!r.ok) { toast(r.status === 403 ? 'No tienes acceso a los ingresos de este evento' : 'No se pudieron cargar los ingresos', 'error'); return; }
-    datosEvento.value = await r.json();
-  } catch (e) {
-    toast(e.message, 'error');
-  } finally {
-    cargandoEvento.value = false;
-  }
-}
-
-const reservasEvento = computed(() => {
-  const q = busquedaEvento.value.trim().toLowerCase();
-  const lista = datosEvento.value?.reservas || [];
-  if (!q) return lista;
-  return lista.filter((r) => `${r.titular} ${r.ci} ${r.mesa} ${r.zona || ''} ${r.codigo}`.toLowerCase().includes(q));
-});
-
 async function cambiarActividad() {
   offset.value = 0;
-  if (eventoId.value) await cargarEvento();
-  else await cargarTodo();
+  await cargarTodo();
 }
 
 async function cargarTodo() {
@@ -83,8 +50,7 @@ async function cargarTodo() {
 
 async function buscar() {
   offset.value = 0;
-  if (eventoId.value) await cargarEvento();
-  else await cargarTodo();
+  await cargarTodo();
 }
 
 async function pagina(direccion) {
@@ -107,8 +73,7 @@ function limpiarFiltros() {
   hasta.value = '';
   sentidoFiltro.value = '';
   offset.value = 0;
-  if (eventoId.value) cargarEvento();
-  else cargarTodo();
+  cargarTodo();
 }
 
 function nombreCompleto(m) {
@@ -148,37 +113,14 @@ watch([desde, hasta], () => {
 
 <template>
   <div class="control-acceso">
-    <div v-if="eventoId" class="en-vivo-indicador desconectado" title="Los ingresos del evento se actualizan al buscar">
-      <span class="punto"></span> INGRESOS DEL EVENTO
-    </div>
-    <div v-else-if="accesos.enVivo" class="en-vivo-indicador" title="Conectado en tiempo real">
+    <div v-if="accesos.enVivo" class="en-vivo-indicador" title="Conectado en tiempo real">
       <span class="punto"></span> EN VIVO
     </div>
     <div v-else class="en-vivo-indicador desconectado" title="Sin conexión en tiempo real (usando sondeo)">
       <span class="punto"></span> SIN TIEMPO REAL
     </div>
 
-    <section v-if="eventoId" class="kpis card">
-      <div class="kpi-grid">
-        <div class="kpi-item">
-          <span class="kpi-label">Ingresaron</span>
-          <span class="kpi-valor entrada">{{ datosEvento?.totales?.usados ?? 0 }}</span>
-        </div>
-        <div class="kpi-item">
-          <span class="kpi-label">Pases sin usar</span>
-          <span class="kpi-valor salida">{{ datosEvento?.totales?.pendientes ?? 0 }}</span>
-        </div>
-        <div class="kpi-item">
-          <span class="kpi-label">Mesas con ingreso</span>
-          <span class="kpi-valor dentro">{{ datosEvento?.totales?.reservasConIngreso ?? 0 }} / {{ datosEvento?.totales?.reservas ?? 0 }}</span>
-        </div>
-        <div class="kpi-item">
-          <span class="kpi-label">Pases emitidos</span>
-          <span class="kpi-valor total">{{ datosEvento?.totales?.pases ?? 0 }}</span>
-        </div>
-      </div>
-    </section>
-    <section v-else class="kpis card">
+    <section class="kpis card">
       <div class="kpi-grid">
         <div class="kpi-item">
           <span class="kpi-label">Entradas</span>
@@ -213,17 +155,14 @@ watch([desde, hasta], () => {
           <div class="campo">
             <label>Actividad</label>
             <select v-model="actividad" class="control" @change="cambiarActividad">
-              <option value="">Feria en curso</option>
-              <option value="todas">Todas las ferias</option>
-              <optgroup v-if="ediciones.length" label="Ferias (puestos)">
+              <option value="">Actividad en curso</option>
+              <option value="todas">Todas las actividades</option>
+              <optgroup v-if="ediciones.length" label="Actividades">
                 <option v-for="e in ediciones" :key="e.clave" :value="e.clave">{{ e.nombre }}{{ e.activa ? ' (en curso)' : '' }}</option>
-              </optgroup>
-              <optgroup v-if="eventos.length" label="Eventos con mesas">
-                <option v-for="e in eventos" :key="e.clave" :value="e.clave">{{ e.nombre }}</option>
               </optgroup>
             </select>
           </div>
-          <div v-if="!eventoId" class="campo">
+          <div class="campo">
             <label>Sentido</label>
             <select v-model="sentidoFiltro" class="control">
               <option v-for="o in opcionesSentido" :key="o.valor" :value="o.valor">{{ o.texto }}</option>
@@ -239,81 +178,6 @@ watch([desde, hasta], () => {
       </form>
     </section>
 
-    <template v-if="eventoId">
-      <section class="graficos">
-        <div class="grafico-card card">
-          <h3>Ingresos por zona</h3>
-          <BarrasHorizontales v-if="datosEvento?.porZona?.length"
-            :items="datosEvento.porZona.map((z) => ({ label: z.nombre, valor: Number(z.cantidad) }))"
-            :formato="(v) => v.toLocaleString('es-BO')" />
-          <p v-else class="vacio">Todavía no ingresó nadie.</p>
-        </div>
-        <div class="grafico-card card">
-          <h3>Ingresos por usuario (quien escaneó)</h3>
-          <BarrasHorizontales v-if="datosEvento?.porUsuario?.length"
-            :items="datosEvento.porUsuario.map((u) => ({ label: u.nombre, valor: Number(u.cantidad) }))"
-            :formato="(v) => v.toLocaleString('es-BO')" />
-          <p v-else class="vacio">Todavía no ingresó nadie.</p>
-        </div>
-      </section>
-
-      <section class="dentro-ahora card">
-        <div class="dentro-header fila-evento">
-          <h3>🟢 Quiénes entraron ({{ datosEvento?.totales?.reservasConIngreso ?? 0 }} de {{ datosEvento?.totales?.reservas ?? 0 }} mesas · {{ datosEvento?.totales?.dentro ?? 0 }} personas adentro ahora)</h3>
-          <input v-model="busquedaEvento" class="control buscar-evento" type="search" placeholder="Buscar titular, C.I. o mesa…" />
-        </div>
-        <div v-if="cargandoEvento && !datosEvento" class="cargando-tabla"><div class="spinner"></div> Cargando…</div>
-        <div v-else-if="!reservasEvento.length" class="vacio-tabla">No hay reservas confirmadas.</div>
-        <div v-else class="dentro-lista">
-          <div v-for="r in reservasEvento" :key="r.id" class="dentro-item" :class="{ 'sin-ingreso': !r.usados }">
-            <div class="dentro-info">
-              <strong>{{ r.titular }}</strong>
-              <span class="dentro-meta">Mesa {{ r.mesa }}<template v-if="r.zona"> · {{ r.zona }}</template> · C.I. {{ r.ci }}<template v-if="r.tipoPase"> · {{ r.tipoPase }}</template></span>
-            </div>
-            <span class="pases-usados" :class="{ completo: r.pases && r.usados >= r.pases }">{{ r.usados }} / {{ r.pases || 1 }} ingresaron<template v-if="r.dentro != null"> · {{ r.dentro }} adentro</template></span>
-            <span class="dentro-hora">{{ r.ultimo ? 'Último: ' + formatearFecha(r.ultimo) : 'Aún no llega' }}</span>
-          </div>
-        </div>
-      </section>
-
-      <section class="movimientos card">
-        <div class="movimientos-header">
-          <h3>Historial de entradas y salidas</h3>
-          <span class="movimientos-total">{{ datosEvento?.ingresos?.length || 0 }} registros</span>
-        </div>
-        <div v-if="!datosEvento?.ingresos?.length" class="vacio-tabla">Todavía no se registró ningún ingreso.</div>
-        <div v-else class="tabla-wrapper">
-          <table class="tabla-movimientos">
-            <thead>
-              <tr>
-                <th>Fecha / Hora</th>
-                <th>Movimiento</th>
-                <th>Persona</th>
-                <th>C.I.</th>
-                <th>Mesa</th>
-                <th>Pase</th>
-                <th>Tipo</th>
-                <th>Registrado por</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="m in datosEvento.ingresos" :key="m.id">
-                <td class="fecha">{{ formatearFecha(m.cuando) }}</td>
-                <td><span class="badge" :class="badgeSentido(m.sentido || 'E')">{{ textoSentido(m.sentido || 'E') }}</span></td>
-                <td>{{ m.persona || m.titular }}<small v-if="m.persona" class="muted"> · de {{ m.titular }}</small></td>
-                <td class="ci">{{ m.ci || '—' }}</td>
-                <td class="casetas">{{ m.mesa }}<template v-if="m.zona"> · {{ m.zona }}</template></td>
-                <td>{{ m.numero }} de {{ m.total }}</td>
-                <td>{{ m.tipo || '—' }}</td>
-                <td>{{ m.registradoPor || '—' }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </template>
-
-    <template v-else>
     <section class="graficos">
       <div class="grafico-card card">
         <h3>Movimientos por categoría</h3>
@@ -412,7 +276,6 @@ watch([desde, hasta], () => {
         <button class="btn btn-fantasma btn-sm" @click="pagina(1)" :disabled="accesos.movimientos.length < limite">Siguiente</button>
       </div>
     </section>
-    </template>
   </div>
 </template>
 
@@ -437,6 +300,10 @@ watch([desde, hasta], () => {
 
 .kpis { padding: 1rem 1.2rem; }
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; }
+@media (max-width: 640px) {
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+  .kpi-valor { font-size: 1.5rem; }
+}
 .kpi-item { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.8rem; background: var(--panel-2); border-radius: var(--radio-sm); }
 .kpi-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; }
 .kpi-valor { font-size: 1.8rem; font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -454,8 +321,6 @@ watch([desde, hasta], () => {
 .acciones-filtros { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 
 .graficos { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 1.2rem; }
-.fila-evento { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }
-.buscar-evento { flex: 0 1 260px; min-width: 0; }
 .dentro-item.sin-ingreso { opacity: 0.7; }
 .pases-usados { font-weight: 700; font-size: 0.85rem; color: var(--tramite); white-space: nowrap; }
 .pases-usados.completo { color: var(--ok); }

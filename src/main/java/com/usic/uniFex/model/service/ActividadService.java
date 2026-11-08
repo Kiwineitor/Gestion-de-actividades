@@ -34,6 +34,16 @@ public class ActividadService {
     private final AvisoPublicoService avisoPublico;
     private final CategoriaMapaService categoriaMapa;
     private final CategoriaOpcionService categoriaOpcion;
+    private final ActividadRespaldoService respaldos;
+
+    public static final String SQL_REGISTROS = """
+            (SELECT count(*) FROM inscripcion i WHERE i.id_edicion = %1$s)
+          + (SELECT count(*) FROM venta_boleto b WHERE b.id_edicion = %1$s)
+          + (SELECT count(*) FROM noticia n WHERE n.id_edicion = %1$s)
+          + (SELECT count(*) FROM noche_fexpo f WHERE f.id_edicion = %1$s)
+          + (SELECT count(*) FROM entrada_compra ec WHERE ec.id_edicion = %1$s)
+          + (SELECT count(*) FROM interesado_stand s JOIN categoria sc ON sc.id = s.id_categoria
+              WHERE sc.id_edicion = %1$s AND s.estado = 'NUEVO')""";
 
     private static final Set<String> TIPOS_IMAGEN = Set.of("image/png", "image/jpeg", "image/webp");
 
@@ -68,7 +78,14 @@ public class ActividadService {
                          WHERE c.id_edicion = e.id AND p.estado_puesto = 'O'
                            AND (p."_estado" IS NULL OR p."_estado" <> 'X')) AS vendidos,
                        (SELECT count(*) FROM inscripcion i
-                         WHERE i.id_edicion = e.id AND (i."_estado" IS NULL OR i."_estado" <> 'X')) AS ventas
+                         WHERE i.id_edicion = e.id AND (i."_estado" IS NULL OR i."_estado" <> 'X')) AS ventas,
+                       """ + SQL_REGISTROS.formatted("e.id") + """
+                        AS registros,
+                       e.estado_evento, e.estado_motivo, e.estado_nueva_fecha, e.estado_publico, e.venta_desde, e.qr_estilo, e.credencial_acompanantes,
+                       (e.usa_credenciales AND e.credencial_representante) AS registra_personas,
+                       ((SELECT count(*) FROM interesado_stand s JOIN categoria k ON k.id = s.id_categoria WHERE k.id_edicion = e.id AND s.estado = 'NUEVO')
+                        + (SELECT count(*) FROM entrada_compra x WHERE x.id_edicion = e.id AND x.estado = 'REVISION')) AS por_validar,
+                       (e.venta_desde IS NOT NULL AND e.venta_desde > now()) AS antes_de_abrir
                   FROM edicion e
                  ORDER BY e.activa DESC, e.anio DESC, e.id DESC
                 """, (rs, i) -> {
@@ -108,6 +125,18 @@ public class ActividadService {
             m.put("primerDia", rs.getString("primer_dia"));
             m.put("ultimoDia", rs.getString("ultimo_dia"));
             m.put("tiposEntrada", rs.getLong("tipos_entrada"));
+            m.put("registros", rs.getLong("registros"));
+            m.put("estadoEvento", rs.getString("estado_evento"));
+            m.put("estadoMotivo", rs.getString("estado_motivo"));
+            m.put("estadoNuevaFecha", rs.getString("estado_nueva_fecha"));
+            m.put("estadoPublico", rs.getBoolean("estado_publico"));
+            java.sql.Timestamp desde = rs.getTimestamp("venta_desde");
+            m.put("ventaDesde", desde == null ? null : desde.toLocalDateTime().toString());
+            m.put("antesDeAbrir", rs.getBoolean("antes_de_abrir"));
+            m.put("qrEstilo", rs.getString("qr_estilo"));
+            m.put("credencialAcompanantes", rs.getBoolean("credencial_acompanantes"));
+            m.put("registraPersonas", rs.getBoolean("registra_personas"));
+            m.put("porValidar", rs.getLong("por_validar"));
             return m;
         });
     }
@@ -264,19 +293,16 @@ public class ActividadService {
         List<Map<String, Object>> filas = jdbc.queryForList("SELECT nombre, activa FROM edicion WHERE id = ? FOR UPDATE", id);
         if (filas.isEmpty()) return Resultado.error("La actividad no existe");
         String nombre = (String) filas.get(0).get("nombre");
+        HistorialService.anotarResumen(nombre);
         if (Boolean.TRUE.equals(filas.get(0).get("activa"))) {
             return Resultado.error("«" + nombre + "» es la feria en curso. Pon otra en curso antes de eliminarla.");
         }
-        Integer ventas = jdbc.queryForObject("""
-                SELECT (SELECT count(*) FROM inscripcion WHERE id_edicion = ?)
-                     + (SELECT count(*) FROM venta_boleto WHERE id_edicion = ?)
-                     + (SELECT count(*) FROM noticia WHERE id_edicion = ?)
-                     + (SELECT count(*) FROM noche_fexpo WHERE id_edicion = ?)
-                """, Integer.class, id, id, id, id);
+        Integer ventas = jdbc.queryForObject("SELECT " + SQL_REGISTROS.formatted("?"), Integer.class, id, id, id, id, id, id);
         if (ventas != null && ventas > 0) {
-            return Resultado.error("«" + nombre + "» tiene " + ventas + " venta(s) o registro(s) asociados. "
-                    + "Para conservar el historial no se puede eliminar.");
+            return Resultado.error("«" + nombre + "» tiene " + ventas + " venta(s), compra(s) o solicitud(es) pendientes. "
+                    + "No se puede eliminar: cancélala o posponla.");
         }
+        respaldos.guardar(id, nombre, usuarioId);
         String puestos = "SELECT p.id FROM puesto p JOIN categoria c ON c.id = p.id_categoria WHERE c.id_edicion = ?";
         String categorias = "SELECT id FROM categoria WHERE id_edicion = ?";
         jdbc.update("DELETE FROM notificacion WHERE id_puesto IN (" + puestos + ")", id);
@@ -288,9 +314,11 @@ public class ActividadService {
         jdbc.update("DELETE FROM categoria WHERE id_edicion = ?", id);
         jdbc.update("DELETE FROM plano_texto WHERE id_edicion = ?", id);
         jdbc.update("UPDATE plantilla_credencial SET id_edicion = NULL WHERE id_edicion = ?", id);
+        int anuncios = jdbc.update("UPDATE anuncio SET \"_estado\" = 'X', \"_fecha_modificacion\" = now() WHERE id_edicion = ? AND \"_estado\" = 'A'", id);
         jdbc.update("DELETE FROM edicion WHERE id = ?", id);
         log.warn("Actividad {} ({}) eliminada por el usuario {}", id, nombre, usuarioId);
         avisoPublico.cambio("actividad", id);
+        if (anuncios > 0) avisoPublico.cambio("anuncios", id);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
@@ -301,7 +329,7 @@ public class ActividadService {
                 }
             }
         });
-        return new Resultado(true, "Actividad «" + nombre + "» eliminada", id);
+        return new Resultado(true, "Actividad «" + nombre + "» eliminada. Queda en la papelera " + ActividadRespaldoService.DIAS_DE_RESPALDO + " días por si quieres recuperarla.", id);
     }
 
     private void guardarPublico(Long id, Datos d) {

@@ -21,17 +21,11 @@ public class ActividadesApiController {
     @GetMapping
     public List<Map<String, Object>> listar() {
         return jdbc.query("""
-                SELECT * FROM (
-                    SELECT 'f-' || e.id AS clave, 'FERIA' AS tipo, e.id, e.nombre, e.activa, e.anio, NULL::timestamp AS fecha,
-                           (SELECT count(*) FROM categoria c
-                             WHERE c.id_edicion = e.id AND (c."_estado" IS NULL OR c."_estado" <> 'X')) AS categorias
-                      FROM edicion e
-                    UNION ALL
-                    SELECT 'e-' || m.id, 'MESAS', m.id, m.nombre, FALSE, extract(year FROM m.fecha_inicio)::int, m.fecha_inicio, 0
-                      FROM mesa_evento m
-                     WHERE m."_estado" = 'A'
-                ) a
-                ORDER BY a.activa DESC, a.anio DESC, a.tipo, a.fecha DESC NULLS LAST, a.id DESC
+                SELECT 'f-' || e.id AS clave, 'FERIA' AS tipo, e.id, e.nombre, e.activa, e.anio, NULL::timestamp AS fecha,
+                       (SELECT count(*) FROM categoria c
+                         WHERE c.id_edicion = e.id AND (c."_estado" IS NULL OR c."_estado" <> 'X')) AS categorias
+                  FROM edicion e
+                 ORDER BY e.activa DESC, e.anio DESC, e.id DESC
                 """, (rs, i) -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("clave", rs.getString("clave"));

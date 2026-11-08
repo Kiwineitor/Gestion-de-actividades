@@ -16,25 +16,13 @@ import { asegurarCategorias, opcionesDe, tieneVariosPrecios } from '../ui/catalo
 import RotuloPlano from '../components/RotuloPlano.vue';
 import { usePlanoTextosStore } from '../stores/planoTextos.js';
 import { aModulo } from '../modulos';
-import MapaMesas from '../components/MapaMesas.vue';
 import ModalEntrega from '../components/ModalEntrega.vue';
-import { actividades, ediciones, eventos, cargarActividades } from '../ui/actividadElegida';
+import { ediciones, cargarActividades } from '../ui/actividadElegida';
 import { marcarPantalla } from '../ui/presencia';
 
 const Venta = defineAsyncComponent(() => import('./Venta.vue'));
 const route = useRoute();
 
-function leerMapa() {
-  const q = route.query.evento;
-  if (typeof q === 'string' && /^\d+$/.test(q)) return `e-${q}`;
-  try { return sessionStorage.getItem('mapa.actividad') || ''; } catch { return ''; }
-}
-
-const mapaClave = ref(leerMapa());
-watch(mapaClave, (v) => { try { if (v) sessionStorage.setItem('mapa.actividad', v); else sessionStorage.removeItem('mapa.actividad'); } catch { } });
-watch(actividades, (l) => { if (mapaClave.value && l.length && !l.some((a) => a.clave === mapaClave.value)) mapaClave.value = ''; });
-watch(() => route.query.evento, (q) => { if (typeof q === 'string' && /^\d+$/.test(q)) mapaClave.value = `e-${q}`; });
-const eventoMapa = computed(() => (/^e-\d+$/.test(mapaClave.value) ? Number(mapaClave.value.slice(2)) : null));
 const feriaEnCurso = computed(() => ediciones.value.find((e) => e.activa) || null);
 const ventaAbierta = ref(false);
 const entregaId = ref(null);
@@ -225,19 +213,7 @@ onUnmounted(() => {
 
 <template>
   <div class="barra">
-      <label v-if="actividades.length > 1" class="elegir-mapa" title="Ver el mapa de otra actividad">
-        <span aria-hidden="true">🗺️</span>
-        <select v-model="mapaClave" aria-label="Mapa de la actividad">
-          <option value="">{{ feriaEnCurso ? feriaEnCurso.nombre : 'Feria en curso' }}{{ feriaEnCurso ? ' (en curso)' : '' }}</option>
-          <optgroup v-if="ediciones.some((e) => !e.activa)" label="Otras ferias (solo se vende la que está en curso)">
-            <option v-for="e in ediciones.filter((x) => !x.activa)" :key="e.clave" :value="e.clave" disabled>{{ e.nombre }}</option>
-          </optgroup>
-          <optgroup v-if="eventos.length" label="Eventos con mesas">
-            <option v-for="e in eventos" :key="e.clave" :value="e.clave">{{ e.nombre }}</option>
-          </optgroup>
-        </select>
-      </label>
-      <template v-if="!eventoMapa">
+      <span v-if="feriaEnCurso" class="elegir-mapa" title="Para vender en otras actividades usa «Vender»">🗺️ {{ feriaEnCurso.nombre }}</span>
       <div class="legend">
         <span v-for="l in LEYENDA" :key="l.clase" class="chip" :class="l.clase">{{ l.txt }}</span>
         <span v-if="auth.esVendedor" class="chip chip-ajena">De otro vendedor</span>
@@ -261,10 +237,7 @@ onUnmounted(() => {
         {{ ubicados.length }} ubicadas
         <span v-if="sinUbicar > 0" class="muted">· {{ sinUbicar }} sin ubicar (Editor)</span>
       </div>
-      </template>
     </div>
-    <MapaMesas v-if="eventoMapa" :evento-id="eventoMapa" />
-    <template v-else>
     <Transition name="subir">
       <div v-if="carrito.length" class="carrito" role="status">
         <div class="resumen">
@@ -337,7 +310,6 @@ onUnmounted(() => {
         <RotuloPlano v-for="t in textosTienda.textos" :key="t.id" :texto="t" />
       </div>
     </PanZoom>
-    </template>
 
     <div v-if="ventaAbierta" class="hoja-venta" role="dialog" aria-modal="true" aria-label="Registrar venta">
       <header class="hoja-cab">

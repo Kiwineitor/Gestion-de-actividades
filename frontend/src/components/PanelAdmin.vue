@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/auth';
 import { usePermisosStore } from '../stores/permisos';
 import { moduloActual, puedeAbrir } from '../modulos';
 import Login from '../views/Login.vue';
+import PrimerIngreso from '../views/PrimerIngreso.vue';
 import AppLayout from './AppLayout.vue';
 
 const auth = useAuthStore();
@@ -20,6 +21,7 @@ watch(() => auth.autenticado, async (dentro) => {
 </script>
 
 <template>
-  <AppLayout v-if="auth.autenticado" />
+  <PrimerIngreso v-if="auth.autenticado && auth.pendientes.length" />
+  <AppLayout v-else-if="auth.autenticado" />
   <Login v-else />
 </template>

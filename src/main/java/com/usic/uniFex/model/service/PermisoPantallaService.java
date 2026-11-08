@@ -80,7 +80,11 @@ public class PermisoPantallaService {
                 .filter(PantallasSistema::existe)
                 .distinct()
                 .toList();
+        List<String> antes = matriz().stream().filter(m -> rolId.equals(m.get("rolId")))
+                .map(m -> (List<?>) m.get("pantallas")).findFirst().map(l -> l.stream().map(String::valueOf).toList())
+                .orElse(List.of());
         dao.reemplazar(rolId, validas, adminId);
+        anotarDiferencia(nombreRol, antes, validas);
         log.info("Permisos del rol {}: {} pantallas (cambiado por el usuario {})",
                 nombreRol, validas.size(), adminId);
 
@@ -125,6 +129,19 @@ public class PermisoPantallaService {
         return m;
     }
 
+    private static void anotarDiferencia(String quien, List<String> antes, List<String> despues) {
+        List<String> agregadas = despues.stream().filter(p -> !antes.contains(p)).map(PermisoPantallaService::titulo).toList();
+        List<String> quitadas = antes.stream().filter(p -> !despues.contains(p)).map(PermisoPantallaService::titulo).toList();
+        if (!agregadas.isEmpty()) HistorialService.anotarCambio("Pantallas agregadas", null, String.join(", ", agregadas));
+        if (!quitadas.isEmpty()) HistorialService.anotarCambio("Pantallas quitadas", String.join(", ", quitadas), null);
+        HistorialService.anotarResumen(quien);
+    }
+
+    private static String titulo(String clave) {
+        return PantallasSistema.todas().stream().filter(p -> p.getClave().equals(clave))
+                .map(PantallasSistema::getTitulo).findFirst().orElse(clave);
+    }
+
     @Transactional
     public List<String> guardarDeUsuario(Long usuarioId, List<String> pantallas, Long adminId) {
         Object[] u = dao.usuario(usuarioId);
@@ -140,7 +157,9 @@ public class PermisoPantallaService {
                 .filter(p -> !delRol.contains(p))
                 .distinct()
                 .toList();
+        List<String> antes = dao.pantallasPropiasDeUsuario(usuarioId);
         dao.reemplazarDeUsuario(usuarioId, validas, adminId);
+        anotarDiferencia(String.valueOf(u[1]), antes, validas);
         log.info("Pantallas propias del usuario {} ({}): {} (cambiado por el usuario {})",
                 usuarioId, u[1], validas, adminId);
         notificaciones.notificar(usuarioId, NotificacionService.TIPO_PERMISOS,

@@ -46,11 +46,13 @@ public class InteresadoStandController {
 
     private ResponseEntity<Map<String, Object>> procesar(InteresadoStandRequest datos, MultipartFile comprobante) {
         Boolean abierta = jdbc.query("""
-                SELECT e.publica AND e.recibe_interesados FROM categoria c JOIN edicion e ON e.id = c.id_edicion
-                 WHERE c.id = ? AND e.activa
+                SELECT e.publica AND e.recibe_interesados AND NOT e.finalizada
+                       AND (e.venta_hasta IS NULL OR e.venta_hasta > now())
+                  FROM categoria c JOIN edicion e ON e.id = c.id_edicion
+                 WHERE c.id = ? AND (e.activa OR e.publicacion_independiente)
                 """, rs -> rs.next() ? rs.getBoolean(1) : Boolean.FALSE, datos.categoriaId());
         if (!Boolean.TRUE.equals(abierta)) {
-            return ResponseEntity.badRequest().body(Map.of("ok", false, "mensaje", "Esta actividad no está recibiendo solicitudes."));
+            return ResponseEntity.badRequest().body(Map.of("ok", false, "mensaje", "Esta actividad ya no está recibiendo compras."));
         }
         Resultado r;
         try {

@@ -229,7 +229,7 @@ async function guardar() {
     </template>
 
     <template #pie>
-      <button v-if="v" class="btn btn-primario" @click="entregando = true">📲 Recibo y credenciales</button>
+      <button v-if="v" class="btn btn-primario" @click="entregando = true">📲 Entregar al cliente</button>
       <button class="btn" @click="emit('cerrar')">Cerrar</button>
     </template>
   </UiModal>

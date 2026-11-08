@@ -27,7 +27,7 @@ watch(visibles, (v) => {
 <template>
   <div class="vista-pestanas" :class="{ llena: activa?.llena }">
     <div v-if="visibles.length > 1 || $slots.extra" class="barra">
-      <nav v-if="visibles.length > 1" class="pestanas" role="tablist">
+      <nav v-if="visibles.length > 1" class="pestanas desliza-h" role="tablist">
         <button v-for="p in visibles" :key="p.k" type="button" role="tab" class="pestana"
                 :class="{ activa: activa?.k === p.k }" :aria-selected="activa?.k === p.k" @click="ir(p.k)">
           <span v-if="p.icono" aria-hidden="true">{{ p.icono }}</span>{{ p.t }}

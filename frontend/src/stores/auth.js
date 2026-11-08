@@ -24,6 +24,13 @@ function delToken(token, clave) {
   }
 }
 
+function leerPendientes() {
+  try {
+    const p = JSON.parse(localStorage.getItem('pendientes') || '[]');
+    return Array.isArray(p) ? p : [];
+  } catch { return []; }
+}
+
 function idInicial(token) {
   const guardado = Number(localStorage.getItem('id'));
   if (guardado) return guardado;
@@ -37,6 +44,8 @@ export const useAuthStore = defineStore('auth', {
     id: idInicial(localStorage.getItem('token') || ''),
     usuario: localStorage.getItem('usuario') || '',
     rol: localStorage.getItem('rol') || '',
+    pendientes: leerPendientes(),
+    pendientesIniciales: 0,
   }),
   getters: {
     autenticado: (s) => {
@@ -65,14 +74,24 @@ export const useAuthStore = defineStore('auth', {
         error.codigo = data.codigo || '';
         throw error;
       }
-      this.token = data.token;
-      this.id = Number(data.id) || Number(delToken(data.token, 'uid')) || null;
-      this.usuario = data.usuario;
-      this.rol = data.rol;
+      this.aplicar(data);
+      this.pendientesIniciales = this.pendientes.length;
+    },
+    aplicar(data) {
+      if (data.token) this.token = data.token;
+      this.id = Number(data.id) || Number(delToken(this.token, 'uid')) || this.id || null;
+      if (data.usuario) this.usuario = data.usuario;
+      if (data.rol != null) this.rol = data.rol;
       localStorage.setItem('token', this.token);
       if (this.id != null) localStorage.setItem('id', String(this.id));
       localStorage.setItem('usuario', this.usuario);
       localStorage.setItem('rol', this.rol);
+      this.aplicarPendientes(Array.isArray(data.pendientes) ? data.pendientes : []);
+    },
+    aplicarPendientes(lista) {
+      this.pendientes = lista;
+      if (this.pendientesIniciales < lista.length) this.pendientesIniciales = lista.length;
+      try { localStorage.setItem('pendientes', JSON.stringify(lista)); } catch { }
     },
     logout() {
       this.token = '';
@@ -83,6 +102,9 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('id');
       localStorage.removeItem('usuario');
       localStorage.removeItem('rol');
+      this.pendientes = [];
+      this.pendientesIniciales = 0;
+      localStorage.removeItem('pendientes');
       try { localStorage.removeItem(CACHE_PERMISOS); } catch { }
     },
   },

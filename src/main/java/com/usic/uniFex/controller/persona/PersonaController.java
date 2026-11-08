@@ -144,6 +144,7 @@ public class PersonaController {
             Usuario user = usuarioService.findByUsername(codFuncionario).orElseGet(Usuario::new);
             user.setUsername(codFuncionario);
             user.setPassword(passwordEncoder.encode(ci));
+            user.setDebeCambiarClave(true);
             user.setPersona(administrativo.getPersona());
             user.setRol(rolAdmin);
             try { user.getClass().getMethod("setEstado", String.class); user.setEstado("ACTIVO"); } catch (Exception ignore) {}

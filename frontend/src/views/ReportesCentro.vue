@@ -4,7 +4,6 @@ import { useAuthStore } from '../stores/auth';
 import { usePermisosStore } from '../stores/permisos';
 import VistaPestanas from '../components/VistaPestanas.vue';
 import SelectorActividad from '../components/SelectorActividad.vue';
-import { esEventoElegido } from '../ui/actividadElegida';
 
 const auth = useAuthStore();
 const permisos = usePermisosStore();
@@ -32,16 +31,7 @@ const deFeria = computed(() => [
   },
 ]);
 
-const deEvento = computed(() => [
-  {
-    k: 'evento', t: 'Resumen del evento', icono: '🍸',
-    visible: auth.puedeEditarPlano || ['direccion', 'control-ventas', 'reportes', 'reporte-responsables', 'mesas'].some(ve),
-    ayuda: 'Mesas vendidas, lo recaudado, pagos por validar, personas, ingresos en puerta y quién atendió cada reserva. Descárgalo en Excel o PDF.',
-    vista: defineAsyncComponent(() => import('./ReporteEvento.vue')),
-  },
-]);
-
-const pestanas = computed(() => (esEventoElegido.value ? deEvento.value : deFeria.value));
+const pestanas = deFeria;
 </script>
 
 <template>

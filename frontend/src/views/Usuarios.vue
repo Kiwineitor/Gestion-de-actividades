@@ -79,6 +79,7 @@ function accionesDe(u) {
     { txt: 'Datos personales', accion: () => abrirDatos(u) },
     { txt: 'Cambiar contraseña', accion: () => abrirPassword(u) },
     { txt: 'Ver permisos', accion: () => router.push(aModulo('permisos', { usuario: u.id })) },
+    { txt: 'Ver historial', accion: () => router.push(aModulo('historial', { usuario: u.id })) },
     { txt: u.estado === 'ACTIVO' ? 'Desactivar' : 'Activar', accion: () => alternarEstado(u) },
     { separador: true },
     { txt: 'Eliminar usuario', peligro: true, accion: () => eliminar(u) },
@@ -505,6 +506,12 @@ onMounted(() => {
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
 .campo-ancho { grid-column: 1 / -1; }
 @media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } }
+@media (max-width: 640px) {
+  .encabezado { flex-wrap: wrap; }
+  .encabezado > .btn { width: 100%; justify-content: center; }
+  .filtros .control, .filtros .busca { min-width: 0; max-width: none; flex: 1 1 140px; }
+  .filtros .busca { flex-basis: 100%; }
+}
 
 .aviso { margin: -0.4rem 0 0; font-size: 0.8rem; }
 .pista { font-size: 0.78rem; }

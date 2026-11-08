@@ -35,18 +35,29 @@ public class ResponsableExtraService {
     private final IPersonaService personaService;
     private final IResponsableService responsableService;
     private final FileStorageService almacen;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public record NuevoResponsable(String nombre, String paterno, String materno, String ci,
                                    String correo, String celular) {
     }
 
     public record Cupo(int casetas, int derecho, int registrados, int extras, boolean dentroDelDerecho,
-                       BigDecimal costoSiguiente) {
+                       BigDecimal costoSiguiente, boolean registraPersonas, boolean admiteExtras,
+                       BigDecimal costoExtra) {
     }
 
     public record Resultado(boolean ok, String mensaje, Long responsableId, boolean cobrado,
                             BigDecimal monto) {
         static Resultado error(String m) { return new Resultado(false, m, null, false, null); }
+    }
+
+    @Transactional(readOnly = true)
+    public boolean registraPersonas(Long inscripcionId) {
+        List<Boolean> r = jdbc.queryForList("""
+                SELECT COALESCE(e.usa_credenciales AND e.credencial_representante, TRUE)
+                  FROM inscripcion i LEFT JOIN edicion e ON e.id = i.id_edicion WHERE i.id = ?
+                """, Boolean.class, inscripcionId);
+        return r.isEmpty() || !Boolean.FALSE.equals(r.getFirst());
     }
 
     @Transactional(readOnly = true)
@@ -58,8 +69,10 @@ public class ResponsableExtraService {
         List<Responsable> vivos = responsableDao.vivosDeEntidad(i.getEntidad().getId());
         int extras = (int) vivos.stream().filter(Responsable::isEsExtra).count();
         boolean dentro = vivos.size() < derecho;
+        boolean registra = registraPersonas(inscripcionId);
+        BigDecimal costo = costoExtraDe(inscripcionId);
         return new Cupo(casetas, derecho, vivos.size(), extras, dentro,
-                dentro ? BigDecimal.ZERO : costoExtraDe(inscripcionId));
+                dentro ? BigDecimal.ZERO : costo, registra, registra && costo.signum() > 0, costo);
     }
 
     private BigDecimal costoExtraDe(Long inscripcionId) {
@@ -76,7 +89,14 @@ public class ResponsableExtraService {
         if (vacio(datos.ci())) return Resultado.error("Falta el C.I.");
 
         Cupo cupo = cupoDe(inscripcionId);
+        if (!cupo.registraPersonas()) {
+            return Resultado.error("Esta actividad no registra personas ni credenciales: solo se vende el espacio");
+        }
         boolean cobra = !cupo.dentroDelDerecho();
+        if (cobra && !cupo.admiteExtras()) {
+            return Resultado.error("Ya están las " + cupo.derecho() + " personas que incluye. Esta categoría no admite"
+                    + " personas extra; puedes habilitarlo con su precio en «Categorías y precios»");
+        }
         BigDecimal costo = cupo.costoSiguiente();
         if (cobra && costo.signum() > 0 && (comprobante == null || comprobante.isEmpty())) {
             return Resultado.error("Esta persona pasa de las " + cupo.derecho()

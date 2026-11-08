@@ -35,7 +35,7 @@ public class PlanoApiController {
     private final PlanoService planoService;
 
     @GetMapping
-    @PreAuthorize("#edicion == null or (" + Roles.EDITA_PLANO_O_PANTALLA + ")")
+    @PreAuthorize("#edicion == null or (" + Roles.EDITA_PLANO_O_PANTALLA + ") or (" + Roles.VENDE_MESAS + ")")
     public PlanoDTO activo(@RequestParam(required = false) Long edicion) {
         return planoService.deEdicion(edicion);
     }

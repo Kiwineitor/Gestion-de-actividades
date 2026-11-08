@@ -33,14 +33,16 @@ public final class Roles {
 
     public static final String VALIDA_MESAS = ADMINISTRA + " or @acceso.puede('mesas')";
 
-    public static final String DISENA_MESAS = ADMINISTRA + " or @acceso.puede('mesas-diseno')";
 
     public static final String REGISTRA_INGRESO = VALIDA_MESAS + " or @acceso.puede('mesas-ingreso')";
 
     public static final String VENDE_MESAS = VALIDA_MESAS + " or @acceso.puede('mapa')";
 
-    public static final String GESTIONA_MESAS = REGISTRA_INGRESO + " or @acceso.puede('mesas-diseno') or @acceso.puede('mapa')";
 
+    public static final String VALIDA_ENTRADAS = ADMINISTRA + " or @acceso.puede('interesados') or @acceso.puede('mesas')";
+    public static final String INGRESO_ENTRADAS = REGISTRA_INGRESO + " or @acceso.puede('escaner') or @acceso.puede('control-acceso')";
+    public static final String VE_HISTORIAL = ADMINISTRA + " or @acceso.puede('historial')";
+    public static final String COMUNICA = ADMINISTRA + " or @acceso.puede('anuncios')";
     public static final String GESTIONA_ACTIVIDADES = ADMINISTRA + " or @acceso.puede('actividades')";
 
     public static final String EDITA_PLANO_O_PANTALLA = EDITA_PLANO + " or @acceso.puede('editor')";

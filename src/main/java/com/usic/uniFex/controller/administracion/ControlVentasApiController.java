@@ -46,8 +46,9 @@ public class ControlVentasApiController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
             @RequestParam(required = false) String estado,
             @RequestParam(required = false) String q,
-            @RequestParam(required = false) Long edicion) {
-        return control.tablero(filtrosDe(vendedor, categoria, desde, hasta, estado, q, edicion));
+            @RequestParam(required = false) Long edicion,
+            @RequestParam(required = false) String canal) {
+        return control.tablero(filtrosDe(vendedor, categoria, desde, hasta, estado, q, edicion, canal));
     }
 
     @GetMapping("/filtros")
@@ -72,8 +73,9 @@ public class ControlVentasApiController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
             @RequestParam(required = false) String estado,
             @RequestParam(required = false) String q,
-            @RequestParam(required = false) Long edicion) {
-        return control.ventas(filtrosDe(vendedor, categoria, desde, hasta, estado, q, edicion));
+            @RequestParam(required = false) Long edicion,
+            @RequestParam(required = false) String canal) {
+        return control.ventas(filtrosDe(vendedor, categoria, desde, hasta, estado, q, edicion, canal));
     }
 
     @GetMapping("/ventas/{id}")
@@ -94,8 +96,9 @@ public class ControlVentasApiController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
             @RequestParam(required = false) String estado,
             @RequestParam(required = false) String q,
-            @RequestParam(required = false) Long edicion) {
-        byte[] datos = exportacion.excel(filtrosDe(vendedor, categoria, desde, hasta, estado, q, edicion));
+            @RequestParam(required = false) Long edicion,
+            @RequestParam(required = false) String canal) {
+        byte[] datos = exportacion.excel(filtrosDe(vendedor, categoria, desde, hasta, estado, q, edicion, canal));
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(XLSX))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"control-ventas.xlsx\"")
@@ -110,8 +113,9 @@ public class ControlVentasApiController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta,
             @RequestParam(required = false) String estado,
             @RequestParam(required = false) String q,
-            @RequestParam(required = false) Long edicion) {
-        Filtros f = filtrosDe(vendedor, categoria, desde, hasta, estado, q, edicion);
+            @RequestParam(required = false) Long edicion,
+            @RequestParam(required = false) String canal) {
+        Filtros f = filtrosDe(vendedor, categoria, desde, hasta, estado, q, edicion, canal);
         byte[] datos = exportacion.pdf(f);
         String archivo = f.vendedorId() == null ? "control-ventas.pdf" : "rendicion-vendedor-" + f.vendedorId() + ".pdf";
         return ResponseEntity.ok()
@@ -121,9 +125,9 @@ public class ControlVentasApiController {
     }
 
     private static Filtros filtrosDe(Long vendedor, Long categoria, LocalDate desde, LocalDate hasta,
-                                     String estado, String q, Long edicion) {
+                                     String estado, String q, Long edicion, String canal) {
         Long soloDe = soloDe();
-        return new Filtros(soloDe != null ? soloDe : vendedor, categoria, desde, hasta, estado, q, edicion);
+        return new Filtros(soloDe != null ? soloDe : vendedor, categoria, desde, hasta, estado, q, edicion, canal);
     }
 
     private static Long soloDe() {

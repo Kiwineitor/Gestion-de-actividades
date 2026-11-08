@@ -35,6 +35,7 @@ class CredencialesReenvioTest {
     @Mock WhatsAppService whatsApp;
     @Mock IInscripcionService inscripcionService;
     @Mock PlantillaCredencialService plantillas;
+    @Mock ResponsableExtraService personasExtra;
     @InjectMocks CredencialesApiController controlador;
     MockMvc mvc;
     CredencialDTO credencial;
@@ -49,6 +50,7 @@ class CredencialesReenvioTest {
         inscripcion.setEntidad(entidad);
         when(inscripcionService.findById(1L)).thenReturn(inscripcion);
         when(whatsApp.habilitado()).thenReturn(true);
+        lenient().when(personasExtra.registraPersonas(1L)).thenReturn(true);
         lenient().when(plantillas.paraInscripcion(1L)).thenReturn(PlantillaCredencial.CREDENCIAL_VIRTUAL);
         credencial = mock(CredencialDTO.class);
         when(credencial.responsableId()).thenReturn(2L);

@@ -6,15 +6,17 @@ import { marca, iniciales, cargarMarca } from '../ui/marca';
 import { alCambiarPublico } from '../ui/canalPublico';
 import { enlaceWhatsApp } from '../ui/tokenPublico';
 import AvisosPublicos from '../components/AvisosPublicos.vue';
-import ReservaPendiente from '../components/ReservaPendiente.vue';
 import ComunicadosPublicos from '../components/ComunicadosPublicos.vue';
+import CarruselPromos from '../components/CarruselPromos.vue';
+import EmergentePublico from '../components/EmergentePublico.vue';
+import { nombreEspacio, mayuscula } from '../ui/espacios';
 import '../publico.css';
 
 const SECCIONES = {
   credencial: { vista: defineAsyncComponent(() => import('./CredencialPublica.vue')), titulo: 'Credencial', propia: true },
-  reserva: { vista: defineAsyncComponent(() => import('./MiReserva.vue')), titulo: 'Mi reserva' },
-  evento: { vista: defineAsyncComponent(() => import('./ReservaMesas.vue')), titulo: 'Reserva de mesas' },
+  compra: { vista: defineAsyncComponent(() => import('./MiCompra.vue')), titulo: 'Mi compra' },
   actividad: { vista: defineAsyncComponent(() => import('./ActividadPublica.vue')), titulo: 'Actividad' },
+  legal: { vista: defineAsyncComponent(() => import('./DocumentoLegal.vue')), titulo: 'Términos' },
 };
 
 const route = useRoute();
@@ -23,13 +25,14 @@ const router = useRouter();
 const seccion = computed(() => {
   const q = route.query;
   if (q.credencial) return SECCIONES.credencial;
-  if (q.reserva) return SECCIONES.reserva;
-  if (q.evento) return SECCIONES.evento;
+  if (q.compra) return SECCIONES.compra;
   if (q.v === 'actividad' || q.v === 'feria') return SECCIONES.actividad;
+  if (['terminos', 'privacidad', 'uso'].includes(q.v)) return SECCIONES.legal;
   return null;
 });
 
-const eventos = ref([]);
+const edicionEmergente = computed(() => (seccion.value === SECCIONES.actividad ? route.query.edicion || null : null));
+const conEmergente = computed(() => !seccion.value || seccion.value === SECCIONES.actividad);
 const ferias = ref([]);
 const cargando = ref(true);
 const codigo = ref('');
@@ -47,18 +50,22 @@ cargarMarca();
 const bs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 0 })}`;
 
 const actividades = computed(() => {
-  const lista = eventos.value.map((e) => ({
-    clave: `e${e.id}`, tipo: 'mesas', etiqueta: 'Reserva de mesas', nombre: e.nombre, lugar: e.localNombre,
-    fecha: e.fechaTexto, imagen: e.planoUrl ? urlApi(e.planoUrl) : null,
-    libres: e.libres, total: e.mesas, unidad: 'mesas', desde: e.desde,
-    accion: 'Elegir mi mesa', destino: { path: '/', query: { evento: e.id } },
-  }));
+  const lista = [];
   for (const f of ferias.value) {
     lista.push({
-      clave: `a${f.id ?? 'activa'}`, tipo: 'actividad', etiqueta: 'Feria · espacios', nombre: f.nombre, lugar: f.lugar,
+      clave: `a${f.id ?? 'activa'}`, tipo: f.vendeEspacios ? 'espacios' : 'entradas',
+      etiqueta: [f.vendeEntradas && 'Entradas', f.vendeEspacios && mayuscula(nombreEspacio(f, true))].filter(Boolean).join(' · ') || 'Actividad',
+      nombre: f.nombre, lugar: f.lugar,
       fecha: f.fechasTexto, imagen: f.portadaUrl ? urlApi(f.portadaUrl) : null,
-      libres: f.libres, total: f.total, unidad: 'espacios', desde: null,
-      accion: 'Ver información', destino: { path: '/', query: { v: 'actividad', edicion: f.id } },
+      libres: f.vendeEspacios ? f.libres : null, total: f.vendeEspacios ? f.total : null, unidad: nombreEspacio(f, true),
+      desde: f.vendeEntradas && f.entradaDesde != null ? f.entradaDesde : f.espacioDesde,
+      aviso: f.estadoEvento === 'CANCELADA' ? { t: 'Cancelada', c: 'cancelada' }
+        : f.estadoEvento === 'POSPUESTA' ? { t: `Pospuesta${f.estadoNuevaFecha ? ` · ${f.estadoNuevaFecha}` : ''}`, c: 'pospuesta' }
+          : f.antesDeAbrir && f.ventaDesde ? { t: `⏳ Venta desde el ${new Date(f.ventaDesde).toLocaleString('es-BO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`, c: 'pronto' } : null,
+      accion: f.estadoEvento === 'CANCELADA' ? 'Ver aviso' : f.antesDeAbrir ? 'Ver detalles' : f.finalizada ? 'Ver información'
+        : f.vendeEntradas && !f.vendeEspacios ? 'Comprar entradas'
+        : f.comprador === 'PERSONA' ? `Reservar ${nombreEspacio(f)}` : 'Ver y participar',
+      destino: { path: '/', query: { v: 'actividad', edicion: f.id } },
     });
   }
   return lista;
@@ -75,12 +82,9 @@ const enlaceContacto = computed(() => enlaceWhatsApp(contacto.value));
 
 async function cargar(silencioso = false) {
   if (!silencioso) cargando.value = true;
-  const [ev, fe] = await Promise.allSettled([
-    fetch(urlApi('/api/publico/mesas')).then((r) => (r.ok ? r.json() : [])),
-    fetch(urlApi('/api/publico/feria/ediciones')).then((r) => (r.ok ? r.json() : [])),
-  ]);
-  if (ev.status === 'fulfilled' && Array.isArray(ev.value)) eventos.value = ev.value;
-  if (fe.status === 'fulfilled' && Array.isArray(fe.value)) ferias.value = fe.value;
+  const r = await fetch(urlApi('/api/publico/feria/ediciones')).catch(() => null);
+  const lista = r?.ok ? await r.json().catch(() => null) : null;
+  if (Array.isArray(lista)) ferias.value = lista;
   cargando.value = false;
 }
 
@@ -91,17 +95,17 @@ function programar() {
 
 function normalizar(texto) {
   const c = texto.trim().toUpperCase().replace(/\s+/g, '');
-  const m = c.match(/MSA-?([A-Z0-9]{10})/);
-  if (m) return `MSA-${m[1]}`;
-  if (/^[A-Z0-9]{10}$/.test(c)) return `MSA-${c}`;
+  const e = c.match(/ENT-?([A-Z0-9]{8})(?![A-Z0-9])/);
+  if (e) return `ENT-${e[1]}`;
+  if (/^[A-Z0-9]{8}$/.test(c)) return `ENT-${c}`;
   return null;
 }
 
 function consultar() {
   const c = normalizar(codigo.value);
-  if (!c) { aviso.value = 'Escribe el código que recibiste al reservar, por ejemplo MSA-AB12CD34EF.'; return; }
+  if (!c) { aviso.value = 'Escribe el código que recibiste al comprar, por ejemplo ENT-AB12CD34.'; return; }
   aviso.value = '';
-  router.push({ path: '/', query: { reserva: c } });
+  router.push({ path: '/', query: { compra: c } });
 }
 
 onMounted(() => {
@@ -136,12 +140,12 @@ watch(seccion, (s) => { if (!s) cargar(!!actividades.value.length); });
           <span class="pub-vivo">Disponibilidad en tiempo real</span>
           <h1>{{ marca.lema || 'Reserva tu lugar en nuestras actividades' }}</h1>
           <p class="sub">Elige una actividad, aparta tu lugar y sigue tu reserva desde el celular.</p>
+          <CarruselPromos class="promos" />
 
-          <ReservaPendiente />
           <form class="consulta" @submit.prevent="consultar">
-            <label for="codigo-reserva">¿Ya reservaste? Consulta tu reserva</label>
+            <label for="codigo-reserva">¿Ya compraste? Consulta tu compra</label>
             <div class="fila">
-              <input id="codigo-reserva" v-model="codigo" placeholder="MSA-XXXXXXXXXX" autocomplete="off"
+              <input id="codigo-reserva" v-model="codigo" placeholder="ENT-XXXXXXXX" autocomplete="off"
                      autocapitalize="characters" spellcheck="false" enterkeyhint="search" />
               <button type="submit" class="pub-boton">Consultar</button>
             </div>
@@ -153,13 +157,13 @@ watch(seccion, (s) => { if (!s) cargar(!!actividades.value.length); });
           <div class="catalogo-cab">
             <h2>Actividades <span class="cuenta">{{ actividades.length }}</span></h2>
             <div v-if="hayFiltros" class="filtros">
-              <button v-for="[k, t] in [['todas', 'Todas'], ['mesas', 'Mesas'], ['actividad', 'Ferias']]" :key="k"
+              <button v-for="[k, t] in [['todas', 'Todas'], ['espacios', 'Con espacios'], ['entradas', 'Solo entradas']]" :key="k"
                       type="button" :class="{ on: filtro === k }" @click="filtro = k">{{ t }}</button>
               <input v-if="actividades.length > 6" v-model="busqueda" type="search" placeholder="Buscar…" aria-label="Buscar actividad" />
             </div>
           </div>
 
-          <div class="lista">
+          <div class="lista desliza">
             <p v-if="cargando" class="vacio">Cargando actividades…</p>
             <p v-else-if="!visibles.length" class="vacio">
               {{ actividades.length ? 'Ninguna actividad coincide con tu búsqueda.' : 'No hay actividades abiertas en este momento. Vuelve pronto.' }}
@@ -173,6 +177,7 @@ watch(seccion, (s) => { if (!s) cargar(!!actividades.value.length); });
                 <span class="etq-movil">{{ a.etiqueta }}</span>
                 <strong>{{ a.nombre }}</strong>
                 <span v-if="a.lugar || a.fecha" class="meta">{{ [a.lugar, a.fecha].filter(Boolean).join(' · ') }}</span>
+                <span v-if="a.aviso" class="aviso-tarjeta" :class="a.aviso.c">{{ a.aviso.t }}</span>
                 <div v-if="a.total" class="disp">
                   <div class="barra"><i :style="{ width: `${Math.round(((a.total - a.libres) / a.total) * 100)}%` }"></i></div>
                   <span><b>{{ a.libres }}</b> de {{ a.total }} {{ a.unidad }} libres</span>
@@ -189,6 +194,7 @@ watch(seccion, (s) => { if (!s) cargar(!!actividades.value.length); });
 
       <footer class="pie">
         <span>© {{ new Date().getFullYear() }} {{ marca.nombre }}</span>
+        <span class="legales"><router-link :to="{ path: '/', query: { v: 'terminos' } }">Términos y condiciones</router-link> · <router-link :to="{ path: '/', query: { v: 'privacidad' } }">Privacidad</router-link></span>
         <a v-if="enlaceContacto" :href="enlaceContacto" target="_blank" rel="noopener">Consultas por WhatsApp: {{ contacto }}</a>
         <span v-else-if="contacto">Consultas: {{ contacto }}</span>
       </footer>
@@ -196,13 +202,14 @@ watch(seccion, (s) => { if (!s) cargar(!!actividades.value.length); });
 
     <AvisosPublicos />
     <ComunicadosPublicos />
+    <EmergentePublico v-if="conEmergente" :key="edicionEmergente || 'inicio'" :edicion="edicionEmergente" />
   </div>
 </template>
 
 <style scoped>
 .raiz { min-height: 100dvh; }
 .portal {
-  height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr);
   max-width: 1180px; margin: 0 auto; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
   box-sizing: border-box;
 }
@@ -227,6 +234,7 @@ watch(seccion, (s) => { if (!s) cargar(!!actividades.value.length); });
 }
 .fila input:focus { outline: 2px solid var(--pub-acento-claro); border-color: transparent; }
 .aviso { margin: 0; color: var(--pub-alerta); font-size: 0.86rem; }
+.promos { margin-top: 2px; }
 .catalogo { display: flex; flex-direction: column; justify-content: center; gap: 12px; min-height: 0; }
 .catalogo-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .catalogo-cab h2 { margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 8px; }
@@ -240,7 +248,7 @@ watch(seccion, (s) => { if (!s) cargar(!!actividades.value.length); });
 .filtros input { min-height: 32px; border-radius: 999px; border: 1px solid var(--pub-linea); background: var(--pub-fondo); color: var(--pub-texto); padding: 0 12px; font: inherit; font-size: 0.85rem; width: 150px; }
 .lista {
   flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; gap: 14px; align-content: start;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); padding: 2px 4px 4px 2px; scrollbar-width: thin;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); grid-auto-rows: max-content; padding: 2px 4px 4px 2px; scrollbar-width: thin;
 }
 .vacio { grid-column: 1 / -1; color: var(--pub-suave); text-align: center; padding: 48px 12px; border: 1px dashed var(--pub-linea); border-radius: 18px; margin: 0; }
 .tarjeta {
@@ -266,14 +274,20 @@ watch(seccion, (s) => { if (!s) cargar(!!actividades.value.length); });
 .pie-tarjeta { margin-top: auto; padding-top: 4px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .etq-movil { display: none; }
 .desde { font-weight: 700; font-size: 0.9rem; }
+.aviso-tarjeta { align-self: flex-start; font-size: 0.75rem; font-weight: 800; padding: 3px 9px; border-radius: 999px; }
+.aviso-tarjeta.pronto { background: rgba(76, 195, 255, 0.18); color: var(--pub-proceso); }
+.aviso-tarjeta.pospuesta { background: rgba(255, 179, 71, 0.18); color: var(--pub-alerta); }
+.aviso-tarjeta.cancelada { background: rgba(255, 107, 139, 0.18); color: var(--pub-error); }
 .accion { color: var(--pub-acento-claro); font-weight: 700; font-size: 0.9rem; margin-left: auto; }
 .pie { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 0 calc(12px + env(safe-area-inset-bottom, 0px)); color: #6f7193; font-size: 0.8rem; }
 .pie a { color: var(--pub-suave); }
 @media (max-width: 860px) {
-  .cuerpo { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); gap: 14px; padding-top: 4px; }
+  .cuerpo { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 14px; padding-top: 4px; }
+  .intro { min-width: 0; }
   .intro { justify-content: flex-start; gap: 8px; }
   .intro h1 { font-size: clamp(1.45rem, 6.5vw, 2rem); }
   .sub, .intro .pub-vivo { display: none; }
+  .promos { height: 150px; order: 3; }
   .consulta { padding: 12px; margin-top: 2px; }
   .catalogo { justify-content: flex-start; }
   .lista { grid-template-columns: 1fr; gap: 10px; }
@@ -284,8 +298,14 @@ watch(seccion, (s) => { if (!s) cargar(!!actividades.value.length); });
   .datos { padding: 12px 14px; }
   .personal { font-size: 0.8rem; min-height: 34px; }
 }
+@media (max-height: 860px) and (min-width: 861px) {
+  .intro { gap: 10px; }
+  .intro h1 { font-size: clamp(1.7rem, 2.9vw, 2.4rem); }
+  .promos { height: 180px; }
+}
 @media (max-height: 560px) and (min-width: 861px) {
   .intro h1 { font-size: 1.8rem; }
   .sub { display: none; }
+  .promos { height: 150px; }
 }
 </style>

@@ -37,6 +37,9 @@ public class Inscripcion extends AuditoriaConfig{
     private String numComprobante;
     private String imgComprobante;
     private boolean pagoContado;
+
+    @Column(name = "cobro_efectivo", nullable = false)
+    private boolean cobroEfectivo;
     private Date fechaInicio;
     private Date fechaFin;
 

@@ -1,13 +1,14 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onActivated } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import QRCode from 'qrcode';
 import CampoCelular from '../components/CampoCelular.vue';
+import CompartirActividad from '../components/CompartirActividad.vue';
 import { apiFetch } from '../api';
 import { toast } from '../ui/toast';
 import { confirmar } from '../ui/alerta';
 import { url as urlApi } from '../config.js';
 import { aModulo } from '../modulos';
+import DisenoEntrada from '../components/DisenoEntrada.vue';
 import { cargarActividades } from '../ui/actividadElegida';
 import { TIPOS_ESPACIO, tipoEspacio, nombreEspacio, mayuscula } from '../ui/espacios';
 
@@ -30,17 +31,17 @@ const cargando = ref(false);
 const guardando = ref(false);
 const datos = ref(null);
 const pasoActual = ref('datos');
-const qrPublico = ref('');
+const compartirAbierto = ref(false);
 
 const f = reactive({
   nombre: '', tipo: 'Evento', descripcion: '', lugar: '', contacto: '', dias: [],
   vendeEntradas: false, vendeEspacios: true, tipoEspacio: 'MESA', etiquetaEspacio: '', comprador: 'PERSONA', entradas: [],
-  condiciones: '', minutosBloqueo: 10, ventaHasta: '',
+  condiciones: '', minutosBloqueo: 10, ventaHasta: '', ventaDesde: '',
   pagoBanco: '', pagoCuenta: '', pagoTitular: '', pagoInstrucciones: '', pagoOficina: '',
   usaCredenciales: false, credencialEntrada: false, credencialRepresentante: false, credencialAcompanantes: false,
   metaAutomatica: true, metaRecaudacion: null,
 });
-const acompanantes = reactive({});
+const cupos = reactive({});
 
 const PASOS = [
   { k: 'datos', n: 1, t: 'Datos', i: '📝' },
@@ -51,7 +52,8 @@ const PASOS = [
   { k: 'credenciales', n: 6, t: 'Credenciales', i: '🪪' },
   { k: 'publicar', n: 7, t: 'Publicar', i: '🚀' },
 ];
-const pasos = computed(() => PASOS.filter((p) => p.k !== 'plano' || f.vendeEspacios));
+const pasos = computed(() => PASOS.filter((p) => p.k !== 'plano' || f.vendeEspacios)
+  .map((p) => (p.k === 'credenciales' && f.vendeEntradas ? { ...p, t: 'Entradas y credenciales', i: '🎟️' } : p)));
 const indice = computed(() => Math.max(0, pasos.value.findIndex((p) => p.k === pasoActual.value)));
 const paso = computed(() => pasos.value[indice.value]);
 const alcanzado = computed(() => Number(datos.value?.configuracionPaso || 0));
@@ -87,15 +89,17 @@ function aplicar(d) {
     vendeEntradas: Boolean(d.vendeEntradas), vendeEspacios: Boolean(d.vendeEspacios),
     tipoEspacio: d.tipoEspacio || 'PUESTO', etiquetaEspacio: d.etiquetaEspacio || '', comprador: d.comprador || 'NEGOCIO',
     entradas: (d.entradas || []).map((e) => ({ ...e, precio: Number(e.precio), cupo: e.cupo ?? null, descripcion: e.descripcion || '' })),
-    condiciones: d.condiciones || '', minutosBloqueo: d.minutosBloqueo || 10, ventaHasta: d.ventaHasta || '',
+    condiciones: d.condiciones || '', minutosBloqueo: d.minutosBloqueo || 10, ventaHasta: d.ventaHasta || '', ventaDesde: d.ventaDesde || '',
     pagoBanco: d.pagoBanco || '', pagoCuenta: d.pagoCuenta || '', pagoTitular: d.pagoTitular || '',
     pagoInstrucciones: d.pagoInstrucciones || '', pagoOficina: d.pagoOficina || '',
     usaCredenciales: Boolean(d.usaCredenciales), credencialEntrada: Boolean(d.credencialEntrada),
     credencialRepresentante: Boolean(d.credencialRepresentante), credencialAcompanantes: Boolean(d.credencialAcompanantes),
     metaAutomatica: d.metaAutomatica !== false, metaRecaudacion: d.metaRecaudacion == null ? null : Number(d.metaRecaudacion),
   });
-  for (const c of d.categorias || []) acompanantes[c.id] = Math.max(0, Number(c.personasPorPuesto || 1) - 1);
-  if (d.publicada) generarQr();
+  for (const c of d.categorias || []) {
+    const costo = Number(c.costoPersonaExtra || 0);
+    cupos[c.id] = { personas: Math.max(1, Number(c.personasPorPuesto || 1)), extras: costo > 0, costo: costo > 0 ? costo : 20 };
+  }
 }
 
 function reiniciar() {
@@ -103,7 +107,7 @@ function reiniciar() {
   Object.assign(f, {
     nombre: '', tipo: 'Evento', descripcion: '', lugar: '', contacto: '', dias: [{ fecha: '', horaInicio: '', horaFin: '' }],
     vendeEntradas: false, vendeEspacios: true, tipoEspacio: 'MESA', etiquetaEspacio: '', comprador: 'PERSONA', entradas: [],
-    condiciones: '', minutosBloqueo: 10, ventaHasta: '',
+    condiciones: '', minutosBloqueo: 10, ventaHasta: '', ventaDesde: '',
     pagoBanco: '', pagoCuenta: '', pagoTitular: '', pagoInstrucciones: '', pagoOficina: '',
     usaCredenciales: false, credencialEntrada: false, credencialRepresentante: false, credencialAcompanantes: false,
     metaAutomatica: true, metaRecaudacion: null,
@@ -160,7 +164,7 @@ function cuerpoDelPaso(k) {
         })) : null,
       };
     case 'condiciones':
-      return { paso: n, condiciones: f.condiciones || '', minutosBloqueo: f.minutosBloqueo, ventaHasta: f.ventaHasta || '' };
+      return { paso: n, condiciones: f.condiciones || '', minutosBloqueo: f.minutosBloqueo, ventaHasta: f.ventaHasta || '', ventaDesde: f.ventaDesde || '' };
     case 'cobro':
       return {
         paso: n, pagoBanco: f.pagoBanco || '', pagoCuenta: f.pagoCuenta || '', pagoTitular: f.pagoTitular || '',
@@ -203,7 +207,7 @@ async function guardarPaso(k = pasoActual.value) {
   if (error) { toast(error, 'advertencia'); return false; }
   guardando.value = true;
   try {
-    if (k === 'credenciales' && f.usaCredenciales && f.credencialAcompanantes) await guardarAcompanantes();
+    if (k === 'credenciales' && f.usaCredenciales && f.credencialRepresentante) await guardarCupos();
     const cuerpo = cuerpoDelPaso(k);
     const r = id.value
       ? await apiFetch(`/api/app/ediciones/${id.value}/configuracion`, { method: 'PATCH', body: JSON.stringify(cuerpo) })
@@ -223,13 +227,24 @@ async function guardarPaso(k = pasoActual.value) {
   }
 }
 
-async function guardarAcompanantes() {
+async function guardarCupos() {
   for (const c of datos.value?.categorias || []) {
-    const deseado = Math.max(0, Math.min(98, Number(acompanantes[c.id]) || 0)) + 1;
-    if (deseado === Number(c.personasPorPuesto)) continue;
-    const r = await apiFetch(`/api/app/categorias/${c.id}`, { method: 'PATCH', body: JSON.stringify({ personasPorPuesto: deseado }) });
-    if (!r.ok) toast(`No se pudo guardar los acompañantes de ${c.nombre}`, 'error');
+    const q = cupos[c.id];
+    if (!q) continue;
+    const personas = Math.max(1, Math.min(50, Number(q.personas) || 1));
+    const costo = q.extras ? Math.max(1, Number(q.costo) || 1) : 0;
+    if (personas === Number(c.personasPorPuesto) && costo === Number(c.costoPersonaExtra || 0)) continue;
+    const r = await apiFetch(`/api/app/categorias/${c.id}`, { method: 'PATCH', body: JSON.stringify({ personasPorPuesto: personas, costoPersonaExtra: costo }) });
+    if (!r.ok) toast(`No se pudo guardar las personas de ${c.nombre}`, 'error');
   }
+}
+
+function resumenCupo(id) {
+  const q = cupos[id];
+  if (!q) return '';
+  const n = Math.max(1, Number(q.personas) || 1);
+  const base = `${n} persona${n === 1 ? '' : 's'} con credencial`;
+  return q.extras ? `${base}; desde la ${n + 1}.ª pagan ${bs(q.costo)} c/u` : `${base}; no se aceptan más`;
 }
 
 async function siguiente() {
@@ -301,8 +316,18 @@ function abrirEditor() {
   router.push(aModulo('editor', { edicion: id.value, asistente: '1' }));
 }
 
-function abrirDisenoCredencial() {
-  router.push(aModulo('credenciales', { tab: 'diseno', edicion: id.value }));
+const ROLES_CREDENCIAL = computed(() => [
+  f.vendeEspacios && f.credencialRepresentante && { rol: 'REPRESENTANTE', icono: '👤', titulo: `Credencial de quien compra ${espacio.value.endsWith('a') ? 'la' : 'el'} ${espacio.value}`, detalle: `Nombre, ${espacio.value} y QR de ingreso.` },
+  f.vendeEspacios && f.credencialRepresentante && f.credencialAcompanantes && { rol: 'ACOMPANANTE', icono: '👥', titulo: 'Pase de acompañante', detalle: `Sin datos personales: dice «Acompañante 2 de Juan Pérez» y ${espacio.value.endsWith('a') ? 'la' : 'el'} ${espacio.value} comprad${espacio.value.endsWith('a') ? 'a' : 'o'}.` },
+].filter(Boolean));
+const disenoDe = (rol) => (datos.value?.credencialRoles || []).find((x) => x.rol === rol);
+
+async function abrirDisenoCredencial(rol) {
+  if (!(await guardarPaso('credenciales'))) return;
+  const r = await apiFetch(`/api/app/ediciones/${id.value}/credencial/${rol}`, { method: 'POST' });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.ok) { toast(d.mensaje || 'No se pudo preparar el diseño', 'error'); return; }
+  router.push(aModulo('credenciales', { tab: 'diseno', plantilla: d.id }));
 }
 
 async function publicar(valor) {
@@ -313,42 +338,21 @@ async function publicar(valor) {
     const r = await apiFetch(`/api/app/ediciones/${id.value}/publicar`, { method: 'POST', body: JSON.stringify({ valor }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.ok) { toast(d.mensaje || 'No se pudo publicar', 'error'); return; }
-    toast(d.mensaje, 'ok');
     await cargar();
     cargarActividades(true);
+    if (valor) router.push(aModulo('actividades', { compartir: id.value, bienvenida: '1' }));
+    else toast(d.mensaje, 'ok');
   } finally {
     guardando.value = false;
   }
 }
 
-async function finalizar(valor) {
-  if (valor && !(await confirmar('Ya no se podrá comprar nada en esta actividad. Las ventas, reportes y el ingreso siguen funcionando.', { titulo: '¿Finalizar la actividad?', aceptar: 'Sí, finalizar' }))) return;
-  const r = await apiFetch(`/api/app/ediciones/${id.value}/finalizar`, { method: 'POST', body: JSON.stringify({ valor }) });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok || !d.ok) { toast(d.mensaje || 'No se pudo cambiar', 'error'); return; }
-  toast(d.mensaje, 'ok');
-  await cargar();
+async function terminar() {
+  if (!(await guardarPaso('publicar'))) return;
+  toast('Cambios guardados', 'ok', 1500);
+  router.push(aModulo('actividades'));
 }
 
-async function generarQr() {
-  try {
-    qrPublico.value = await QRCode.toDataURL(urlPublica.value, { width: 320, margin: 1 });
-  } catch { qrPublico.value = ''; }
-}
-
-async function copiarEnlace() {
-  try {
-    await navigator.clipboard.writeText(urlPublica.value);
-    toast('Enlace copiado', 'ok', 1500);
-  } catch { toast('No se pudo copiar; selecciónalo a mano', 'advertencia'); }
-}
-
-function descargarQr() {
-  const a = document.createElement('a');
-  a.href = qrPublico.value;
-  a.download = `qr-${(f.nombre || 'actividad').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`;
-  a.click();
-}
 
 function verComoCliente() {
   window.open(router.resolve({ path: '/', query: { v: 'actividad', edicion: id.value, vista: 'previa' } }).href, '_blank', 'noopener');
@@ -504,11 +508,17 @@ onActivated(() => { if (id.value && route.query.m === 'actividad') cargar(); });
             <div class="chips">
               <button v-for="m in MINUTOS" :key="m" type="button" class="chip" :class="{ on: f.minutosBloqueo === m }" @click="f.minutosBloqueo = m">{{ m }} min</button>
             </div>
-            <small class="muted">Al elegir {{ f.vendeEspacios ? `un ${espacio}` : 'sus entradas' }}, se le guarda al cliente este tiempo para pagar y subir el comprobante. Si no lo hace, se libera solo.</small>
+            <small class="muted">Al elegir {{ f.vendeEspacios ? `${espacio.endsWith('a') ? 'una' : 'un'} ${espacio}` : 'sus entradas' }}, se le guarda al cliente este tiempo para pagar y subir el comprobante. Si no lo hace, se libera solo.</small>
           </div>
-          <label class="campo"><span>Venta abierta hasta (opcional)</span>
-            <input v-model="f.ventaHasta" type="datetime-local" class="control" />
-            <small class="muted">Después de esta fecha ya no se puede comprar en línea.</small>
+        </div>
+        <div class="dos">
+          <label class="campo"><span>⏳ La venta abre el (opcional)</span>
+            <input v-model="f.ventaDesde" type="datetime-local" class="control" />
+            <small class="muted">Como un estreno: antes de esa fecha la página muestra la actividad con una <b>cuenta regresiva</b> y nadie puede comprar en línea. Al llegar la hora, la venta se abre sola. Vacío = abre al publicar.</small>
+          </label>
+          <label class="campo"><span>🔒 La venta cierra el (opcional)</span>
+            <input v-model="f.ventaHasta" type="datetime-local" class="control" :min="f.ventaDesde || undefined" />
+            <small class="muted">Después de esta fecha ya no se puede comprar en línea. Vacío = sigue abierta hasta que la cierres.</small>
           </label>
         </div>
         <div v-if="lineasCondiciones.length" class="previa">
@@ -574,48 +584,64 @@ onActivated(() => { if (id.value && route.query.m === 'actividad') cargar(); });
       </template>
 
       <template v-else-if="pasoActual === 'credenciales'">
-        <div class="intro"><span class="icono">🪪</span><div><h3>Credenciales y pases</h3><p class="muted">Llevan un código QR para controlar la entrada y la salida.</p></div></div>
-        <div class="opciones">
+        <div class="intro"><span class="icono">🪪</span><div><h3>{{ f.vendeEntradas ? 'Entradas digitales y credenciales' : 'Credenciales y pases' }}</h3><p class="muted">Llevan un código QR para controlar la entrada y la salida.</p></div></div>
+        <div v-if="f.vendeEntradas" class="bloque entrada-digital">
+          <h4>🎟️ Diseño de la entrada digital</h4>
+          <DisenoEntrada v-if="id" :edicion="id" @personalizar="abrirDisenoCredencial('ENTRADA')" />
+          <p v-else class="muted chico">Guarda la actividad para diseñar sus entradas.</p>
+        </div>
+        <h4 v-if="f.vendeEspacios && f.vendeEntradas" class="subtitulo-cred">🪪 Credenciales para quienes compran {{ espacios }}</h4>
+        <div v-if="f.vendeEspacios" class="opciones">
           <button type="button" class="opcion" :class="{ on: f.usaCredenciales }" @click="f.usaCredenciales = true">
             <span class="grande">✅</span><strong>Sí, usa credenciales</strong><span class="muted">Se generan al aprobar cada compra.</span>
           </button>
           <button type="button" class="opcion" :class="{ on: !f.usaCredenciales }" @click="f.usaCredenciales = false">
-            <span class="grande">🚫</span><strong>No hace falta</strong><span class="muted">Solo se entrega el recibo.</span>
+            <span class="grande">🚫</span><strong>No hace falta</strong><span class="muted">Solo se entrega el recibo y se vende el espacio, sin registrar personas.</span>
           </button>
         </div>
-        <template v-if="f.usaCredenciales">
-          <label v-if="f.vendeEntradas" class="pregunta">
-            <input v-model="f.credencialEntrada" type="checkbox" />
-            <span><strong>🎟️ Pase de ingreso por cada entrada vendida</strong>
-              <small>Al aprobar la compra, el cliente recibe su recibo y su pase con QR. En la puerta se escanea para marcar entrada y salida.</small></span>
-          </label>
+        <template v-if="f.usaCredenciales && f.vendeEspacios">
           <template v-if="f.vendeEspacios">
             <label class="pregunta">
               <input v-model="f.credencialRepresentante" type="checkbox" />
-              <span><strong>👤 Credencial para quien compra el {{ espacio }}</strong>
-                <small>Con su nombre, el {{ espacio }} que compró y el QR de ingreso.</small></span>
+              <span><strong>👤 Credencial para quien compra {{ espacio.endsWith('a') ? 'la' : 'el' }} {{ espacio }}</strong>
+                <small>Con su nombre, {{ espacio.endsWith('a') ? 'la' : 'el' }} {{ espacio }} que compró y el QR de ingreso.</small></span>
             </label>
             <label v-if="f.credencialRepresentante" class="pregunta">
               <input v-model="f.credencialAcompanantes" type="checkbox" />
               <span><strong>👥 Pases para acompañantes</strong>
-                <small>No pedimos sus datos: cada pase dice «Acompañante de {representante} · {{ mayuscula(espacio) }} {código}».</small></span>
+                <small>Las personas incluidas, además de quien compra, no dan sus datos: cada pase dice «Acompañante de {representante} · {{ mayuscula(espacio) }} {código}». Si lo dejas apagado, se registra el nombre y el C.I. de cada una.</small></span>
             </label>
-            <div v-if="f.credencialRepresentante && f.credencialAcompanantes" class="bloque">
-              <h4>Acompañantes por categoría</h4>
-              <p v-if="!datos?.categorias?.length" class="muted chico">Crea las categorías en el paso Plano y vuelve aquí para definir cuántos acompañantes tiene cada una.</p>
-              <div v-else class="acompanantes">
-                <label v-for="c in datos.categorias" :key="c.id" class="acompanante">
-                  <span><span class="punto" :style="{ background: c.color || '#888' }"></span>{{ c.nombre }}</span>
-                  <input v-model.number="acompanantes[c.id]" class="control" type="number" min="0" max="98" />
-                  <small class="muted">+ el representante = {{ (Number(acompanantes[c.id]) || 0) + 1 }} pases</small>
-                </label>
+            <div v-if="f.credencialRepresentante" class="bloque">
+              <h4>👥 Personas por {{ espacio }} y personas extra</h4>
+              <p class="muted chico">Cuántas personas incluye cada {{ espacio }} en su precio (cuenta a quien compra) y si se pueden sumar más pagando. Cada persona recibe su credencial; la extra, además, su recibo.</p>
+              <p v-if="!datos?.categorias?.length" class="muted chico">Crea las categorías en el paso Plano y vuelve aquí para definirlo.</p>
+              <div v-else class="cupos">
+                <div v-for="c in datos.categorias" :key="c.id" class="cupo-cat">
+                  <span class="nombre-cat"><span class="punto" :style="{ background: c.color || '#888' }"></span>{{ c.nombre }}</span>
+                  <template v-if="cupos[c.id]">
+                    <label class="campo"><span>Incluye (personas)</span><input v-model.number="cupos[c.id].personas" class="control" type="number" min="1" max="50" /></label>
+                    <label class="campo"><span>Personas extra</span>
+                      <select v-model="cupos[c.id].extras" class="control"><option :value="false">No se venden</option><option :value="true">Sí, pagando</option></select>
+                    </label>
+                    <label v-if="cupos[c.id].extras" class="campo"><span>Bs por persona extra</span><input v-model.number="cupos[c.id].costo" class="control" type="number" min="1" step="1" /></label>
+                    <small class="resumen-cat">{{ resumenCupo(c.id) }}</small>
+                  </template>
+                </div>
               </div>
             </div>
           </template>
-          <div class="bloque diseno">
-            <div><strong>🎨 Diseño de la credencial</strong>
-              <p class="muted chico">{{ datos?.disenosCredencial ? 'Esta actividad ya tiene un diseño propio.' : 'Si no diseñas una, se usa la plantilla por defecto con el nombre de la actividad.' }}</p></div>
-            <button type="button" class="btn btn-sm" @click="abrirDisenoCredencial">{{ datos?.disenosCredencial ? 'Editar diseño' : 'Personalizar diseño' }}</button>
+          <div v-if="ROLES_CREDENCIAL.length" class="bloque">
+            <h4>🎨 Diseño de cada credencial</h4>
+            <p class="muted chico">Cada una parte de una plantilla por defecto. Personalízala: fondo, tamaño, con o sin foto, dónde va el nombre, los datos de la actividad y el QR.</p>
+            <div class="disenos">
+              <div v-for="r in ROLES_CREDENCIAL" :key="r.rol" class="diseno-rol">
+                <span class="icono-rol">{{ r.icono }}</span>
+                <div class="crecer"><strong>{{ r.titulo }}</strong><small class="muted">{{ r.detalle }}</small>
+                  <small v-if="disenoDe(r.rol)" class="listo">✓ Diseño propio: {{ disenoDe(r.rol).etiqueta }}</small>
+                  <small v-else class="muted">Usa la plantilla por defecto</small></div>
+                <button type="button" class="btn btn-sm" :disabled="!id" @click="abrirDisenoCredencial(r.rol)">{{ disenoDe(r.rol) ? 'Editar diseño' : 'Personalizar' }}</button>
+              </div>
+            </div>
           </div>
         </template>
       </template>
@@ -631,14 +657,18 @@ onActivated(() => { if (id.value && route.query.m === 'actividad') cargar(); });
         </ul>
 
         <div class="bloque meta">
-          <h4>🎯 Meta de recaudación</h4>
+          <h4>🎯 Meta de recaudación <small class="muted">(opcional)</small></h4>
+          <p class="muted chico">Lo vendido, lo cobrado y lo que falta <b>el sistema lo calcula solo y en vivo</b> en <b>Ventas y cobros</b>, con cada venta en oficina o compra en línea aprobada. La meta es solo tu objetivo, para ver qué tan cerca estás.</p>
           <div class="meta-filas">
-            <div v-if="f.vendeEspacios"><span class="muted">{{ mayuscula(espacios) }} disponibles</span><b>{{ bs(datos?.metaEspacios) }}</b></div>
-            <div v-if="f.vendeEntradas"><span class="muted">Entradas con cupo</span><b>{{ bs(datos?.metaEntradas) }}</b></div>
-            <div class="total"><span>Si vendes todo</span><b>{{ bs(datos?.metaCalculada) }}</b></div>
+            <div v-if="f.vendeEspacios"><span class="muted">Si vendes todos los {{ espacios }}</span><b>{{ bs(datos?.metaEspacios) }}</b></div>
+            <div v-if="f.vendeEntradas"><span class="muted">Si vendes todas las entradas con cupo</span><b>{{ bs(datos?.metaEntradas) }}</b></div>
+            <div class="total"><span>Lo máximo que podrías recaudar</span><b>{{ bs(datos?.metaCalculada) }}</b></div>
           </div>
-          <p v-if="datos?.entradasSinCupo" class="muted chico">{{ datos.entradasSinCupo }} tipo(s) de entrada sin cupo no suman a la meta automática.</p>
-          <label class="check"><input v-model="f.metaAutomatica" type="checkbox" /> Usar el cálculo automático</label>
+          <p v-if="datos?.entradasSinCupo" class="muted chico">{{ datos.entradasSinCupo }} tipo(s) de entrada no tienen cupo, así que no se pueden sumar a ese máximo.</p>
+          <div class="opciones-meta" role="radiogroup">
+            <label class="check"><input v-model="f.metaAutomatica" type="radio" :value="true" /> Mi meta es vender todo ({{ bs(datos?.metaCalculada) }})</label>
+            <label class="check"><input v-model="f.metaAutomatica" type="radio" :value="false" /> Prefiero poner otra cifra</label>
+          </div>
           <label v-if="!f.metaAutomatica" class="campo"><span>Mi meta (Bs)</span><input v-model.number="f.metaRecaudacion" class="control" type="number" min="0" step="1" /></label>
         </div>
 
@@ -646,27 +676,22 @@ onActivated(() => { if (id.value && route.query.m === 'actividad') cargar(); });
           <template v-if="datos?.publicada">
             <div class="enlace">
               <strong>✅ Tu actividad está publicada</strong>
-              <div class="copiar"><input class="control" :value="urlPublica" readonly @focus="$event.target.select()" /><button type="button" class="btn btn-sm" @click="copiarEnlace">Copiar</button></div>
-              <div class="fila-acciones">
-                <button type="button" class="btn btn-sm" @click="verComoCliente">👁 Ver como cliente</button>
-                <button type="button" class="btn btn-sm btn-fantasma" @click="publicar(false)">Ocultar</button>
-                <button v-if="!datos.finalizada" type="button" class="btn btn-sm btn-fantasma" @click="finalizar(true)">Finalizar actividad</button>
-                <button v-else type="button" class="btn btn-sm" @click="finalizar(false)">Reabrir ventas</button>
-              </div>
+              <span class="muted chico">Comparte el enlace o descarga una imagen con el QR para tus redes. Para ocultarla, posponerla, cerrar las ventas o duplicarla usa el botón <b>Opciones</b> en <b>Mis actividades</b>.</span>
             </div>
-            <div v-if="qrPublico" class="qr-publico">
-              <img :src="qrPublico" alt="QR de la página pública" />
-              <button type="button" class="btn btn-sm btn-fantasma" @click="descargarQr">⬇ Descargar QR</button>
+            <div class="fila-acciones">
+              <button type="button" class="btn btn-primario" @click="compartirAbierto = true">📣 Compartir: enlace y QR</button>
+              <button type="button" class="btn" @click="verComoCliente">👁 Ver como cliente</button>
             </div>
           </template>
           <template v-else>
             <div class="enlace">
               <strong>{{ faltanObligatorios.length ? `Faltan ${faltanObligatorios.length} punto(s) para publicar` : 'Todo listo para publicar' }}</strong>
-              <span class="muted chico">Al publicarla, aparece en la página pública y empieza a recibir compras.</span>
+              <span class="muted chico">{{ f.ventaDesde ? 'Al publicarla aparece en la página pública con la cuenta regresiva; la venta se abre sola en la fecha que elegiste.' : 'Al publicarla aparece en la página pública y empieza a recibir compras.' }}</span>
             </div>
             <button type="button" class="btn btn-primario cta" :disabled="guardando || faltanObligatorios.length > 0" @click="publicar(true)">🚀 Publicar actividad</button>
           </template>
         </div>
+        <CompartirActividad v-if="compartirAbierto && datos" :actividad="{ ...datos, id }" @cerrar="compartirAbierto = false" />
       </template>
     </section>
 
@@ -676,7 +701,7 @@ onActivated(() => { if (id.value && route.query.m === 'actividad') cargar(); });
       <button v-if="pasoActual !== 'publicar'" type="button" class="btn btn-primario" :disabled="guardando" @click="siguiente">
         {{ guardando ? 'Guardando…' : !id ? 'Crear y seguir →' : 'Guardar y seguir →' }}
       </button>
-      <button v-else type="button" class="btn" :disabled="guardando" @click="guardarPaso('publicar').then((ok) => ok && toast('Meta guardada', 'ok', 1500))">Guardar meta</button>
+      <button v-else type="button" class="btn btn-primario" :disabled="guardando" @click="terminar">Guardar e ir a Mis actividades →</button>
     </footer>
   </div>
 </template>
@@ -733,6 +758,7 @@ onActivated(() => { if (id.value && route.query.m === 'actividad') cargar(); });
 .opcion .check { position: absolute; top: 0.6rem; right: 0.6rem; width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--border); display: grid; place-items: center; font-size: 0.8rem; font-weight: 800; }
 .opcion.on .check { background: var(--acento); border-color: var(--acento); color: var(--acento-texto); }
 .opcion .muted { font-size: 0.85rem; }
+.subtitulo-cred { margin: 0.4rem 0 0; }
 .bloque { border: 1px solid var(--border); border-radius: var(--radio); padding: 0.9rem; display: flex; flex-direction: column; gap: 0.7rem; background: var(--panel-2); }
 .bloque h4 { margin: 0; font-size: 0.98rem; }
 .entradas { display: flex; flex-direction: column; gap: 0.6rem; }
@@ -763,10 +789,17 @@ onActivated(() => { if (id.value && route.query.m === 'actividad') cargar(); });
 .pregunta input { width: 20px; height: 20px; margin-top: 0.1rem; flex: none; accent-color: var(--acento); }
 .pregunta span { display: flex; flex-direction: column; gap: 0.2rem; }
 .pregunta small { color: var(--muted); }
-.acompanantes { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.6rem; }
-.acompanante { display: grid; grid-template-columns: 1fr 80px; gap: 0.2rem 0.5rem; align-items: center; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radio-sm); padding: 0.5rem 0.6rem; }
-.acompanante small { grid-column: 1 / -1; }
-.diseno { flex-direction: row; align-items: center; justify-content: space-between; gap: 1rem; }
+.cupos { display: flex; flex-direction: column; gap: 0.5rem; }
+.cupo-cat { display: grid; grid-template-columns: minmax(120px, 1fr) repeat(3, minmax(110px, 150px)); gap: 0.4rem 0.6rem; align-items: end; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radio-sm); padding: 0.55rem 0.7rem; }
+.nombre-cat { font-weight: 700; align-self: center; }
+.resumen-cat { grid-column: 1 / -1; color: var(--muted); font-size: 0.78rem; }
+@media (max-width: 640px) { .cupo-cat { grid-template-columns: 1fr 1fr; } .nombre-cat { grid-column: 1 / -1; } }
+.disenos { display: flex; flex-direction: column; gap: 0.5rem; }
+.diseno-rol { display: flex; gap: 0.7rem; align-items: center; padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radio-sm); background: var(--panel); }
+.diseno-rol .crecer { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.diseno-rol small { font-size: 0.78rem; }
+.diseno-rol .listo { color: var(--ok); font-weight: 700; }
+.icono-rol { font-size: 1.5rem; }
 .lista-revision { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
 .lista-revision li { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.7rem; border-radius: var(--radio-sm); background: var(--panel-2); }
 .lista-revision .marca { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--tramite); color: #fff; font-weight: 800; font-size: 0.8rem; flex: none; }
@@ -776,6 +809,7 @@ onActivated(() => { if (id.value && route.query.m === 'actividad') cargar(); });
 .meta-filas { display: flex; flex-direction: column; gap: 0.3rem; }
 .meta-filas div { display: flex; justify-content: space-between; gap: 1rem; font-variant-numeric: tabular-nums; }
 .meta-filas .total { border-top: 1px solid var(--border); padding-top: 0.35rem; font-size: 1.05rem; }
+.opciones-meta { display: flex; flex-direction: column; gap: 0.35rem; }
 .publicacion { display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 1rem; border-radius: var(--radio); border: 2px dashed var(--border); }
 .publicacion.publicada { border-style: solid; border-color: var(--ok); }
 .enlace { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; min-width: 240px; }
@@ -795,7 +829,7 @@ onActivated(() => { if (id.value && route.query.m === 'actividad') cargar(); });
   .paso .txt { display: none; }
   .paso.on .txt { display: inline; }
   .cuerpo { padding: 1rem; }
-  .diseno { flex-direction: column; align-items: flex-start; }
+  .diseno-rol { flex-wrap: wrap; }
   .paso-txt { display: none; }
 }
 </style>

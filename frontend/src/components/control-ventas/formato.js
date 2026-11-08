@@ -12,9 +12,9 @@ export function fecha(v, conHora = false) {
 }
 
 export const ESTADOS = {
-  PAGADO: { texto: 'Con comprobante', clase: 'badge-ok' },
-  PARCIAL: { texto: 'Comprobante parcial', clase: 'badge-parcial' },
-  PENDIENTE: { texto: 'Sin comprobante', clase: 'badge-danger' },
+  PAGADO: { texto: 'Cobrada', clase: 'badge-ok' },
+  PARCIAL: { texto: 'Cobrada en parte', clase: 'badge-parcial' },
+  PENDIENTE: { texto: 'Por cobrar', clase: 'badge-danger' },
   SIN_COSTO: { texto: 'Sin costo', clase: 'badge-muted' },
 };
 

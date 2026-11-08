@@ -36,7 +36,7 @@ class OrganizarFeriaTest {
     void publicaElPlanoPropioConPrecioIndividualSinCambiarLaEdicionEnCurso() {
         var activa = ediciones.findFirstByActivaTrueOrderByAnioDesc().map(e -> e.getId());
         var categoria = new CategoriaMapaService.NuevaCategoria("Gastronomía", 2, "#3b82f6", null,
-                null, new BigDecimal("300"), null, null, null, null);
+                null, new BigDecimal("300"), null, null, null, null, null);
         var datos = new ActividadService.Datos("Expo de prueba " + UUID.randomUUID(), 2026, "Feria", null,
                 false, false, "Campo ferial", null, null, null, false, true,
                 null, null, null, null, null, List.of(categoria));

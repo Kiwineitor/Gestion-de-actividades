@@ -18,6 +18,14 @@ public class Edicion {
     public static final String SQL_ID_ACTIVA = "(SELECT ed.id FROM edicion ed WHERE ed.activa LIMIT 1)";
     public static final String SQL_CATEGORIAS_ACTIVAS =
             "(SELECT cat.id FROM categoria cat WHERE cat.id_edicion = " + SQL_ID_ACTIVA + ")";
+    public static final String SQL_CATEGORIAS_EN_VENTA =
+            "(SELECT cat.id FROM categoria cat JOIN edicion ed ON ed.id = cat.id_edicion "
+            + "WHERE (ed.activa OR ed.publicacion_independiente) AND NOT ed.finalizada)";
+    public static final String SQL_CATEGORIAS_VENTA_PUBLICA =
+            "(SELECT cat.id FROM categoria cat JOIN edicion ed ON ed.id = cat.id_edicion "
+            + "WHERE ed.publica AND ed.recibe_interesados AND (ed.activa OR ed.publicacion_independiente) "
+            + "AND NOT ed.finalizada AND (ed.venta_hasta IS NULL OR ed.venta_hasta > now()) "
+            + "AND (ed.venta_desde IS NULL OR ed.venta_desde <= now()))";
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

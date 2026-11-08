@@ -11,19 +11,14 @@ import UiModal from '../components/UiModal.vue';
 import FotosResponsables from '../components/FotosResponsables.vue';
 import ArchivoPreview from '../components/ArchivoPreview.vue';
 import CampoCelular from '../components/CampoCelular.vue';
-import ModalEntregaReserva from '../components/ModalEntregaReserva.vue';
-import { ediciones, eventos, cargarActividades } from '../ui/actividadElegida';
+import { ediciones, cargarActividades } from '../ui/actividadElegida';
 
 const tienda = usePuestosStore();
 const items = ref([]);
 const resumen = ref({ cantidad: 0, total: 0 });
 const cargando = ref(true);
 const actividadSel = ref('');
-const edicionSel = computed(() => (/^f-d+$/.test(actividadSel.value) ? Number(actividadSel.value.slice(2)) : null));
-const eventoSel = computed(() => (/^e-d+$/.test(actividadSel.value) ? Number(actividadSel.value.slice(2)) : null));
-const reservas = ref({ cantidad: 0, total: 0, reservas: [] });
-const cargandoReservas = ref(false);
-const reservaAbierta = ref(null);
+const edicionSel = computed(() => (/^f-\d+$/.test(actividadSel.value) ? Number(actividadSel.value.slice(2)) : null));
 
 const solicitudes = ref({});
 const modalSolicitar = ref(null);
@@ -51,28 +46,9 @@ const edicionVisible = computed(() => {
   return activa ? activa.nombre : '';
 });
 
-async function cargarReservas() {
-  if (!eventoSel.value) return;
-  cargandoReservas.value = true;
-  try {
-    const r = await apiFetch(`/api/app/mis-ventas/mesas?evento=${eventoSel.value}`);
-    reservas.value = r.ok ? await r.json() : { cantidad: 0, total: 0, reservas: [] };
-  } catch (e) {
-    toast(e.message, 'error');
-  } finally {
-    cargandoReservas.value = false;
-  }
-}
-
 function cambiarActividad() {
-  if (eventoSel.value) cargarReservas();
-  else cargar();
+  cargar();
 }
-
-const ETIQUETA_RESERVA = {
-  CONFIRMADA: 'Confirmada', EN_REVISION: 'Pago por validar', BLOQUEADA: 'Apartada, sin pago',
-  RECHAZADA: 'Rechazada', VENCIDA: 'Vencida', CANCELADA: 'Cancelada',
-};
 
 const conEdicion = (base) => (edicionSel.value ? `${base}?edicion=${edicionSel.value}` : base);
 
@@ -463,67 +439,19 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
 
 <template>
   <p class="explica">
-    Aquí ves las ventas que registraste tú y las solicitudes o reservas que aprobaste.
-    Elige la actividad para ver las de otra feria o las de un evento con mesas.
+    Aquí ves las ventas que registraste tú y las solicitudes que aprobaste.
+    Elige la actividad para ver las de otra.
   </p>
   <div class="ediciones">
     <span class="muted">Actividad</span>
     <select v-model="actividadSel" @change="cambiarActividad" title="Elegir la actividad">
-      <option value="">Feria en curso ({{ edicionVisible }})</option>
-      <optgroup v-if="ediciones.some((x) => !x.activa)" label="Otras ferias">
+      <option value="">Actividad en curso ({{ edicionVisible }})</option>
+      <optgroup v-if="ediciones.some((x) => !x.activa)" label="Otras actividades">
         <option v-for="e in ediciones.filter((x) => !x.activa)" :key="e.clave" :value="e.clave">{{ e.nombre }}</option>
-      </optgroup>
-      <optgroup v-if="eventos.length" label="Eventos con mesas">
-        <option v-for="e in eventos" :key="e.clave" :value="e.clave">{{ e.nombre }}</option>
       </optgroup>
     </select>
   </div>
 
-  <template v-if="eventoSel">
-    <div class="tarjetas">
-      <div class="card kpi">
-        <span class="muted">Reservas confirmadas</span>
-        <strong>{{ reservas.cantidad }}</strong>
-      </div>
-      <div class="card kpi">
-        <span class="muted">Total confirmado</span>
-        <strong>{{ bs(reservas.total) }}</strong>
-      </div>
-    </div>
-    <section class="card lista-ventas">
-      <header class="cab">
-        <h2>Reservas de mesa que registraste o aprobaste</h2>
-        <span class="cuenta">{{ reservas.reservas.length }}</span>
-      </header>
-      <div v-if="cargandoReservas" class="vacio">Cargando…</div>
-      <div v-else-if="!reservas.reservas.length" class="vacio">Aún no registraste ni aprobaste reservas en este evento.</div>
-      <ul v-else class="ventas">
-        <li v-for="r in reservas.reservas" :key="r.id" class="venta" :class="{ 'sin-click': r.estado !== 'CONFIRMADA' }"
-            @click="r.estado === 'CONFIRMADA' && (reservaAbierta = r.id)">
-          <div class="principal">
-            <strong class="nombre">{{ r.cliente }}</strong>
-            <span class="badge" :class="r.estado === 'CONFIRMADA' ? 'badge-ok' : r.estado === 'EN_REVISION' ? 'badge-parcial' : 'badge-muted'">
-              {{ ETIQUETA_RESERVA[r.estado] || r.estado }}
-            </span>
-          </div>
-          <div class="secundario">
-            <span class="cats">Mesa {{ r.mesa }}<template v-if="r.zona"> · {{ r.zona }}</template></span>
-            <span class="sep">·</span>
-            <span>{{ fecha(r.creadoEn) }}</span>
-            <span v-if="r.personas" class="badge badge-muted">{{ r.personas }} persona{{ r.personas === 1 ? '' : 's' }}</span>
-            <span v-if="r.enOficina" class="badge badge-muted">en oficina</span>
-          </div>
-          <div class="derecha">
-            <strong class="total">{{ bs(r.monto) }}</strong>
-            <span v-if="r.estado === 'CONFIRMADA'" class="ver">Recibo y pases ›</span>
-          </div>
-        </li>
-      </ul>
-    </section>
-    <ModalEntregaReserva v-if="reservaAbierta" :reserva-id="reservaAbierta" @cerrar="reservaAbierta = null" />
-  </template>
-
-  <template v-else>
 
   <input ref="entradaArchivo" type="file" accept="image/jpeg,image/png,application/pdf"
          class="oculto" @change="onArchivoElegido" />
@@ -562,7 +490,7 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
 
   <div class="tarjetas">
       <div class="card kpi">
-        <span class="muted">Inscripciones</span>
+        <span class="muted">Ventas</span>
         <strong>{{ resumen.cantidad }}</strong>
       </div>
       <div class="card kpi">
@@ -608,7 +536,6 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
         </li>
       </ul>
     </section>
-  </template>
 
     <UiModal v-if="ficha || cargandoFicha" :titulo="ficha?.entidad?.nombre || 'Venta'"
              ancho="1200px" @cerrar="cerrarFicha">
@@ -879,11 +806,12 @@ onUnmounted(() => { if (quitarOyente) quitarOyente(); });
         {{ guardandoResp ? 'Guardando…' : 'Agregar' }}
       </button>
     </template>
-  </UiModal>
+    </UiModal>
 </template>
 
 <style scoped>
-.ediciones { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.2rem; }
+.ediciones { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.2rem; flex-wrap: wrap; }
+.ediciones select { flex: 1 1 200px; min-width: 0; }
 .ediciones select { border: 1px solid var(--border); border-radius: 8px; padding: 0.4rem 0.6rem; background: var(--panel); color: var(--text); max-width: 100%; }
 .explica { margin: 0 0 0.75rem; color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
 .venta.sin-click { cursor: default; }

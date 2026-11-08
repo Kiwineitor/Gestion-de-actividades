@@ -68,10 +68,10 @@ public class ControlVentasService {
     private final AnalisisVentasService analisis;
 
     public record Filtros(Long vendedorId, Long categoriaId, LocalDate desde, LocalDate hasta,
-                          String estadoPago, String texto, Long edicionId) {
+                          String estadoPago, String texto, Long edicionId, String canal) {
 
         public static Filtros ninguno() {
-            return new Filtros(null, null, null, null, null, null, null);
+            return new Filtros(null, null, null, null, null, null, null, null);
         }
     }
 
@@ -283,6 +283,7 @@ public class ControlVentasService {
                 .filter(v -> f.hasta() == null
                         || (v.getFecha() != null && !v.getFecha().toLocalDate().isAfter(f.hasta())))
                 .filter(v -> vacio(f.estadoPago()) || f.estadoPago().equalsIgnoreCase(v.getEstadoPago()))
+                .filter(v -> vacio(f.canal()) || f.canal().equalsIgnoreCase(v.getCanal()))
                 .filter(v -> texto == null || buscable(v).contains(texto))
                 .toList();
     }
@@ -303,7 +304,8 @@ public class ControlVentasService {
                        u.id, %s, u.username,
                        e.id, e.nombre, e.descripcion, t.nombre, e.nit, e.representante_legal,
                        e.ci_representante, e.celular_representante,
-                       i.pago_contado, i.entidad_bancaria, i.num_comprobante, i.img_comprobante
+                       i.pago_contado, i.entidad_bancaria, i.num_comprobante, i.img_comprobante, i.cobro_efectivo,
+                       exists (select 1 from interesado_stand s where s.id_inscripcion = i.id) as en_linea
                   from inscripcion i
                   join entidad e on e.id = i.id_entidad
                   left join tipo_entidad t on t.id = e.id_tipo_entidad
@@ -372,6 +374,7 @@ public class ControlVentasService {
             v.setVendedorId(numero(f[4]));
             v.setVendedor(texto(f[5]));
             v.setVendedorUsuario(texto(f[6]));
+            v.setCanal(Boolean.TRUE.equals(f[20]) ? "EN_LINEA" : "EN_PERSONA");
             v.setEntidadId(numero(f[7]));
             v.setEntidad(texto(f[8]));
             v.setRubro(texto(f[9]));
@@ -384,12 +387,13 @@ public class ControlVentasService {
             v.setCodigoExpositor(codigo[0]);
             v.setBaseCodigo(codigo[1]);
             boolean contado = Boolean.TRUE.equals(f[15]);
+            boolean efectivo = Boolean.TRUE.equals(f[19]);
             String img = texto(f[18]);
             v.setEntidadBancaria(texto(f[16]));
             v.setNumComprobante(texto(f[17]));
             v.setConComprobante(img != null);
             v.setComprobanteUrl(img == null ? null : "/files/" + img);
-            v.setFormaPago(contado ? "Al contado" : img != null ? "Depósito / transferencia" : null);
+            v.setFormaPago(efectivo ? "Efectivo" : contado ? "Al contado" : img != null ? "Depósito / transferencia" : null);
 
             List<Puesto> ps = new ArrayList<>();
             Set<Long> cats = new HashSet<>();
@@ -452,7 +456,7 @@ public class ControlVentasService {
                     : importeExtras.divide(BigDecimal.valueOf(extras), 2, RoundingMode.HALF_UP));
 
             v.setTotalVendido(v.getImportePuestos().add(importeExtras));
-            v.setRecaudadoPuestos(img != null ? v.getImportePuestos() : BigDecimal.ZERO);
+            v.setRecaudadoPuestos(img != null || efectivo ? v.getImportePuestos() : BigDecimal.ZERO);
             v.setRecaudadoExtras(recaudadoExtras);
             v.setTotalRecaudado(v.getRecaudadoPuestos().add(recaudadoExtras));
             v.setPorRendir(v.getTotalVendido().subtract(v.getTotalRecaudado()));
